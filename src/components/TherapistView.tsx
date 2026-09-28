@@ -38,6 +38,9 @@ import {
   setActiveMapId,
   saveSnapshot,
   requestPersistence,
+  archiveMap,
+  unarchiveMap,
+  isArchived,
 } from '../services/storage';
 import { syncService } from '../services/sync';
 import {
@@ -50,6 +53,8 @@ import {
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [maps, setMaps] = useState<MindMap[]>([]);
+  /** Every session, archived included. Only the archive views read this. */
+  const [allMaps, setAllMaps] = useState<MindMap[]>([]);
   const [activeMap, setActiveMap] = useState<MindMap | null>(null);
   const [settings, setSettings] = useState<Settings>(() => getSettings());
 
@@ -95,19 +100,28 @@ export const TherapistView: React.FC = () => {
   const clientWindowRef = useRef<Window | null>(null);
 
   const refreshAllData = useCallback(async () => {
-    const [loadedClients, loadedMaps] = await Promise.all([
+    const [loadedClients, allLoadedMaps] = await Promise.all([
       getAllClients(),
       getAllMaps(),
     ]);
     setClients(loadedClients);
+    // Archived sessions stay out of the working state entirely, so they never
+    // show up in the header picker, the session list, or the active-map
+    // fallback below. The archive UI reads them from storage directly.
+    const loadedMaps = allLoadedMaps.filter((m) => !isArchived(m));
     setMaps(loadedMaps);
 
     const savedActiveId = getActiveMapId();
-    const current = loadedMaps.find((m) => m.id === savedActiveId) || loadedMaps[0];
+    // A session that was just archived must not stay selected: the previous
+    // branch would silently reopen the record the user just put away.
+    const current =
+      loadedMaps.find((m) => m.id === savedActiveId) || loadedMaps[0] || null;
     if (current) {
       setActiveMap(current);
       historyRef.current = [current.root];
       historyIndexRef.current = 0;
+    } else {
+      setActiveMap(null);
     }
   }, []);
 
@@ -363,6 +377,9 @@ export const TherapistView: React.FC = () => {
 
   const handleDeleteMapWithUndo = async (target: MindMap) => {
     await deleteMap(target.id);
+    // Mirrored in allMaps too: this handler is also reachable from the archive
+    // view, and a stale copy there would let a deleted record reappear.
+    setAllMaps((prev) => prev.filter((m) => m.id !== target.id));
     const remaining = maps.filter((m) => m.id !== target.id);
     setMaps(remaining);
     if (activeMap?.id === target.id && remaining.length > 0) {
@@ -374,6 +391,15 @@ export const TherapistView: React.FC = () => {
     undoToastTimerRef.current = window.setTimeout(() => {
       setDeletedMapUndo(null);
     }, 10000);
+  };
+
+  // Archive toggles a flag; it never removes data. refreshAllData() handles
+  // the selection side effect: if the archived session was the active one, the
+  // active-only filter leaves it out of the fallback and another session opens.
+  const handleArchiveMap = async (target: MindMap, archive: boolean) => {
+    if (archive) await archiveMap(target.id);
+    else await unarchiveMap(target.id);
+    await refreshAllData();
   };
 
   const handleRestoreDeletedMap = async () => {
@@ -765,7 +791,9 @@ export const TherapistView: React.FC = () => {
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
         clients={clients}
-        maps={maps}
+        // The admin panel owns its own archive view, so it needs EVERY session,
+        // not the active-only subset the working view keeps in state.
+        maps={allMaps}
         activeMapId={activeMap?.id || ''}
         activeClientId={activeMap?.clientId || null}
         onSelectSession={(session) => {
@@ -788,7 +816,7 @@ export const TherapistView: React.FC = () => {
           onClose={() => setIsExportOpen(false)}
           map={activeMap}
           clients={clients}
-          maps={maps}
+          maps={allMaps}
           svgRef={svgCanvasRef}
           theme={settings.theme}
           onImportMap={(newMap) => {
@@ -820,6 +848,8 @@ export const TherapistView: React.FC = () => {
         onDuplicateMap={handleDuplicateMap}
         onRenameMap={handleRenameMap}
         onDeleteMapWithUndo={handleDeleteMapWithUndo}
+        onArchiveMap={handleArchiveMap}
+        onRefresh={refreshAllData}
         theme={settings.theme}
       />
 

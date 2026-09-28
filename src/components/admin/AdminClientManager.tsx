@@ -12,10 +12,23 @@ import {
   Download,
   Upload,
   Archive,
+  ArchiveRestore,
   FolderArchive,
 } from 'lucide-react';
 import { Client, MindMap } from '../../types';
-import { createNewSession, saveMap, saveClient, deleteClient, deleteMap } from '../../services/storage';
+import {
+  createNewSession,
+  saveMap,
+  saveClient,
+  deleteClient,
+  deleteMap,
+  archiveClient,
+  unarchiveClient,
+  archiveMap,
+  unarchiveMap,
+  deleteClientAndSessions,
+  isArchived,
+} from '../../services/storage';
 import { countTotalNodes, formatSessionTimestamp, parseMarkdownToTree } from '../../utils/tree';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
 import { Modal, ConfirmDialog } from '../ui/Modal';
@@ -67,22 +80,38 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   const [undoClientDeleteState, setUndoClientDeleteState] = useState<{
     client: Client;
     sessionCount: number;
+    sessions: MindMap[];
   } | null>(null);
+  const [pendingClientArchive, setPendingClientArchive] = useState<Client | null>(null);
+  const [pendingSessionArchive, setPendingSessionArchive] = useState<MindMap | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [undoSessionDeleteState, setUndoSessionDeleteState] = useState<MindMap | null>(
     null
   );
 
   if (!isOpen) return null;
 
-  const filteredClients = clients.filter((c) =>
-    c.name.toLowerCase().includes(clientSearch.toLowerCase())
+  // Archived clients and their sessions are excluded from the working lists.
+  // An archived client's sessions are archived too, so filtering sessions by
+  // the current client's own flag is equivalent to filtering by the map flag
+  // and cannot drift from it.
+  const activeClients = clients.filter((c) => !isArchived(c));
+  const archivedClients = clients.filter((c) => isArchived(c));
+  const scopedClients = showArchived ? archivedClients : activeClients;
+  const searchTerm = clientSearch.toLowerCase();
+  const filteredClients = scopedClients.filter((c) =>
+    c.name.toLowerCase().includes(searchTerm)
   );
 
   const currentClient =
-    clients.find((c) => c.id === selectedClientId) || clients[0] || null;
+    activeClients.find((c) => c.id === selectedClientId) ||
+    archivedClients.find((c) => c.id === selectedClientId) ||
+    activeClients[0] ||
+    null;
 
   const clientSessions = maps
     .filter((m) => m.clientId === currentClient?.id)
+    .filter((m) => (showArchived ? isArchived(m) : !isArchived(m)))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Import Markdown file directly as a new session for current client
@@ -184,22 +213,69 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // window. A native window.confirm() cannot be styled, is announced
   // inconsistently, and offers no way back from deleting a client's
   // entire session history.
+  // Deleting a client must take their sessions with it, otherwise the
+  // sessions are orphaned: no client row owns them, but they still render in
+  // the session list and consume storage.
   const confirmClientDelete = async () => {
     const target = pendingClientDelete;
     setPendingClientDelete(null);
     if (!target) return;
-    const sessionCount = maps.filter((m) => m.clientId === target.id).length;
-    await deleteClient(target.id);
+    // Snapshot every session up front: the undo path needs them back, and
+    // deleteClientAndSessions does not return them.
+    const ownSessions = maps.filter((m) => m.clientId === target.id);
+    await deleteClientAndSessions(target.id);
     const remaining = clients.filter((c) => c.id !== target.id);
     if (remaining.length > 0) {
       setSelectedClientId(remaining[0].id);
     }
     onRefreshData();
-    setUndoClientDeleteState({ client: target, sessionCount });
+    setUndoClientDeleteState({
+      client: target,
+      sessionCount: ownSessions.length,
+      sessions: ownSessions,
+    });
   };
 
   const handleDeleteClient = (client: Client) => {
     setPendingClientDelete(client);
+  };
+
+  // Archive a client: hides them and their sessions, deletes nothing. The
+  // storage layer stamps both so the two can never disagree.
+  const confirmClientArchive = async () => {
+    const target = pendingClientArchive;
+    setPendingClientArchive(null);
+    if (!target) return;
+    await archiveClient(target.id);
+    onRefreshData();
+    const remaining = clients.filter((c) => c.id !== target.id);
+    if (remaining.length > 0 && selectedClientId === target.id) {
+      setSelectedClientId(remaining[0].id);
+    }
+  };
+
+  const handleArchiveClient = (client: Client) => {
+    setPendingClientArchive(client);
+  };
+
+  const handleUnarchiveClient = async (client: Client) => {
+    await unarchiveClient(client.id);
+    onRefreshData();
+  };
+
+  // Archive a single session, leaving its client active. Restoring is one
+  // field write, and neither path touches the client record.
+  const confirmSessionArchive = async () => {
+    const target = pendingSessionArchive;
+    setPendingSessionArchive(null);
+    if (!target) return;
+    await archiveMap(target.id);
+    onRefreshData();
+  };
+
+  const handleUnarchiveSession = async (session: MindMap) => {
+    await unarchiveMap(session.id);
+    onRefreshData();
   };
 
   // Delete session
@@ -267,7 +343,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             <div className="p-3 border-b border-line space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-xs font-bold text-content uppercase tracking-wider">
-                  Clientes ({clients.length})
+                  Clientes ({scopedClients.length})
                 </h3>
                 <button
                   type="button"
@@ -277,6 +353,46 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Novo</span>
                 </button>
+              </div>
+
+              {/* Active / Archived switch, mirroring the session drawer so
+                  both surfaces expose the archive the same way. */}
+              <div
+                role="tablist"
+                aria-label="Clientes ativos ou arquivados"
+                className="flex p-1 bg-surface-inset rounded-xl border border-line"
+              >
+                {(
+                  [
+                    { key: false, label: 'Ativos', count: activeClients.length },
+                    { key: true, label: 'Arquivados', count: archivedClients.length },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={String(t.key)}
+                    type="button"
+                    role="tab"
+                    aria-selected={showArchived === t.key}
+                    tabIndex={showArchived === t.key ? 0 : -1}
+                    onClick={() => setShowArchived(t.key)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        setShowArchived(!t.key);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                      showArchived === t.key
+                        ? 'bg-surface-raised text-content shadow-xs'
+                        : 'text-content-muted hover:text-content'
+                    }`}
+                  >
+                    {t.label}
+                    <span className="ml-1.5 font-mono text-[10px] opacity-70">
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
               </div>
 
               {isCreatingClient && (
@@ -341,7 +457,11 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               ) : (
                 filteredClients.map((client) => {
                   const isSelected = client.id === currentClient?.id;
-                  const count = maps.filter((m) => m.clientId === client.id).length;
+                  const archived = isArchived(client);
+                  const count = maps.filter(
+                    (m) =>
+                      m.clientId === client.id && (archived ? isArchived(m) : !isArchived(m))
+                  ).length;
 
                   return (
                     <div
@@ -422,15 +542,49 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                         >
                           <Edit2 className="w-4 h-4" aria-hidden="true" />
                         </button>
-                        {clients.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteClient(client)}
-                            aria-label={`Excluir ${client.name}`}
-                            className="ctl ctl-danger w-11 px-0"
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
+                        {archived ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleUnarchiveClient(client)}
+                              aria-label={`Restaurar ${client.name}`}
+                              title="Restaurar cliente e sessões"
+                              className="ctl w-11 px-0"
+                            >
+                              <ArchiveRestore className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClient(client)}
+                              aria-label={`Excluir ${client.name} e todas as sessões`}
+                              title="Excluir cliente e sessões"
+                              className="ctl ctl-danger w-11 px-0"
+                            >
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveClient(client)}
+                              aria-label={`Arquivar ${client.name} e todas as sessões`}
+                              title="Arquivar cliente e sessões"
+                              className="ctl w-11 px-0"
+                            >
+                              <Archive className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                            {clients.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteClient(client)}
+                                aria-label={`Excluir ${client.name}`}
+                                className="ctl ctl-danger w-11 px-0"
+                              >
+                                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -605,6 +759,28 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             </button>
 
+                            {isArchived(session) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleUnarchiveSession(session)}
+                                aria-label={`Restaurar sessão ${sessionLabel}`}
+                                title="Restaurar sessão"
+                                className="ctl w-11 px-0"
+                              >
+                                <ArchiveRestore className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setPendingSessionArchive(session)}
+                                aria-label={`Arquivar sessão ${sessionLabel}`}
+                                title="Arquivar sessão"
+                                className="ctl w-11 px-0"
+                              >
+                                <Archive className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            )}
+
                             {clientSessions.length > 1 && (
                               <button
                                 type="button"
@@ -639,19 +815,84 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         isOpen={pendingClientDelete !== null}
         title="Excluir este cliente?"
         isDestructive
-        confirmLabel="Excluir cliente"
+        confirmLabel="Excluir cliente e sessões"
+        cancelLabel="Cancelar"
         onCancel={() => setPendingClientDelete(null)}
         onConfirm={confirmClientDelete}
         description={
           pendingClientDelete ? (
             <>
               <p>
-                <strong>{pendingClientDelete.name}</strong> e todas as suas sessões serão
-                removidas deste navegador. Não há servidor: o apagamento é definitivo e
-                local.
+                <strong>{pendingClientDelete.name}</strong> e{' '}
+                <strong>
+                  {maps.filter((m) => m.clientId === pendingClientDelete.id).length}{' '}
+                  {maps.filter((m) => m.clientId === pendingClientDelete.id).length === 1
+                    ? 'sessão'
+                    : 'sessões'}
+                </strong>{' '}
+                {maps.filter((m) => m.clientId === pendingClientDelete.id).length === 1
+                  ? 'será removida'
+                  : 'serão removidas'}{' '}
+                deste navegador. Não há servidor: o apagamento é definitivo e local.
               </p>
               <p className="mt-2 text-content-subtle">
-                Você poderá restaurar o cadastro logo após, pela janela de desfazer.
+                Você poderá restaurar o cadastro e todas as sessões logo após, pela janela
+                de desfazer. Arquivar em vez de excluir deixa tudo recuperável.
+              </p>
+            </>
+          ) : null
+        }
+      />
+
+      <ConfirmDialog
+        isOpen={pendingClientArchive !== null}
+        title="Arquivar este cliente?"
+        confirmLabel="Arquivar cliente e sessões"
+        cancelLabel="Manter ativo"
+        onCancel={() => setPendingClientArchive(null)}
+        onConfirm={confirmClientArchive}
+        description={
+          pendingClientArchive ? (
+            <>
+              <p>
+                <strong>{pendingClientArchive.name}</strong> e as{' '}
+                <strong>
+                  {maps.filter((m) => m.clientId === pendingClientArchive.id).length}{' '}
+                  {maps.filter((m) => m.clientId === pendingClientArchive.id).length === 1
+                    ? 'sessão'
+                    : 'sessões'}
+                </strong>{' '}
+                sairão da lista de clientes ativos.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Nada é apagado: tudo continua em &quot;Arquivados&quot;, onde você pode
+                consultar, restaurar ou excluir definitivamente.
+              </p>
+            </>
+          ) : null
+        }
+      />
+
+      <ConfirmDialog
+        isOpen={pendingSessionArchive !== null}
+        title="Arquivar esta sessão?"
+        confirmLabel="Arquivar sessão"
+        cancelLabel="Manter ativa"
+        onCancel={() => setPendingSessionArchive(null)}
+        onConfirm={confirmSessionArchive}
+        description={
+          pendingSessionArchive ? (
+            <>
+              <p>
+                A sessão de <strong>{pendingSessionArchive.clientName}</strong> em{' '}
+                <strong>
+                  {pendingSessionArchive.sessionDate || pendingSessionArchive.title}
+                </strong>{' '}
+                sai da lista de ativas. O cliente não é afetado.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Nada é apagado: você continua podendo consultar, restaurar ou excluir em
+                &quot;Arquivadas&quot;.
               </p>
             </>
           ) : null
@@ -663,15 +904,24 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         title="Excluir esta sessão?"
         isDestructive
         confirmLabel="Excluir sessão"
+        cancelLabel="Cancelar"
         onCancel={() => setPendingSessionDelete(null)}
         onConfirm={confirmSessionDelete}
         description={
           pendingSessionDelete ? (
-            <p>
-              A sessão de <strong>{pendingSessionDelete.clientName}</strong> em{' '}
-              <strong>{pendingSessionDelete.sessionDate || pendingSessionDelete.title}</strong>{' '}
-              será removida. Você poderá restaurá-la logo após, pela janela de desfazer.
-            </p>
+            <>
+              <p>
+                A sessão de <strong>{pendingSessionDelete.clientName}</strong> em{' '}
+                <strong>
+                  {pendingSessionDelete.sessionDate || pendingSessionDelete.title}
+                </strong>{' '}
+                será removida deste navegador.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Você poderá restaurá-la logo após, pela janela de desfazer. Arquivar em vez
+                de excluir deixa o registro recuperável.
+              </p>
+            </>
           ) : null
         }
       />

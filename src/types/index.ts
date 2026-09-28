@@ -17,6 +17,12 @@ export interface Client {
   name: string;
   createdAt: string;
   notes?: string;
+  /**
+   * Set when the client (and, implicitly, their sessions) is archived.
+   * null/undefined means active. An archived record is hidden from the
+   * working list but keeps every session, so it can be restored.
+   */
+  archivedAt?: string | null;
 }
 
 export interface MindMap {
@@ -30,6 +36,12 @@ export interface MindMap {
   updatedAt: string;
   root: MindMapNode;
   view?: MindMapView;
+  /**
+   * Set when this single session is archived. null/undefined means active.
+   * Archiving a session never touches the client, and archiving a client
+   * stamps every one of their sessions too, so the two stay consistent.
+   */
+  archivedAt?: string | null;
 }
 
 export interface Settings {

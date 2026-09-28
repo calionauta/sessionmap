@@ -38,7 +38,9 @@ const FOCUSABLE = [
 export function useDialogA11y(
   panelRef: React.RefObject<HTMLElement | null>,
   isOpen: boolean,
-  onClose: () => void
+  onClose: () => void,
+  /** Preferred first stop when the dialog opens. Falls back to first control. */
+  autoFocusSelector?: string
 ) {
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -86,7 +88,10 @@ export function useDialogA11y(
     const raf = requestAnimationFrame(() => {
       const panel = panelRef.current;
       if (!panel) return;
-      const first = panel.querySelector<HTMLElement>(FOCUSABLE);
+      const preferred = autoFocusSelector
+        ? panel.querySelector<HTMLElement>(autoFocusSelector)
+        : null;
+      const first = preferred ?? panel.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? panel).focus();
     });
 
@@ -100,7 +105,7 @@ export function useDialogA11y(
       // Focus returns to whatever opened the dialog (SC 2.4.3).
       previouslyFocused.current?.focus?.();
     };
-  }, [isOpen, panelRef]);
+  }, [isOpen, panelRef, autoFocusSelector]);
 
   return onKeyDown;
 }
@@ -118,6 +123,11 @@ export interface ModalProps {
   dismissOnBackdrop?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /**
+   * Element that receives focus on open. Used by ConfirmDialog to land on
+   * Cancel, so the non-destructive answer is the default.
+   */
+  autoFocusSelector?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -130,6 +140,7 @@ export const Modal: React.FC<ModalProps> = ({
   dismissOnBackdrop = true,
   children,
   footer,
+  autoFocusSelector,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -137,7 +148,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   // Escape, focus trap, focus move-in/restore and scroll lock all live in the
   // shared hook so this component holds no copy of them.
-  const onKeyDown = useDialogA11y(panelRef, isOpen, onClose);
+  const onKeyDown = useDialogA11y(panelRef, isOpen, onClose, autoFocusSelector);
 
   if (!isOpen) return null;
 
@@ -206,6 +217,8 @@ export interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   isDestructive?: boolean;
+  /** Label of the safe button. Focused on open by default. */
+  cancelLabel?: string;
 }
 
 /**
@@ -222,6 +235,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   onCancel,
   isDestructive = false,
+  cancelLabel,
 }) => (
   <Modal
     isOpen={isOpen}
@@ -229,10 +243,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     title={title}
     maxWidth="max-w-md"
     dismissOnBackdrop={false}
+    // Focus lands on Cancel, so the safe answer is the default: Enter confirms
+    // nothing, and a stray Return on a freshly-opened dialog does not delete a
+    // clinical record. Tab order still reaches the confirm button.
+    autoFocusSelector="[data-autofocus]"
     footer={
       <>
-        <button type="button" onClick={onCancel} className="ctl">
-          Cancelar
+        <button type="button" onClick={onCancel} data-autofocus className="ctl">
+          {cancelLabel ?? 'Cancelar'}
         </button>
         <button
           type="button"

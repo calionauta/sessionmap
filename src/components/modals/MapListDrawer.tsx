@@ -10,12 +10,21 @@ import {
   Calendar,
   Layers,
   FileDown,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import { MindMap } from '../../types';
 import { countTotalNodes } from '../../utils/tree';
-import { getAllMaps, deleteMap, saveMap } from '../../services/storage';
+import {
+  getAllMaps,
+  deleteMap,
+  saveMap,
+  isArchived,
+  unarchiveMap,
+  unarchiveClient,
+} from '../../services/storage';
 import { downloadFile } from '../../utils/export';
-import { useDialogA11y } from '../ui/Modal';
+import { useDialogA11y, ConfirmDialog } from '../ui/Modal';
 
 interface MapListDrawerProps {
   isOpen: boolean;
@@ -27,6 +36,10 @@ interface MapListDrawerProps {
   onDuplicateMap: (map: MindMap) => void;
   onRenameMap: (mapId: string, newTitle: string) => void;
   onDeleteMapWithUndo: (map: MindMap) => void;
+  /** archive=false restores the record. */
+  onArchiveMap: (map: MindMap, archive: boolean) => void;
+  /** Re-reads storage after the drawer mutates records itself. */
+  onRefresh: () => void;
   theme: 'papel' | 'noite';
 }
 
@@ -40,10 +53,17 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   onDuplicateMap,
   onRenameMap,
   onDeleteMapWithUndo,
+  onArchiveMap,
+  onRefresh,
 }) => {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [view, setView] = useState<'active' | 'archived'>('active');
+  // Confirmation is a dialog, never window.confirm(): the default focus is the
+  // safe answer and the dialog names exactly what is about to be removed.
+  const [pendingArchive, setPendingArchive] = useState<MindMap | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<MindMap | null>(null);
 
   const panelRef = React.useRef<HTMLDivElement>(null);
 
@@ -57,10 +77,22 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   // API compatibility but the shell now reads tokens from index.css.
   if (!isOpen) return null;
 
-  const filteredMaps = maps.filter((m) =>
-    (m.title || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.root?.text || '').toLowerCase().includes(search.toLowerCase())
-  );
+  // Archived sessions are hidden from the working list; the search filters
+  // within whichever view is open rather than across both.
+  const activeMaps = maps.filter((m) => !isArchived(m));
+  const archivedMaps = maps.filter((m) => isArchived(m));
+  const scopedMaps = view === 'active' ? activeMaps : archivedMaps;
+  const term = search.trim().toLowerCase();
+  const filteredMaps = term
+    ? scopedMaps.filter(
+        (m) =>
+          (m.title || '').toLowerCase().includes(term) ||
+          (m.root?.text || '').toLowerCase().includes(term) ||
+          (m.clientName || '').toLowerCase().includes(term)
+      )
+    : scopedMaps;
+  const activeCount = activeMaps.length;
+  const archivedCount = archivedMaps.length;
 
   const startRename = (mapId: string, title: string) => {
     setEditingId(mapId);
@@ -75,6 +107,8 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
     setEditingId(null);
   };
 
+  // The backup deliberately includes archived sessions: they are still clinical
+  // records, and a backup that silently dropped them would be lossy.
   const handleBackupAll = async () => {
     const all = await getAllMaps();
     downloadFile(
@@ -82,6 +116,19 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
       `sessionmap_backup_completo_${new Date().toISOString().slice(0, 10)}.json`,
       'application/json'
     );
+  };
+
+  // Bulk restore, including a client whose whole history was archived at once.
+  // Scoped to the sessions this drawer was handed, so it can only touch records
+  // this browser actually holds.
+  const handleRestoreAll = async () => {
+    for (const m of archivedMaps) {
+      await unarchiveMap(m.id);
+    }
+    for (const id of new Set(archivedMaps.map((m) => m.clientId))) {
+      await unarchiveClient(id);
+    }
+    onRefresh();
   };
 
   return (
@@ -136,6 +183,44 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
             <Plus className="w-4 h-4" aria-hidden="true" />
             <span>Novo Mapa</span>
           </button>
+
+          {/* Active / Archived switch. Archived sessions are excluded from the
+              working list entirely — including the map picker and the session
+              exports — so a finished case never competes with a live one. */}
+          <div role="tablist" aria-label="Sessões ativas ou arquivadas" className="flex p-1 bg-surface-inset rounded-xl border border-line">
+            {(
+              [
+                { key: 'active' as const, label: 'Ativas' },
+                { key: 'archived' as const, label: 'Arquivadas' },
+              ]
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={view === t.key}
+                aria-controls="map-list-panel"
+                tabIndex={view === t.key ? 0 : -1}
+                onClick={() => setView(t.key)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setView(view === 'active' ? 'archived' : 'active');
+                  }
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                  view === t.key
+                    ? 'bg-surface-raised text-content shadow-xs'
+                    : 'text-content-muted hover:text-content'
+                }`}
+              >
+                {t.label}
+                <span className="ml-1.5 font-mono text-[10px] opacity-70">
+                  {t.key === 'active' ? activeCount : archivedCount}
+                </span>
+              </button>
+            ))}
+          </div>
 
           <div className="relative flex items-center">
             <Search
@@ -234,21 +319,64 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       >
                         <Copy className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
-                      {maps.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteMapWithUndo(m)}
-                          aria-label={`Excluir ${m.title || 'mapa sem título'}`}
-                          className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                        </button>
+                      {isArchived(m) ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onArchiveMap(m, false)}
+                            aria-label={`Restaurar ${m.title || 'mapa sem título'}`}
+                            title="Restaurar para ativas"
+                            className="ctl w-8 h-8 !min-h-0 px-0"
+                          >
+                            <ArchiveRestore className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(m)}
+                            aria-label={`Excluir definitivamente ${m.title || 'mapa sem título'}`}
+                            title="Excluir definitivamente"
+                            className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setPendingArchive(m)}
+                            aria-label={`Arquivar ${m.title || 'mapa sem título'}`}
+                            title="Arquivar sessão"
+                            className="ctl w-8 h-8 !min-h-0 px-0"
+                          >
+                            <Archive className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                          {maps.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteMapWithUndo(m)}
+                              aria-label={`Excluir ${m.title || 'mapa sem título'}`}
+                              className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
 
                   {/* Card metadata */}
                   <div className="flex items-center gap-2 mt-2 text-[11px] font-medium text-content-muted">
+                    {isArchived(m) && (
+                      <>
+                        <span className="flex items-center gap-1 uppercase tracking-wide text-caution">
+                          <Archive className="w-3 h-3" aria-hidden="true" />
+                          <span>arquivada</span>
+                        </span>
+                        <span aria-hidden="true">·</span>
+                      </>
+                    )}
                     <span className="flex items-center gap-1 font-mono">
                       <Layers className="w-3 h-3 text-accent-text" aria-hidden="true" />
                       <span>{nodeCount} balões</span>
@@ -300,8 +428,79 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
             <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Fazer Backup Completo (JSON)</span>
           </button>
+          <button
+            type="button"
+            onClick={handleRestoreAll}
+            className="ctl"
+            disabled={archivedCount === 0}
+            title={
+              archivedCount === 0
+                ? 'Nenhuma sessão arquivada para restaurar'
+                : 'Restaurar todas as sessões arquivadas'
+            }
+          >
+            <ArchiveRestore className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Restaurar arquivadas ({archivedCount})</span>
+          </button>
         </div>
       </div>
+
+      {/* Both dialogs live OUTSIDE the drawer panel: nested inside it they
+          would sit within the drawer's own focus trap and be unreachable. */}
+      <ConfirmDialog
+        isOpen={pendingArchive !== null}
+        title="Arquivar esta sessão?"
+        confirmLabel="Arquivar sessão"
+        cancelLabel="Manter ativa"
+        onCancel={() => setPendingArchive(null)}
+        onConfirm={() => {
+          if (pendingArchive) onArchiveMap(pendingArchive, true);
+          setPendingArchive(null);
+        }}
+        description={
+          pendingArchive ? (
+            <>
+              <p>
+                A sessão de <strong>{pendingArchive.clientName}</strong> em{' '}
+                <strong>{pendingArchive.sessionDate || pendingArchive.title}</strong>{' '}
+                sai da lista de ativas e passa para Arquivadas.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Nada é apagado: você continua podendo consultar, restaurar ou
+                excluir em &quot;Arquivadas&quot;.
+              </p>
+            </>
+          ) : null
+        }
+      />
+
+      <ConfirmDialog
+        isOpen={pendingDelete !== null}
+        title="Excluir definitivamente?"
+        isDestructive
+        confirmLabel="Excluir para sempre"
+        cancelLabel="Manter arquivada"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) onDeleteMapWithUndo(pendingDelete);
+          setPendingDelete(null);
+        }}
+        description={
+          pendingDelete ? (
+            <>
+              <p>
+                A sessão de <strong>{pendingDelete.clientName}</strong> em{' '}
+                <strong>{pendingDelete.sessionDate || pendingDelete.title}</strong>{' '}
+                será removida deste navegador.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Esta ação é definitiva e não há servidor: o apagamento é local.
+                Arquivar em vez de excluir deixa o registro recuperável.
+              </p>
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 };

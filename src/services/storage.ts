@@ -468,6 +468,72 @@ export function setActiveClientId(id: string): void {
   localStorage.setItem(ACTIVE_CLIENT_KEY, id);
 }
 
+// =================== ARCHIVE ===================
+//
+// Archiving is never destructive: it stamps archivedAt and the record stays in
+// the same object store, so restoring is a single field write and no clinical
+// data is ever rewritten. Unarchiving a client also unarchives its sessions,
+// otherwise a restored client would open with an empty history.
+
+/** Sessions of an archived client are archived too, so the two never disagree. */
+export async function archiveMap(id: string): Promise<void> {
+  const map = await getMap(id);
+  if (!map || map.archivedAt) return;
+  await saveMap({ ...map, archivedAt: new Date().toISOString() });
+}
+
+export async function unarchiveMap(id: string): Promise<void> {
+  const map = await getMap(id);
+  if (!map || !map.archivedAt) return;
+  await saveMap({ ...map, archivedAt: null });
+}
+
+export async function archiveClient(clientId: string): Promise<void> {
+  const stamp = new Date().toISOString();
+  const client = (await getAllClients()).find((c) => c.id === clientId);
+  if (client && !client.archivedAt) {
+    await saveClient({ ...client, archivedAt: stamp });
+  }
+  const maps = await getAllMaps();
+  for (const m of maps) {
+    if (m.clientId === clientId && !m.archivedAt) {
+      await saveMap({ ...m, archivedAt: stamp });
+    }
+  }
+}
+
+export async function unarchiveClient(clientId: string): Promise<void> {
+  const client = (await getAllClients()).find((c) => c.id === clientId);
+  if (client?.archivedAt) {
+    await saveClient({ ...client, archivedAt: null });
+  }
+  const maps = await getAllMaps();
+  for (const m of maps) {
+    if (m.clientId === clientId && m.archivedAt) {
+      await saveMap({ ...m, archivedAt: null });
+    }
+  }
+}
+
+/**
+ * Permanently removes a client together with every session they have, archived
+ * or not. Destructive and irreversible: callers must confirm first.
+ */
+export async function deleteClientAndSessions(clientId: string): Promise<number> {
+  const maps = await getAllMaps();
+  const own = maps.filter((m) => m.clientId === clientId);
+  for (const m of own) {
+    await deleteMap(m.id);
+  }
+  await deleteClient(clientId);
+  return own.length;
+}
+
+/** Convenience predicates so the UI never compares archivedAt itself. */
+export function isArchived(record: { archivedAt?: string | null }): boolean {
+  return Boolean(record.archivedAt);
+}
+
 // =================== SESSION / MINDMAP OPERATIONS ===================
 
 export function createNewSession(clientId: string, clientName: string): MindMap {
@@ -506,12 +572,15 @@ export async function getAllMaps(): Promise<MindMap[]> {
           saveMap(INITIAL_SAMPLE_MAP);
           maps = [INITIAL_SAMPLE_MAP];
         }
-        // Normalize maps to ensure client fields exist
+        // Normalize maps to ensure client fields exist. archivedAt is
+        // normalized too, so pre-archive records (which have no field at
+        // all) and restored ones (null) behave identically to archived ones.
         maps = maps.map((m) => ({
           ...m,
           clientId: m.clientId || DEFAULT_SAMPLE_CLIENT.id,
           clientName: m.clientName || 'Cliente',
           sessionDate: m.sessionDate || m.title || formatSessionTimestamp(new Date(m.createdAt)),
+          archivedAt: m.archivedAt ?? null,
         }));
         resolve(maps.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
       };
