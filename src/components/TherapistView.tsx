@@ -487,35 +487,30 @@ export const TherapistView: React.FC = () => {
    *
    * Stacked instead, one line each, so nothing competes for width:
    *
-   *     Trabalho › Prazo › Reunião      <- where, small and quiet
+   *     Novo subitem em  Reunião          <- where, small and quiet
    *     Ligação com a equipe… ▌          <- what, bold and accented
    *
-   * The path is the full ancestor chain, not just the immediate parent: in a
-   * deep map "Reunião" alone is ambiguous, and the whole point is to answer
-   * "where in the session am I?" at a glance. It truncates from the left so
-   * the most specific ancestor — the one that disambiguates — always survives,
-   * and the typed text is never pushed off the bar.
+   * Only the DIRECT parent, deliberately. An earlier version walked the whole
+   * ancestor chain ("Trabalho › Prazo › Reunião"), on the argument that a bare
+   * "Reunião" is ambiguous in a deep map. That traded the thing the user
+   * actually needs — a short, instantly readable answer — for a second path
+   * hierarchy drawn next to the map that already draws one. The canvas and the
+   * outline both show the full position already; the mirror only needs to say
+   * which node this text will belong to.
    */
-  let draftPath: string[] = [];
+  let draftParentLabel = '';
   let draftVerb = '';
-  if (draft && draft.active && activeMap) {
-    const parentId = draft.parentId ?? null;
-    if (parentId) {
-      const ids = findPathToNode(activeMap.root, parentId) ?? [parentId];
-      draftPath = ids
-        .map((id) => findNodeById(activeMap.root, id)?.text?.trim() ?? '')
-        .filter(Boolean);
+  if (draft && draft.active) {
+    // draft.parentText is the label the outline already resolved, so the mirror
+    // can never disagree with the row the text is being typed into. Fall back to
+    // the tree only when the draft did not carry one.
+    draftParentLabel = draft.parentText?.trim() ?? '';
+    if (!draftParentLabel && activeMap && draft.parentId) {
+      draftParentLabel =
+        findNodeById(activeMap.root, draft.parentId)?.text?.trim() ?? '';
     }
-    // draft.parentText is the authoritative label the outline already resolved;
-    // use it as the final segment so the mirror never disagrees with it.
-    if (draft.parentText?.trim() && draftPath[draftPath.length - 1] !== draft.parentText.trim()) {
-      if (draftPath.length === 0) {
-        draftPath = [draft.parentText.trim()];
-      } else {
-        draftPath[draftPath.length - 1] = draft.parentText.trim();
-      }
-    }
-    draftVerb = draft.mode === 'add' ? 'Novo subitem em' : 'Editando';
+    if (!draftParentLabel) draftParentLabel = 'Tópico raiz';
+    draftVerb = draft.mode === 'add' ? 'Novo subitem em' : 'Em';
   }
 
   return (
@@ -812,10 +807,11 @@ export const TherapistView: React.FC = () => {
               a /95 wash: the label and the live caret are both text, and a
               composited background is not a pair that can be measured.
 
-              Two stacked lines, not one. See draftPath for why the location
-              and the live text are separated vertically. The whole region is
-              one live region so a screen reader hears the location and the
-              text as a single announcement rather than two unrelated strings. */}
+              Two stacked lines, not one. See draftParentLabel for why the
+              location and the live text are separated vertically. The whole
+              region is one live region so a screen reader hears the location
+              and the text as a single announcement rather than two unrelated
+              strings. */}
           {draft && draft.active && (
             <div
               role="status"
@@ -823,15 +819,17 @@ export const TherapistView: React.FC = () => {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 w-[min(38rem,calc(100%-2rem))]"
             >
               <div className="px-4 py-2 rounded-panel shadow-lg border border-line bg-surface-raised text-content">
-                {/* Line 1 — where. Quiet, small, truncates from the left so
-                    the nearest ancestor is the part that survives. */}
-                <div className="flex items-center gap-1.5 text-[11px] leading-tight text-content-muted">
-                  <CornerDownRight className="w-3 h-3 shrink-0" aria-hidden="true" />
+                {/* Line 1 — where. One short fragment: the direct parent,
+                    nothing more. Quiet, small, truncating normally with the
+                    full name on the title attribute for hover. */}
+                <div className="flex items-baseline gap-1.5 text-[11px] leading-tight text-content-muted">
+                  <CornerDownRight
+                    className="w-3 h-3 shrink-0 self-center"
+                    aria-hidden="true"
+                  />
                   <span className="shrink-0 font-semibold">{draftVerb}</span>
-                  <span className="min-w-0 truncate [direction:rtl] text-end" title={draftPath.join(' › ')}>
-                    <span dir="ltr">
-                      {draftPath.length > 0 ? draftPath.join('  ›  ') : 'Tópico raiz'}
-                    </span>
+                  <span className="min-w-0 truncate" title={draftParentLabel}>
+                    {draftParentLabel}
                   </span>
                 </div>
                 {/* Line 2 — what. The only accented, bold, live element here,
