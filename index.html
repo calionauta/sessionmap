@@ -3,17 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Narratips - Mapa Mental Terapêutico</title>
+    <title>sessionmap — mapa mental terapêutico</title>
     <meta name="description" content="Aplicativo offline e privado para anotação em tempo real com mapa mental em balões e janela compartilhada para o cliente." />
-    <meta property="og:title" content="Narratips - Mapa Mental Terapêutico" />
+    <meta property="og:title" content="sessionmap — mapa mental terapêutico" />
     <meta property="og:description" content="Aplicativo offline e privado para anotação em tempo real com mapa mental em balões e janela compartilhada para o cliente." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Blocking pre-paint theme application.
+         The .dark class was previously applied from a useEffect, which runs
+         after first paint: a Noite user saw a full light-palette flash on every
+         load. On a screen shared with a patient that white flash is visible to
+         someone in a vulnerable state. This script reads the persisted setting
+         synchronously and sets the class before any paint. It is deliberately
+         inline and render-blocking — a deferred module would flash too. It must
+         stay in sync with SETTINGS_KEY in src/services/storage.ts. -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('sessionmap_settings');
+          if (raw && JSON.parse(raw).theme === 'noite') {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          /* first run, storage disabled, or corrupt value: keep the light default */
+        }
+      })();
+    </script>
   </head>
-  <body class="bg-[#FBFBF9] text-slate-800 antialiased selection:bg-amber-100 selection:text-amber-900">
+  <!-- Body surface/colour come from src/index.css (@layer base) so the
+       theme tokens apply without depending on this file being scanned. -->
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

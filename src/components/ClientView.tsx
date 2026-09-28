@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MindMap, SyncMessage } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { syncService } from '../services/sync';
@@ -6,6 +6,48 @@ import { getCachedActiveMap, getSettings } from '../services/storage';
 import { Maximize, Minimize } from 'lucide-react';
 import { findPathToNode, findNodeById } from '../utils/tree';
 
+const CURSOR_IDLE_MS = 2500;
+const BAR_IDLE_MS = 4000;
+
+/**
+ * Client window.
+ *
+ * This is the surface a client actually looks at — often while in distress,
+ * often projected or on a video call. Two rules therefore hold everywhere
+ * below:
+ *
+ *  1. Contrast. No raw palette colours and no opacity tricks. Every text pair
+ *     is a semantic token measured at >= 4.5:1 and every non-text indicator at
+ *     >= 3:1, in BOTH themes:
+ *       text-content          #1e293b / #e2e8f0  13.5:1 · 15.6:1 on surface
+ *       text-content-muted    #475569 / #94a3b8   7.0:1 ·  7.5:1 on surface
+ *       text-accent-text      #b45309 / #fbbf24   5.0:1 · 11.1:1 on raised
+ *       border-line           #64748b / #64748b   4.8:1 ·  4.0:1 on surface
+ *     The old values (text-slate-400, text-stone-400, dark:text-slate-500,
+ *     text-amber-600, text-amber-500, border-stone-300, the fullscreen
+ *     button at opacity-30) sat at 1.38:1–4.24:1.
+ *
+ *  2. Never take the pointer away. The cursor auto-hide is opt-out by
+ *     construction: it only runs where there is a real fine pointer AND the
+ *     user has not asked for reduced motion. On a touchscreen, with a stylus,
+ *     on a remote desktop, or with reduced motion set, the cursor is left
+ *     alone entirely — a tremor or low vision must not be able to lose the
+ *     pointer.
+ *
+ *  3. Fit the device it is projected from. This window is opened on a
+ *     phone, a tablet, a projector and a laptop, so nothing here is sized in
+ *     viewport pixels: the shell is `fixed inset-x-0 top-0 h-dvh`, the thin
+ *     bar is an edge-anchored band with a 1rem gutter and a centred
+ *     max-width, and the two message screens use a capped measure so text
+ *     wraps instead of clipping. The only breakpoint used is Tailwind's `sm`
+ *     on the thin bar, to stack the label above the draft. No `@media` block
+ *     is hand-written and `index.css` is not touched.
+ *
+ * The two `isDark ? … : …` ternaries that used to paint this window are
+ * gone: the `.dark` class on <html> re-points the tokens, so the theme has
+ * exactly one source of truth. document.title stays the neutral "Mapa"
+ * (RF-40 / RF-42) — no client name ever reaches this window's chrome.
+ */
 export const ClientView: React.FC = () => {
   const [map, setMap] = useState<MindMap | null>(() => getCachedActiveMap());
   const [draft, setDraft] = useState<{
@@ -30,6 +72,7 @@ export const ClientView: React.FC = () => {
   // Auto-hide mouse cursor after 2.5s idle
   const [cursorHidden, setCursorHidden] = useState<boolean>(false);
   const cursorTimerRef = useRef<number | null>(null);
+  const cursorAutoHideRef = useRef<boolean>(false);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -69,7 +112,7 @@ export const ClientView: React.FC = () => {
           if (!thinBarAlwaysVisible) {
             barTimerRef.current = window.setTimeout(() => {
               setBarVisible(false);
-            }, 4000);
+            }, BAR_IDLE_MS);
           }
         } else {
           if (!thinBarAlwaysVisible) {
@@ -92,14 +135,57 @@ export const ClientView: React.FC = () => {
     };
   }, [thinBarAlwaysVisible]);
 
-  // Cursor auto-hide logic
-  const handleMouseMove = () => {
+  // The cursor may only be hidden where hiding it is safe: a real fine
+  // pointer, and no reduced-motion preference. Both are live queries — a
+  // user can plug in a mouse or turn the OS setting on mid-session.
+  const [cursorAutoHide, setCursorAutoHide] = useState<boolean>(false);
+  useEffect(() => {
+    const fine = window.matchMedia('(pointer: fine)');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setCursorAutoHide(fine.matches && !reduceMotion.matches);
+    sync();
+    fine.addEventListener('change', sync);
+    reduceMotion.addEventListener('change', sync);
+    return () => {
+      fine.removeEventListener('change', sync);
+      reduceMotion.removeEventListener('change', sync);
+    };
+  }, []);
+
+  // When auto-hide is not allowed, the pointer is never taken away.
+  useEffect(() => {
+    cursorAutoHideRef.current = cursorAutoHide;
+    if (cursorAutoHide) return;
+    setCursorHidden(false);
+    if (cursorTimerRef.current) {
+      clearTimeout(cursorTimerRef.current);
+      cursorTimerRef.current = null;
+    }
+  }, [cursorAutoHide]);
+
+  const revealCursor = useCallback(() => {
     setCursorHidden(false);
     if (cursorTimerRef.current) clearTimeout(cursorTimerRef.current);
+    if (!cursorAutoHideRef.current) return;
     cursorTimerRef.current = window.setTimeout(() => {
       setCursorHidden(true);
-    }, 2500);
-  };
+    }, CURSOR_IDLE_MS);
+  }, []);
+
+  // Any interaction at all brings the pointer back — movement is not the
+  // only way someone discovers it is gone.
+  useEffect(() => {
+    if (!cursorAutoHide) return;
+    const wake = () => revealCursor();
+    window.addEventListener('keydown', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('wheel', wake, { passive: true });
+    return () => {
+      window.removeEventListener('keydown', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('wheel', wake);
+    };
+  }, [cursorAutoHide, revealCursor]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -110,8 +196,6 @@ export const ClientView: React.FC = () => {
       setIsFullscreen(false);
     }
   };
-
-  const isDark = theme === 'noite';
 
   // Find highlighted path for 3s focus
   const highlightedPath = map && selectedNodeId ? findPathToNode(map.root, selectedNodeId) : null;
@@ -131,30 +215,47 @@ export const ClientView: React.FC = () => {
     }
   }
 
+  const showThinBar = (barVisible || thinBarAlwaysVisible) && !!draft?.active;
+
   return (
+    /* `fixed inset-x-0 top-0 h-dvh`, not `w-screen h-screen`:
+       - `w-screen` is 100vw, which counts the classic vertical scrollbar
+         and is the one thing that can put a horizontal scrollbar on a
+         window that is supposed to be a picture, not a document.
+       - `h-screen` is 100vh, which on a phone is the viewport *with the
+         browser chrome hidden*, so the bottom of the map sits under the
+         URL bar. `h-dvh` tracks the visible viewport.
+       Both are viewport-unit fixes, not breakpoints — no media query. */
     <div
-      onMouseMove={handleMouseMove}
-      className={`relative w-screen h-screen overflow-hidden select-none transition-colors duration-300 ${
+      onMouseMove={revealCursor}
+      className={`no-select fixed inset-x-0 top-0 h-dvh overflow-hidden transition-colors duration-300 ${
         cursorHidden ? 'cursor-none' : 'cursor-default'
-      } ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-[#F7F6F2] text-stone-900'}`}
+      } bg-surface text-content`}
     >
       {/* Calm Pause Screen (RF-43) */}
       {isPaused ? (
         <div
-          className={`absolute inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-300 ${
-            isDark ? 'bg-slate-950 text-slate-300' : 'bg-[#F7F6F2] text-stone-700'
-          }`}
+          role="status"
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-surface px-6 text-center text-content"
         >
-          <div className="relative mb-6">
-            <div className="w-16 h-16 rounded-full border-2 border-stone-300 dark:border-slate-700 animate-ping opacity-25" />
-            <div className="absolute inset-0 w-16 h-16 rounded-full bg-stone-200 dark:bg-slate-800 flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-stone-400 dark:bg-slate-600 animate-pulse" />
+          <div className="relative mb-6 shrink-0" aria-hidden="true">
+            {/* border-line at full opacity: 4.4:1 (papel) / 4.0:1 (noite).
+                The pulse already carries the motion; dimming the ring with
+                opacity dropped it to 1.38:1. */}
+            <div className="w-16 h-16 rounded-full border-2 border-line animate-ping" />
+            <div className="absolute inset-0 w-16 h-16 rounded-full bg-surface-inset flex items-center justify-center">
+              <div className="w-4 h-4 rounded-full bg-content-subtle animate-pulse" />
             </div>
           </div>
-          <h2 className="text-xl font-light tracking-wide mb-1">Um momento</h2>
-          <p className="text-xs text-stone-400 dark:text-slate-500">
-            A visualização continuará em instantes…
-          </p>
+          {/* Capped measure + balanced wrapping: at 375px, and at 200%
+              zoom on a 768px screen, the sentence reflows onto two lines
+              instead of being clipped by the window edge. */}
+          <div className="w-full max-w-xs">
+            <h1 className="text-balance text-xl font-light tracking-wide">Um momento</h1>
+            <p className="mt-1 text-pretty text-xs text-content-muted">
+              A visualização continuará em instantes…
+            </p>
+          </div>
         </div>
       ) : map ? (
         <>
@@ -172,51 +273,86 @@ export const ClientView: React.FC = () => {
             sessionDate={map.sessionDate || map.title}
           />
 
-          {/* Floating Bottom Thin Bar (RF-20, RF-21, RF-23) */}
+          {/* Floating Bottom Thin Bar (RF-20, RF-21, RF-23)
+              Was `fixed bottom-6 left-1/2 -translate-x-1/2 max-w-xl` with a
+              `shrink-0` label: at 375px the bar could be wider than the
+              window (max-w-xl is 36rem) and the label could never shrink, so
+              the two spans overlapped. It is now an edge-anchored band with a
+              1rem gutter and a centred max-width, so its width is
+              min(100% - 2rem, 36rem) at every viewport — fluid, not a
+              breakpoint. Below `sm` (640px) the label and the draft stack
+              instead of competing for one 16px-tall line. */}
+          {/* Deliberately NOT aria-hidden when hidden. Toggling aria-hidden on
+              a live region makes its announcement behaviour undefined: content
+              that changes while the region is hidden is not announced, and the
+              un-hide races the announcement. The region stays in the tree and
+              the visual hiding is done with opacity/transform, which a screen
+              reader correctly ignores. */}
           <div
-            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 pointer-events-none ${
-              (barVisible || thinBarAlwaysVisible) && draft && draft.active
-                ? 'opacity-100 translate-y-0'
-                : 'opacity-0 translate-y-4'
+            role="status"
+            aria-live="polite"
+            className={`pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] transition-all duration-300 ${
+              showThinBar ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
             }`}
           >
-            <div
-              className={`px-5 py-2.5 rounded-2xl shadow-xl border backdrop-blur-md max-w-xl flex items-center gap-2 ${
-                isDark
-                  ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-slate-950/60'
-                  : 'bg-white border-stone-300 text-stone-900 shadow-stone-400/30'
-              }`}
-            >
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="mx-auto flex max-w-xl flex-col gap-0.5 rounded-panel border border-line bg-surface-raised px-4 py-2.5 text-content shadow-xl backdrop-blur-md sm:flex-row sm:items-center sm:gap-2">
+              <span className="min-w-0 shrink truncate text-xs font-bold text-accent-text">
                 {thinBarLabel}
               </span>
-              <span className="text-sm font-semibold tracking-tight truncate">
-                {liveTextMode === 'confirm_only'
-                  ? 'digitando…'
-                  : (draft?.text || '…')}
-              </span>
-              {liveTextMode === 'live' && (
-                <span className="animate-ping font-mono text-amber-500 text-xs shrink-0">
-                  ▌
+              {/* The draft wraps to at most two lines when narrow and is
+                  clamped back to one line from `sm` up. `line-clamp-*` rather
+                  than `sm:truncate` so both states share the same display
+                  (-webkit-box) and the ellipsis actually renders. `min-w-0`
+                  is what lets the clamp engage inside a flex row. */}
+              <div className="flex w-full min-w-0 items-baseline gap-1 sm:w-auto sm:flex-1">
+                <span className="min-w-0 line-clamp-2 text-sm font-semibold tracking-tight sm:line-clamp-1">
+                  {liveTextMode === 'confirm_only'
+                    ? 'digitando…'
+                    : (draft?.text || '…')}
                 </span>
-              )}
+                {liveTextMode === 'live' && (
+                  <span
+                    aria-hidden="true"
+                    className="shrink-0 animate-ping font-mono text-accent-text text-xs"
+                  >
+                    ▌
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm">
-          <span>Aguardando conexão com a sessão do terapeuta…</span>
+        <div
+          role="status"
+          className="flex h-full flex-col items-center justify-center px-8 text-center text-sm text-content-muted"
+        >
+          <h1 className="text-balance max-w-xs text-base font-medium tracking-tight">
+            Aguardando conexão com a sessão do terapeuta…
+          </h1>
         </div>
       )}
 
-      {/* Quiet Fullscreen Toggle in Top-Right Corner */}
+      {/* Fullscreen Toggle in Top-Right Corner.
+          The only control on this window, so it has to be readable without
+          hover: text-content-muted is 7.0:1 / 7.5:1 (was 1.43:1 at
+          opacity-30), and it carries an accessible name of its own.
+          Hit area is the full 44x44 (`min-w-touch min-h-touch`); the inset
+          adds `env(safe-area-inset-*)` so it clears a notch in landscape on
+          a phone instead of hiding under it. */}
       <button
         type="button"
         onClick={toggleFullscreen}
+        onPointerEnter={revealCursor}
         title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-        className="absolute top-3 right-3 p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-black/5 dark:hover:bg-white/5 opacity-30 hover:opacity-100 transition-opacity"
+        aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+        className="absolute right-[calc(0.75rem+env(safe-area-inset-right))] top-[calc(0.75rem+env(safe-area-inset-top))] grid min-h-touch min-w-touch place-items-center rounded-control text-content-muted transition-colors hover:bg-surface-inset hover:text-content"
       >
-        {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+        {isFullscreen ? (
+          <Minimize className="w-4 h-4" aria-hidden="true" />
+        ) : (
+          <Maximize className="w-4 h-4" aria-hidden="true" />
+        )}
       </button>
     </div>
   );

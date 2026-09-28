@@ -14,10 +14,10 @@ import {
   Minimize2,
   Users,
   Target,
-  Sparkles,
   CheckCircle2,
   Undo2,
   Redo2,
+  Layers,
 } from 'lucide-react';
 import { Client, MindMap, MindMapNode, Settings } from '../types';
 import { OutlineEditor } from './outline/OutlineEditor';
@@ -40,7 +40,12 @@ import {
   requestPersistence,
 } from '../services/storage';
 import { syncService } from '../services/sync';
-import { findPathToNode, findNodeById, generateNodeId } from '../utils/tree';
+import {
+  findPathToNode,
+  findNodeById,
+  generateNodeId,
+  toggleNodeCollapse,
+} from '../utils/tree';
 
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -124,11 +129,12 @@ export const TherapistView: React.FC = () => {
     };
   }, [refreshAllData]);
 
-  // Update document title for Window A: "PRIVADO · Narratips"
+  // Window A title. The client name IS shown here — see the ShareGuide
+  // caveat below about screen-sharing the browser chrome.
   useEffect(() => {
     const title = activeMap
       ? `PRIVADO · ${activeMap.clientName || 'Cliente'} (${activeMap.sessionDate || activeMap.title})`
-      : 'PRIVADO · Narratips';
+      : 'PRIVADO · sessionmap';
     document.title = title;
   }, [activeMap]);
 
@@ -246,9 +252,26 @@ export const TherapistView: React.FC = () => {
     }
   };
 
-  // Global Keyboard Shortcuts
+  // Read inside the global keydown listener below, which must not be re-bound
+  // on every state change just to see which overlays are up.
+  const isOverlayOpenRef = React.useRef(false);
+  isOverlayOpenRef.current =
+    isAdminOpen ||
+    isShareGuideOpen ||
+    isExportOpen ||
+    isSettingsOpen ||
+    isMapListOpen;
+
+  // Global Keyboard Shortcuts.
+  //
+  // Every one of these is suppressed while an overlay is open. The overlay
+  // owns the keyboard at that point: Ctrl+E otherwise re-rendered the export
+  // dialog underneath whatever was on top, and Ctrl+. / Ctrl+Z acted on the
+  // map behind a modal. Each overlay closes on its own Escape.
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (isOverlayOpenRef.current) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key === '.') {
         e.preventDefault();
         togglePause();
@@ -387,101 +410,123 @@ export const TherapistView: React.FC = () => {
 
   return (
     <div
-      className={`flex flex-col w-screen h-screen overflow-hidden ${
-        isDark ? 'bg-slate-950 text-slate-100' : 'bg-[#F7F6F2] text-stone-900'
-      }`}
+      className="flex flex-col w-screen h-screen overflow-hidden bg-surface text-content"
     >
       {/* 1. TOP BAR */}
-      <header
-        className={`h-14 px-5 flex items-center justify-between border-b z-20 shrink-0 ${
-          isDark
-            ? 'bg-[#0B0F19] border-slate-800 text-slate-100'
-            : 'bg-white border-slate-200 text-slate-900 shadow-2xs'
-        }`}
-      >
+      <header className="h-14 px-5 flex items-center justify-between border-b border-line bg-surface-raised z-20 shrink-0">
         {/* Zone 1: Context (Brand, Privacy, Client & Session) */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1.5">
-            <span className="text-base font-black tracking-tight text-slate-950 dark:text-white">
+            <span className="text-base font-black tracking-tight text-content">
               Narratips
             </span>
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            {/* Decorative brand ornament next to the wordmark — no state, so
+                it is exempt from SC 1.4.11 and hidden from AT. */}
+            <div className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden="true" />
           </div>
 
-          <div className="h-4 w-px bg-slate-300 dark:bg-slate-800 mx-0.5" />
+          <div className="h-4 w-px bg-line mx-0.5" aria-hidden="true" />
 
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold tracking-wider text-slate-700 dark:text-slate-300 uppercase">
-            <Lock className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-inset border border-line text-[10px] font-bold tracking-wider text-content-muted uppercase">
+            <Lock className="w-3 h-3" aria-hidden="true" />
             <span>PRIVADO</span>
           </div>
 
-          <div className="h-4 w-px bg-slate-300 dark:bg-slate-800 mx-0.5" />
+          <div className="h-4 w-px bg-line mx-0.5" aria-hidden="true" />
 
           {/* Client & Session Switcher Button */}
           <button
             type="button"
             onClick={() => setIsAdminOpen(true)}
-            className="h-9 px-3 flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-2xs transition-colors cursor-pointer"
+            className="ctl !min-h-0 h-9 px-3 !gap-2 text-xs font-semibold"
             title="Gerenciar Clientes e Sessões"
+            aria-label="Gerenciar clientes e sessões"
           >
-            <Users className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span className="font-bold text-slate-950 dark:text-white">
-              {activeMap?.clientName || 'Cliente'}
-            </span>
-            <span className="text-slate-400 dark:text-slate-600">·</span>
-            <span className="font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300">
+            <Users className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
+            <span className="font-bold text-content">{activeMap?.clientName || 'Cliente'}</span>
+            <span aria-hidden="true" className="text-content-subtle">·</span>
+            <span className="font-mono text-[11px] font-medium text-content-muted">
               {activeMap?.sessionDate || activeMap?.title || 'Sessão'}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5 shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-content-muted ml-0.5 shrink-0" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Zone 2: Stream & Broadcast Status */}
+        {/* Zone 2: Stream & Broadcast Status.
+            The three pills are identical apart from their state colour and
+            their words: the label carries the state for anyone who cannot
+            separate amber from red, and the dot is ringed in forced-colors. */}
         <div className="hidden lg:flex items-center gap-2.5">
           {/* Status Badge */}
           {isPaused ? (
-            <div className="h-9 px-3 flex items-center gap-2 rounded-lg bg-rose-50 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800 text-xs font-bold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-rose-600" />
+            <div
+              role="status"
+              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-bold text-content animate-pulse"
+            >
+              <span data-state-dot="" className="w-2 h-2 rounded-full bg-negative" />
               <span>Cliente em Pausa</span>
             </div>
           ) : isClientConnected ? (
-            <div className="h-9 px-3 flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <div
+              role="status"
+              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-bold text-content"
+            >
+              <span data-state-dot="" className="w-2 h-2 rounded-full bg-positive animate-pulse" />
               <span>Cliente Conectado</span>
             </div>
           ) : (
-            <div className="h-9 px-3 flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
+            /* The label stays --text in all three states (12.4:1 / 15.6:1) and
+               the state colour lives in the dot. --caution as 12px text was
+               4.40:1 on --surface-inset, a hair under AA, and the words
+               already say what the colour was saying. */
+            <div
+              role="status"
+              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content"
+            >
+              <span data-state-dot="" className="w-2 h-2 rounded-full bg-caution" />
               <span>Cliente Desconectado</span>
               <button
                 type="button"
                 onClick={openClientWindow}
-                className="underline hover:text-amber-950 dark:hover:text-white font-bold ml-1 cursor-pointer"
+                className="underline hover:text-content font-bold ml-1 cursor-pointer"
               >
                 [Abrir]
               </button>
             </div>
           )}
 
-          {/* Quick Pause / Resume Button */}
+          {/* Quick Pause / Resume Button. Resuming is the primary action, so
+              the pressed state gets the accent fill rather than a second
+              bespoke red one. */}
           <button
             type="button"
             onClick={togglePause}
             title="Pausar ou retomar a tela do cliente (Ctrl+.)"
-            className={`h-9 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-              isPaused
-                ? 'bg-rose-600 text-white border-rose-700 shadow-sm'
-                : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+            className={`ctl !min-h-0 h-9 px-3 text-xs font-bold ${
+              isPaused ? 'ctl-primary' : ''
             }`}
           >
-            {isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
+            {isPaused ? <Play className="w-3.5 h-3.5 fill-current" aria-hidden="true" /> : <Pause className="w-3.5 h-3.5" aria-hidden="true" />}
             <span>{isPaused ? 'Retomar Tela' : 'Pausar (Ctrl+.)'}</span>
           </button>
         </div>
 
         {/* Zone 3: Actions & Tools */}
         <div className="flex items-center gap-2">
-          {/* Focus Zoom Mode Toggle */}
+          {/* Opens MapListDrawer: the session library, and the only
+              surface with per-map rename / duplicate / delete + undo. */}
+          <button
+            type="button"
+            onClick={() => setIsMapListOpen(true)}
+            title="Mapas e sessões salvos"
+            aria-label="Abrir mapas e sessões salvos"
+            className="ctl w-9 h-9 !min-h-0 px-0"
+          >
+            <Layers className="w-4 h-4" aria-hidden="true" />
+          </button>
+
+          {/* Focus Zoom Mode Toggle. aria-pressed carries the state, so the
+              amber fill is a redundant cue rather than the only one. */}
           <button
             type="button"
             onClick={() =>
@@ -490,18 +535,17 @@ export const TherapistView: React.FC = () => {
                 focusZoomMode: !settings.focusZoomMode,
               })
             }
+            aria-pressed={settings.focusZoomMode}
             title={
               settings.focusZoomMode
                 ? 'Foco com Zoom ATIVADO (clique para alternar)'
                 : 'Foco com Zoom DESATIVADO (clique para ativar)'
             }
-            className={`h-9 px-3 flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-              settings.focusZoomMode
-                ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-2xs ring-1 ring-amber-500/20'
-                : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+            className={`ctl !min-h-0 h-9 px-3 text-xs font-bold ${
+              settings.focusZoomMode ? 'ctl-primary' : ''
             }`}
           >
-            <Target className="w-3.5 h-3.5 text-slate-950 dark:text-amber-400" />
+            <Target className="w-3.5 h-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">Zoom no Foco</span>
           </button>
 
@@ -509,13 +553,13 @@ export const TherapistView: React.FC = () => {
           <button
             type="button"
             onClick={openClientWindow}
-            className="h-9 px-3.5 flex items-center gap-2 text-xs font-bold text-white bg-slate-950 hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 rounded-lg transition-colors shadow-xs cursor-pointer"
+            className="ctl ctl-primary !min-h-0 h-9 px-3.5 text-xs font-bold"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
+            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Janela do Cliente</span>
           </button>
 
-          <div className="h-5 w-px bg-slate-300 dark:bg-slate-800 mx-0.5" />
+          <div className="h-5 w-px bg-line mx-0.5" aria-hidden="true" />
 
           {/* Tools Group */}
           <div className="flex items-center gap-1.5">
@@ -523,27 +567,30 @@ export const TherapistView: React.FC = () => {
               type="button"
               onClick={() => setIsShareGuideOpen(true)}
               title="Guia de compartilhamento seguro para Zoom/Meet/Teams"
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Guia de compartilhamento seguro para Zoom, Meet e Teams"
+              className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              <Share2 className="w-4 h-4" />
+              <Share2 className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <button
               type="button"
               onClick={() => setIsExportOpen(true)}
               title="Exportar mapa (Ctrl+E)"
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Exportar mapa"
+              className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
               title="Configurações"
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Configurações"
+              className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              <Sliders className="w-4 h-4" />
+              <Sliders className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <button
@@ -555,20 +602,22 @@ export const TherapistView: React.FC = () => {
                 })
               }
               title={isDark ? 'Tema Papel (claro)' : 'Tema Noite (escuro)'}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
+              className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {isDark ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
             </button>
           </div>
         </div>
       </header>
 
       {/* 2. MAIN SPLIT VIEW */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 flex overflow-hidden relative">
         {/* Left Pane: Outline Editor */}
         {!isMaximizedMap && activeMap && (
-          <div
-            className="border-r border-stone-200 dark:border-stone-800 flex flex-col h-full bg-white dark:bg-stone-900/60"
+          <section
+            aria-label="Tópicos da sessão"
+            className="border-r border-line flex flex-col h-full"
             style={{ width: `${outlineWidthPercent}%` }}
           >
             <OutlineEditor
@@ -580,23 +629,24 @@ export const TherapistView: React.FC = () => {
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
             />
-          </div>
+          </section>
         )}
 
         {/* Right Pane: Mindmap Preview */}
-        <div className="flex-1 flex flex-col h-full relative overflow-hidden">
+        <section aria-label="Prévia do mapa" className="flex-1 flex flex-col h-full relative overflow-hidden">
           {/* Header Tag / Preview info */}
           <div className="absolute top-3 right-4 z-10 flex items-center gap-2 pointer-events-auto">
-            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-700 shadow-2xs">
+            <span className="text-[11px] font-bold text-content bg-surface-raised px-2.5 py-1 rounded-md border border-line shadow-2xs">
               Prévia do Mapa (Espelho da Janela B)
             </span>
             <button
               type="button"
               onClick={() => setIsMaximizedMap(!isMaximizedMap)}
               title={isMaximizedMap ? 'Restaurar divisão' : 'Maximizar prévia'}
-              className="p-1 text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white bg-white/95 dark:bg-slate-900/95 rounded-md border border-slate-300 dark:border-slate-700 transition-colors cursor-pointer"
+              aria-label={isMaximizedMap ? 'Restaurar divisão' : 'Maximizar prévia'}
+              className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              {isMaximizedMap ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              {isMaximizedMap ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
             </button>
           </div>
 
@@ -622,58 +672,60 @@ export const TherapistView: React.FC = () => {
                 handleSelectNode(nodeId, 'click');
               }}
               onToggleCollapse={(nodeId) => {
-                const newRoot = { ...activeMap.root };
-                handleUpdateRoot(newRoot, 'collapse');
+                handleUpdateRoot(
+                  toggleNodeCollapse(activeMap.root, nodeId),
+                  'collapse'
+                );
               }}
               svgRef={svgCanvasRef}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-slate-600 dark:text-slate-400 text-xs font-medium">
+            <div className="flex items-center justify-center h-full text-content-muted text-xs font-medium">
               Nenhuma sessão selecionada.
             </div>
           )}
 
-          {/* Mirror of Thin Bar at Bottom */}
+          {/* Mirror of Thin Bar at Bottom. Solid --surface-raised rather than
+              a /95 wash: the label and the live caret are both text, and a
+              composited background is not a pair that can be measured. */}
           {draft && draft.active && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300">
-              <div
-                className={`px-4 py-1.5 rounded-xl shadow-lg border backdrop-blur-md max-w-lg flex items-center gap-2 ${
-                  isDark
-                    ? 'bg-slate-900/95 border-slate-700 text-slate-100'
-                    : 'bg-white/95 border-slate-300 text-slate-950'
-                }`}
-              >
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 shrink-0">
+            <div
+              role="status"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300"
+            >
+              <div className="px-4 py-1.5 rounded-xl shadow-lg border border-line bg-surface-raised text-content max-w-lg flex items-center gap-2">
+                <span className="text-xs font-bold text-accent-text shrink-0">
                   {thinBarPreviewText}
                 </span>
                 {settings.liveTextMode === 'live' && (
-                  <span className="animate-ping font-mono text-amber-600 dark:text-amber-400 text-xs shrink-0">
+                  <span
+                    aria-hidden="true"
+                    className="animate-ping font-mono text-accent-text text-xs shrink-0"
+                  >
                     ▌
                   </span>
                 )}
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
 
       {/* 3. FOOTER */}
-      <footer
-        className={`flex items-center justify-between px-5 py-1.5 border-t text-[11px] shrink-0 font-medium ${
-          isDark
-            ? 'bg-[#0B0F19] border-slate-800 text-slate-300'
-            : 'bg-white border-slate-200 text-slate-700'
-        }`}
-      >
+      <footer className="flex items-center justify-between px-5 py-1.5 border-t border-line bg-surface-raised text-content-muted text-[11px] shrink-0 font-medium">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-bold text-slate-900 dark:text-white">
+            <CheckCircle2 className="w-3.5 h-3.5 text-positive" aria-hidden="true" />
+            <span
+              role="status"
+              aria-live="polite"
+              className="font-bold text-content"
+            >
               {saveStatus === 'salvando' ? 'Gravando…' : 'Salvo localmente'}
             </span>
           </span>
-          <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
-          <span className="font-medium text-slate-600 dark:text-slate-400">100% offline & seguro</span>
+          <span aria-hidden="true" className="text-content-subtle">·</span>
+          <span className="font-medium">100% offline & seguro</span>
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
@@ -681,26 +733,30 @@ export const TherapistView: React.FC = () => {
             type="button"
             onClick={handleUndo}
             title="Desfazer (Ctrl+Z)"
-            className="flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white cursor-pointer font-sans"
+            aria-label="Desfazer"
+            className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
           >
-            <Undo2 className="w-3 h-3" />
+            <Undo2 className="w-3 h-3" aria-hidden="true" />
             <span>Desfazer</span>
           </button>
           <button
             type="button"
             onClick={handleRedo}
             title="Refazer (Ctrl+Shift+Z)"
-            className="flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white cursor-pointer font-sans"
+            aria-label="Refazer"
+            className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
           >
-            <Redo2 className="w-3 h-3" />
+            <Redo2 className="w-3 h-3" aria-hidden="true" />
             <span>Refazer</span>
           </button>
-          <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
-          <span><strong className="text-slate-900 dark:text-slate-200 font-bold">Ctrl+.</strong> Pausa</span>
-          <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
-          <span><strong className="text-slate-900 dark:text-slate-200 font-bold">Ctrl+Enter</strong> Cria Filho</span>
-          <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
-          <span><strong className="text-slate-900 dark:text-slate-200 font-bold">Esc</strong> Limpa foco</span>
+          <span aria-hidden="true" className="text-content-subtle">·</span>
+          <span><strong className="text-content font-bold">Ctrl+.</strong> Pausa</span>
+          <span aria-hidden="true" className="text-content-subtle">·</span>
+          {/* The footer used to advertise Ctrl+Enter and Esc as if they were
+              global shortcuts. Both are owned by the outline editor and only
+              fire when focus is inside it, so the hint now says where they
+              apply instead of promising a shortcut the app does not deliver. */}
+          <span><strong className="text-content font-bold">Ctrl+Enter</strong> / <strong className="text-content font-bold">Esc</strong> no outline</span>
         </div>
       </footer>
 
@@ -767,14 +823,20 @@ export const TherapistView: React.FC = () => {
         theme={settings.theme}
       />
 
-      {/* 10-Second Undo Delete Toast */}
+      {/* 10-Second Undo Delete Toast. It follows the app theme rather than
+          being permanently dark, so the "Desfazer" affordance is a token
+          pair (5.0:1 / 11.1:1) instead of an unmeasured hard-coded amber. */}
       {deletedMapUndo && (
-        <div className="fixed bottom-10 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-stone-900 text-white shadow-2xl text-xs">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-10 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-raised border border-line text-content shadow-2xl text-xs"
+        >
           <span>Sessão "{deletedMapUndo.sessionDate || deletedMapUndo.title}" excluída.</span>
           <button
             type="button"
             onClick={handleRestoreDeletedMap}
-            className="font-bold text-amber-400 hover:text-amber-300 underline"
+            className="font-bold text-accent-text hover:underline"
           >
             Desfazer
           </button>

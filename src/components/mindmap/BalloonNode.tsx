@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutNode } from './useMindMapLayout';
+import { BRANCH_PALETTE, LayoutNode, themeColor } from './useMindMapLayout';
 
 interface BalloonNodeProps {
   layoutNode: LayoutNode;
@@ -12,6 +12,15 @@ interface BalloonNodeProps {
   theme: 'papel' | 'noite';
   fontScale?: number;
   liveTextMode?: 'live' | 'confirm_only';
+  /** Roving tabindex: exactly one node in the map is tabbable at a time. */
+  isFocusTarget?: boolean;
+  /** 1-based depth, exposed as aria-level. */
+  level?: number;
+  posInSet?: number;
+  setSize?: number;
+  nodeRef?: React.Ref<SVGGElement>;
+  onNodeFocus?: (nodeId: string) => void;
+  onNodeKeyDown?: (nodeId: string, e: React.KeyboardEvent) => void;
   onNodeClick?: (nodeId: string) => void;
   onToggleCollapse?: (nodeId: string) => void;
 }
@@ -27,11 +36,27 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
   theme,
   fontScale = 1.0,
   liveTextMode = 'live',
+  isFocusTarget = true,
+  level = 1,
+  posInSet = 1,
+  setSize = 1,
+  nodeRef,
+  onNodeFocus,
+  onNodeKeyDown,
   onNodeClick,
   onToggleCollapse,
 }) => {
   const { x, y, width, height, text, color, collapsed, hasChildren, childCount } = layoutNode;
   const isDark = theme === 'noite';
+
+  // Expand/collapse is only reachable when a handler was supplied, which the
+  // read-only client window deliberately does not do.
+  const collapsible = Boolean(onToggleCollapse) && hasChildren;
+
+  // A saved node colour is canonical in BRANCH_PALETTE; the night ramp is
+  // applied here at paint time so a map authored in one theme stays legible
+  // in the other. See themeColor() for why this is not a data migration.
+  const branchColor = color ? themeColor(color, theme) : null;
 
   // Compute text lines (max 2 lines)
   const displayText = isGhost
@@ -63,25 +88,34 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
   const lineHeight = fontSize * 1.35;
 
   // Background and border styling based on theme and role
+  // Fills are literal on purpose: the balloons sit on the SVG canvas, not on
+  // a DOM surface, and their text pair is the one that matters most in the
+  // app (the client reads them across a room).
+  //   texto do balão   #FFFFFF on #1E293B 16.88:1 · #151D2C 20.17:1 ·
+  //                    #020617 21.00:1 (noite)  ·  #090D16 on #FFFFFF 19.43:1 (papel)
+  //   contorno         var(--border) 4.85:1 / 4.04:1 on the canvas
   let fillColor = isDark ? '#1E293B' : '#FFFFFF';
-  let strokeColor = color || (isDark ? '#64748B' : '#334155');
+  let strokeColor = branchColor || 'var(--border)';
   let textColor = isDark ? '#FFFFFF' : '#090D16';
   let strokeWidth = 2.2;
 
   if (isRoot) {
+    // Root is the one inverted balloon: a dark pill in BOTH themes, so it
+    // reads as the anchor rather than as another branch. White on it is
+    // 18.37:1 (papel) / 21.00:1 (noite).
     fillColor = isDark ? '#020617' : '#0F172A';
-    strokeColor = isDark ? '#38BDF8' : '#0F172A';
+    strokeColor = 'var(--accent-text)';
     strokeWidth = 2.5;
     textColor = '#FFFFFF';
-  } else if (color) {
+  } else if (branchColor) {
     if (isDark) {
       fillColor = '#151D2C';
-      strokeColor = color;
+      strokeColor = branchColor;
       strokeWidth = 2.2;
       textColor = '#FFFFFF';
     } else {
       fillColor = '#FFFFFF';
-      strokeColor = color;
+      strokeColor = branchColor;
       strokeWidth = 2.2;
       textColor = '#090D16';
     }
@@ -89,18 +123,62 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
 
   if (isGhost) {
     fillColor = isDark ? '#1E293B' : '#FFFFFF';
-    strokeColor = color || '#2563EB';
+    strokeColor = branchColor || BRANCH_PALETTE[0];
     strokeWidth = 2;
   }
 
   const rx = isRoot ? 24 : 18;
 
+  // Selection / focus ring. Must clear SC 1.4.11 (3:1) against the canvas AND
+  // against the balloon fill it encircles — --accent-text measures 5.02:1 /
+  // 11.11:1 on the canvas and 5.02:1 on a white fill. Shape (solid vs dashed)
+  // carries the state too, so it survives Windows High Contrast and SC 1.4.1.
+  const ringColor = 'var(--accent-text)';
+  // The +N badge is small (11px bold), so it needs a fill the white text
+  // clears 4.5:1 on. Every BRANCH_PALETTE entry is dark and saturated, which
+  // is right for the connector strokes but not for white text: BRANCH_PALETTE[0]
+  // (#1D4ED8) only gives 6.30:1, and the old hard-coded #3B82F6 fallback gave
+  // 3.68:1 and failed. Inverting the badge to the canvas colour with the
+  // accent-text label makes it readable in both themes and independent of which
+  // branch colour the node happens to carry.
+  const badgeFill = 'var(--surface)';
+  const badgeStroke = 'var(--accent-text)';
+  const badgeLabel = 'var(--accent-text)';
+
   return (
     <g
+      ref={nodeRef}
       transform={`translate(${x}, ${y})`}
-      className={`transition-transform duration-300 ease-out select-none ${
+      className={`group transition-transform duration-300 ease-out select-none ${
         onNodeClick ? 'cursor-pointer' : ''
       }`}
+      data-node-id={layoutNode.id}
+      role={isGhost ? undefined : 'treeitem'}
+      tabIndex={isGhost ? undefined : isFocusTarget ? 0 : -1}
+      aria-level={isGhost ? undefined : level}
+      aria-posinset={isGhost || setSize < 2 ? undefined : posInSet}
+      aria-setsize={isGhost || setSize < 2 ? undefined : setSize}
+      // Only announce a collapsed state the user can actually act on. In the
+      // read-only client window there is no +N badge and ArrowRight is inert,
+      // so aria-expanded would be a promise the UI does not keep. The hidden
+      // child count is folded into the label instead, so the information is
+      // still available without implying an action that does not exist.
+      aria-expanded={
+        !isGhost && hasChildren && collapsible ? !collapsed : undefined
+      }
+      aria-selected={!isGhost ? isSelected : undefined}
+      aria-label={
+        isGhost
+          ? undefined
+          : collapsed && hasChildren
+            ? `${displayText} (recolhido, ${childCount} ${
+                childCount === 1 ? 'ponto oculto' : 'pontos ocultos'
+              })`
+            : displayText
+      }
+      aria-hidden={isGhost ? true : undefined}
+      onFocus={() => onNodeFocus?.(layoutNode.id)}
+      onKeyDown={(e) => onNodeKeyDown?.(layoutNode.id, e)}
       onClick={(e) => {
         if (onNodeClick && !isGhost) {
           e.stopPropagation();
@@ -108,36 +186,54 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         }
       }}
     >
-      {/* 3s Focus Selected Halo / Glow */}
-      {isSelected && (
-        <>
-          <rect
-            x={-width / 2 - 6}
-            y={-height / 2 - 6}
-            width={width + 12}
-            height={height + 12}
-            rx={rx + 4}
-            ry={rx + 4}
-            fill="none"
-            stroke="#F59E0B"
-            strokeWidth="3.5"
-            strokeOpacity="0.8"
-            className="animate-pulse"
-          />
-          <rect
-            x={-width / 2 - 11}
-            y={-height / 2 - 11}
-            width={width + 22}
-            height={height + 22}
-            rx={rx + 8}
-            ry={rx + 8}
-            fill="none"
-            stroke="#FBBF24"
-            strokeWidth="1.5"
-            strokeOpacity="0.4"
-          />
-        </>
+      {/* Touch floor. A one-line balloon is ~40px tall (20px of padding + one
+          19.6px line), so the drawn pill alone is under the 44x44 target. A
+          transparent rect gives an interactive node the full floor without
+          changing the balloon. Only added when the node is clickable: in the
+          read-only client window it would do nothing but steal taps from the
+          pan surface. Painted first, so every visible element stays on top. */}
+      {onNodeClick && !isGhost && (
+        <rect
+          x={-Math.max(width, 44) / 2}
+          y={-Math.max(height, 44) / 2}
+          width={Math.max(width, 44)}
+          height={Math.max(height, 44)}
+          fill="transparent"
+          pointerEvents="all"
+        />
       )}
+
+      {/* Selection halo — one solid ring, >= 3:1 on both themes. The old
+          second, 0.4-alpha #FBBF24 ring was 1.24:1 and decorative. */}
+      {isSelected && (
+        <rect
+          x={-width / 2 - 7}
+          y={-height / 2 - 7}
+          width={width + 14}
+          height={height + 14}
+          rx={rx + 5}
+          ry={rx + 5}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth="3.5"
+          className="animate-pulse"
+        />
+      )}
+
+      {/* Keyboard focus ring — dashed so it is never confused with selection */}
+      <rect
+        x={-width / 2 - 7}
+        y={-height / 2 - 7}
+        width={width + 14}
+        height={height + 14}
+        rx={rx + 5}
+        ry={rx + 5}
+        fill="none"
+        stroke={ringColor}
+        strokeWidth="3"
+        strokeDasharray="6 4"
+        className="opacity-0 group-focus:opacity-100 pointer-events-none"
+      />
 
       {/* Target Parent Highlight (receiving new child) */}
       {isTargetParent && !isSelected && (
@@ -149,14 +245,17 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
           rx={rx + 3}
           ry={rx + 3}
           fill="none"
-          stroke={color || '#2563EB'}
+          stroke="var(--accent-text)"
           strokeWidth="2.5"
           strokeDasharray="4 3"
           className="animate-pulse"
         />
       )}
 
-      {/* Editing active node highlight */}
+      {/* Editing active node highlight. The old #2563EB was 4.83:1 on a white
+          balloon but only 2.31:1 on the dark #1E293B fill, and it was the one
+          remaining literal blue in the file. Dashes now distinguish it from
+          the solid selection ring, so the two never rely on hue alone. */}
       {isEditing && !isSelected && (
         <rect
           x={-width / 2 - 4}
@@ -166,8 +265,9 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
           rx={rx + 2}
           ry={rx + 2}
           fill="none"
-          stroke="#3B82F6"
+          stroke="var(--accent-text)"
           strokeWidth="2.5"
+          strokeDasharray="2 3"
         />
       )}
 
@@ -190,6 +290,11 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
       {/* Target Parent Badge Pill Tag */}
       {isTargetParent && (
         <g transform={`translate(0, ${-height / 2 - 10})`}>
+          {/* "destino" tag. The branch colour was used as 9px text on a pale
+              wash, which is well under 4.5:1 for four of the eight palette
+              entries. --accent-text is 5.02:1 / 11.11:1 on --surface-raised and
+              the palette still shows as the dashed ring around the node, so the
+              branch identity is not lost. */}
           <rect
             x="-26"
             y="-8"
@@ -197,15 +302,15 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
             height="16"
             rx="8"
             ry="8"
-            fill={isDark ? '#1E293B' : '#EFF6FF'}
-            stroke={color || '#2563EB'}
+            fill="var(--surface-raised)"
+            stroke="var(--accent-text)"
             strokeWidth="1"
           />
           <text
             x="0"
             y="3"
             textAnchor="middle"
-            fill={color || '#2563EB'}
+            fill="var(--accent-text)"
             fontSize="9"
             fontWeight="700"
             className="tracking-wider uppercase"
@@ -215,13 +320,16 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         </g>
       )}
 
-      {/* Node Text */}
+      {/* Node Text. The treeitem above carries the accessible name (the
+          untruncated text); this one is the visual rendering only, so a
+          screen reader does not read the two-line split as a run. */}
       <text
         textAnchor="middle"
         dominantBaseline="central"
         fill={textColor}
         fontSize={fontSize}
         fontWeight={isRoot ? '800' : '600'}
+        aria-hidden="true"
         className="font-sans pointer-events-none tracking-tight"
       >
         {hasTwoLines ? (
@@ -232,7 +340,10 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
             <tspan x="0" y={lineHeight * 0.55}>
               {line2}
               {isGhost && liveTextMode === 'live' && (
-                <tspan fill="#3B82F6" className="animate-ping font-mono">
+                /* The live caret inherits the balloon's own text colour, which
+                   is 19.43:1 / 16.88:1 on the fill. The old literal #2563EB was
+                   4.83:1 on white and 2.31:1 on the dark ghost fill. */
+                <tspan className="animate-ping font-mono">
                   ▌
                 </tspan>
               )}
@@ -242,7 +353,7 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
           <tspan x="0" y="0">
             {line1}
             {isGhost && liveTextMode === 'live' && (
-              <tspan fill="#3B82F6" className="animate-ping font-mono">
+              <tspan className="animate-ping font-mono">
                 ▌
               </tspan>
             )}
@@ -250,27 +361,39 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         )}
       </text>
 
-      {/* Collapsed Children Badge (+N) */}
+      {/* Collapsed Children Badge (+N). Hidden from AT: the treeitem already
+          exposes aria-expanded and the same action is on Left/Right. */}
       {collapsed && hasChildren && onToggleCollapse && (
+        /* Origin is the centre of the 44x44 touch target, not the centre of
+           the 22px badge. The target therefore grows entirely OUTWARD from the
+           balloon edge; a disc centred on the badge would have eaten a 12px
+           sliver of the node's own hit area, and every tap on the right edge
+           of a collapsed node would collapse it instead of selecting it. */
         <g
-          transform={`translate(${width / 2 + 10}, 0)`}
+          transform={`translate(${width / 2 + 21}, 0)`}
+          aria-hidden="true"
           className="cursor-pointer hover:opacity-90"
           onClick={(e) => {
             e.stopPropagation();
             onToggleCollapse(layoutNode.id);
           }}
         >
+          {/* `pointer-events="all"` is required: a `fill="transparent"` shape
+              is only hit-testable when it is explicitly painted-for-events. */}
+          <rect x="-22" y="-22" width="44" height="44" fill="transparent" pointerEvents="all" />
           <circle
+            cx="-11"
             r="11"
-            fill={color || '#3B82F6'}
-            stroke={isDark ? '#0F172A' : '#FFFFFF'}
+            fill={badgeFill}
+            stroke={badgeStroke}
             strokeWidth="2"
           />
           <text
+            x="-11"
             textAnchor="middle"
             dominantBaseline="central"
-            fill="#FFFFFF"
-            fontSize="10"
+            fill={badgeLabel}
+            fontSize="11"
             fontWeight="700"
             className="font-mono pointer-events-none"
           >

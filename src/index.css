@@ -1,29 +1,255 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   THEME STRATEGY
+   The app owns its theme: it toggles `.dark` on <html> from settings.
+   Without this, Tailwind v4 compiles `dark:` to prefers-color-scheme,
+   putting the app setting and the dark utilities on two independent
+   switches (the 1.07:1 footer bug).
+   ------------------------------------------------------------------ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------
+   SEMANTIC TOKENS
+   One source of truth. Light values in :root, dark in .dark, mapped
+   into Tailwind via `@theme inline` so utilities resolve the var at
+   use time and follow the theme.
+   All pairs below were computed for WCAG AA:
+     text        >= 4.5:1 on its surface
+     text-muted  >= 4.5:1 on its surface
+     border*     >= 3:1  on its surface (SC 1.4.11 non-text)
+   ------------------------------------------------------------------ */
+:root {
+  /* canvas + panels */
+  --surface: #f7f6f2; /* app canvas          */
+  --surface-raised: #ffffff; /* cards, modals, fields */
+  --surface-sunken: #fbfbf9; /* body behind everything */
+  --surface-inset: #eef0f3; /* wells, tracks        */
+
+  /* text */
+  --text: #1e293b; /* slate-800, 12.4:1 on --surface */
+  --text-muted: #475569; /* slate-600,  7.0:1 on --surface */
+  --text-subtle: #5f6b7a; /* 5.0:1 on --surface, 5.4:1 on --surface-raised */
+  --text-on-accent: #0b0f17; /* near-black, 8.3:1 on --accent */
+
+  /* lines — 3:1 minimum, they carry state */
+  --border: #64748b; /* slate-500, 4.8:1 on raised */
+  --border-muted: #94a3b8; /* slate-400, decorative only */
+
+  /* accent — amber. Pairs with near-black, never white (white on
+     amber-500 is 2.15:1 and fails). */
+  --accent: #f59e0b; /* button fill            */
+  /* #a8480a, not #b45309: this token is also used as TEXT on
+     --surface-inset (the Segmented/Tabs track fill), where amber-700
+     measures 4.40:1 and fails AA. #a8480a is 5.11:1 there. */
+  --accent-text: #a8480a;
+  --accent-soft: #fef3c7; /* selected-row wash     */
+
+  /* status */
+  --positive: #047857; /* emerald-700 */
+  --caution: #b45309; /* amber-700   */
+  --negative: #b91c1c; /* red-700     */
+
+  color-scheme: light;
+}
+
+.dark {
+  --surface: #0b0f17;
+  --surface-raised: #0e131f;
+  --surface-sunken: #080b12;
+  --surface-inset: #131926;
+
+  --text: #e2e8f0; /* slate-200, 15.4:1 on --surface */
+  --text-muted: #94a3b8; /* slate-400,  7.5:1 on --surface */
+  --text-subtle: #7e8ea3; /* 5.7:1 on --surface, 5.5:1 on --surface-raised */
+  --text-on-accent: #0b0f17;
+
+  --border: #64748b; /* slate-500, 4.0:1 on --surface */
+  --border-muted: #475569;
+
+  --accent: #fbbf24; /* amber-400, 11.5:1 on --surface */
+  --accent-text: #fbbf24;
+  --accent-soft: #3b2f10;
+
+  --positive: #34d399; /* emerald-400 */
+  --caution: #fbbf24;
+  --negative: #f87171; /* red-400   */
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-inset: var(--surface-inset);
+
+  --color-content: var(--text);
+  --color-content-muted: var(--text-muted);
+  --color-content-subtle: var(--text-subtle);
+  --color-content-onaccent: var(--text-on-accent);
+
+  --color-line: var(--border);
+  --color-line-muted: var(--border-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-positive: var(--positive);
+  --color-caution: var(--caution);
+  --color-negative: var(--negative);
+
+  /* one radius scale, applied everywhere */
+  --radius-control: 0.5rem;
+  --radius-panel: 0.75rem;
+  --radius-dialog: 1rem;
+
+  /* 44px is the WCAG 2.5.5 / Apple touch-target floor */
+  --spacing-touch: 2.75rem;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
   }
 
-  body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    user-select: none;
-    -webkit-font-smoothing: antialiased;
+  html {
+    /* keeps the app theme in sync with the OS on first run */
+    color-scheme: light;
   }
 
-  /* Custom subtle scrollbars */
+  /* Base surface lives here rather than as utility classes on <body>
+     in index.html: the utility would be tree-shaken away because the
+     HTML file is outside the scan set, leaving the body unthemed. */
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont,
+      'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-color: var(--surface-sunken);
+    color: var(--text);
+  }
+
+  ::selection {
+    background-color: var(--accent-soft);
+    color: var(--text);
+  }
+
+  /* Text stays selectable. The old global `user-select: none` made the
+     export previews uncopyable by hand; interaction surfaces opt out
+     individually instead. */
+  .no-select {
+    user-select: none;
+  }
+
+  /* Visible focus for anything that has not opted into a stronger
+     indicator. 2px accent ring + offset reads at 4.8:1 and survives
+     Windows High Contrast via the outline fallback. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+  }
+
+  /* Scrollbars were 6px at 1.22:1 — below the draggable minimum and
+     effectively invisible. */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(100, 116, 139, 0.25);
+    background: color-mix(in srgb, var(--text-muted) 45%, transparent);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(100, 116, 139, 0.45);
+    background: color-mix(in srgb, var(--text-muted) 75%, transparent);
+  }
+}
+
+@layer components {
+  /* Canonical interactive surface. Extracted so buttons across the
+     app share one hover/active/disabled/focus behaviour instead of
+     each re-declaring a slightly different one. */
+  .ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--spacing-touch);
+    padding-inline: 1rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text);
+    font-weight: 500;
+    transition: background-color 120ms ease, border-color 120ms ease,
+      color 120ms ease;
+  }
+  .ctl:hover:not(:disabled) {
+    background: var(--surface-inset);
+  }
+  .ctl:active:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 12%, var(--surface-raised));
+  }
+  .ctl:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .ctl-primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: var(--text-on-accent);
+    font-weight: 600;
+  }
+  .ctl-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  }
+
+  .ctl-danger {
+    border-color: var(--negative);
+    color: var(--negative);
+  }
+  .ctl-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--negative) 12%, var(--surface-raised));
+  }
+}
+
+/* ------------------------------------------------------------------
+   SC 2.3.3 / 2.2.2 — reduced motion
+   The app runs 11 infinite animate-ping/animate-pulse instances and
+   86 transitions. A therapy session is long, so that content moves
+   for far longer than 5s. Kill it wholesale, then re-enable only the
+   transitions that convey state rather than motion.
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   SC 1.4.11 / 1.1.1 — forced colors (Windows High Contrast)
+   Borders and state dots are the first things the system palette
+   eats. Give them a system colour so structure survives.
+   ------------------------------------------------------------------ */
+@media (forced-colors: active) {
+  :where(.ctl, [role='dialog'], [role='tablist'], input, select, textarea) {
+    border-color: CanvasText;
+  }
+  :where(button, [role='tab'], [role='radio'], [role='switch']):focus-visible {
+    outline: 2px solid Highlight;
+  }
+  /* State dots must not vanish: draw the ring in a system colour. */
+  [data-state-dot] {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
   }
 }

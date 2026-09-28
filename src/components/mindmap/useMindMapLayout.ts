@@ -40,7 +40,21 @@ export interface GhostLayoutNode {
   parentId: string;
 }
 
-// High-contrast, accessible editorial palette for therapeutic sessions (WCAG AA compliant)
+/**
+ * Editorial palette for therapeutic sessions.
+ *
+ * Every entry clears SC 1.4.11 (3:1) as a 2.2px connector stroke on the PAPEL
+ * canvas (#F7F6F2), measured 4.79:1 - 9.58:1.
+ *
+ * Only five clear it on the NOITE canvas (#0B0F17): the deepest entries
+ * (#1D4ED8 2.86:1, #6D28D9 2.70:1, #334155 1.85:1) vanish into the dark
+ * background. The night ramp below is the same eight hues lifted until each
+ * measures >= 3:1 on #0B0F17 (3.18:1 - 6.90:1), so a branch keeps its
+ * identity in both themes rather than only in the light one.
+ *
+ * The two lists are index-aligned on purpose, so a node's index in one always
+ * means the same branch as its index in the other.
+ */
 export const BRANCH_PALETTE = [
   '#1D4ED8', // Deep Cobalt
   '#047857', // Deep Emerald
@@ -51,6 +65,40 @@ export const BRANCH_PALETTE = [
   '#C2410C', // Deep Terracotta
   '#334155', // Slate Steel
 ];
+
+/** Index-aligned to BRANCH_PALETTE. Same hues, lifted for the dark canvas. */
+export const BRANCH_PALETTE_NIGHT = [
+  '#5B8DEF', // Cobalt, lifted
+  '#10B981', // Emerald, lifted
+  '#F59E0B', // Amber, lifted
+  '#A78BFA', // Violet, lifted
+  '#F472B6', // Rose, lifted
+  '#2DD4BF', // Teal, lifted
+  '#FB923C', // Terracotta, lifted
+  '#94A3B8', // Steel, lifted
+];
+
+/** The palette for the theme currently in use. */
+export function branchPalette(theme: 'papel' | 'noite'): string[] {
+  return theme === 'noite' ? BRANCH_PALETTE_NIGHT : BRANCH_PALETTE;
+}
+
+/**
+ * A node's colour is persisted on the node, so a map saved in the papel theme
+ * still carries deep light-theme hexes after the user switches to noite. This
+ * maps them through the two index-aligned ramps at paint time, which keeps an
+ * already-saved map legible in the dark theme with no data migration: the
+ * stored value stays canonical (a BRANCH_PALETTE entry) and only the paint
+ * changes. A colour outside the palette passes through untouched.
+ *
+ * Called from the render path, not the layout hook, so the layout stays
+ * theme-independent and does not recompute on every theme switch.
+ */
+export function themeColor(color: string, theme: 'papel' | 'noite'): string {
+  if (theme === 'papel') return color;
+  const i = BRANCH_PALETTE.findIndex((c) => c.toUpperCase() === color.toUpperCase());
+  return i === -1 ? color : BRANCH_PALETTE_NIGHT[i];
+}
 
 function approximateTextDimensions(text: string, isRoot: boolean = false, fontScale: number = 1.0) {
   const safeText = text || 'Novo ponto';

@@ -1,18 +1,18 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import {
-  X,
-  Download,
-  Copy,
-  Check,
-  FileText,
-  Image,
-  Code,
-  Upload,
   Archive,
+  Check,
+  Code,
+  Copy,
+  Download,
+  FileText,
   FolderArchive,
-  Layers,
-  Sparkles,
+  Image,
+  Upload,
 } from 'lucide-react';
+import { Modal } from '../ui/Modal';
+import { Tabs, TabPanel, type TabItem } from '../ui/Tabs';
+import { SettingRow } from '../ui/Controls';
 import { Client, MindMap, MindMapNode } from '../../types';
 import {
   exportToMarkdown,
@@ -43,6 +43,82 @@ interface ExportModalProps {
   onUpdateCurrentMapRoot?: (newRoot: MindMapNode) => void;
 }
 
+type TabId = 'arquivo' | 'importar' | 'opml' | 'freemind' | 'json';
+type ImportTarget = 'current_session' | 'new_session' | 'append_current';
+
+const TAB_ITEMS: TabItem<TabId>[] = [
+  { value: 'arquivo', label: 'Arquivo' },
+  { value: 'importar', label: 'Importar' },
+  { value: 'opml', label: 'OPML' },
+  { value: 'freemind', label: 'FreeMind' },
+  { value: 'json', label: 'JSON' },
+];
+
+const IMPORT_TARGETS: {
+  value: ImportTarget;
+  label: string;
+  describe: (map: MindMap) => string;
+}[] = [
+  {
+    value: 'current_session',
+    label: 'Na Sessão Atual',
+    describe: (map) => `Substitui os tópicos da sessão atual (${map.sessionDate || map.title})`,
+  },
+  {
+    value: 'new_session',
+    label: 'Como Nova Sessão',
+    describe: (map) => `Cria nova sessão datada para ${map.clientName || 'o cliente'}`,
+  },
+  {
+    value: 'append_current',
+    label: 'Anexar ao Final',
+    describe: () => 'Mantém os tópicos atuais e adiciona os novos abaixo',
+  },
+];
+
+interface PreviewProps {
+  title: string;
+  content: string;
+  copied: boolean;
+  onCopy: () => void;
+  /** Format-specific download, appended before the copy button. */
+  download?: React.ReactNode;
+}
+
+/**
+ * One read-only preview of a serialised format. The four formats used to
+ * ship four byte-level copies of this markup; they differ only in the
+ * caption, the payload and the download action.
+ */
+function Preview({ title, content, copied, onCopy, download }: PreviewProps) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-content-muted">{title}</span>
+        {/* The JSON tab passes two download buttons plus Copiar: ~460px of
+            controls that do not fit a 375px viewport, so the group wraps
+            instead of pushing the dialog into a horizontal scroll. */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {download}
+          <button type="button" onClick={onCopy} className="ctl">
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-positive" aria-hidden="true" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+            {copied ? 'Copiado!' : 'Copiar'}
+          </button>
+        </div>
+      </div>
+      {/* The global user-select:none is gone; select-text keeps the
+          preview copyable by hand, not only via the button (SC 1.4.1). */}
+      <pre className="select-text max-w-full p-4 rounded-control bg-surface-sunken border border-line text-content font-mono text-xs leading-relaxed overflow-x-auto max-h-64">
+        {content}
+      </pre>
+    </div>
+  );
+}
+
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
@@ -54,17 +130,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onImportMap,
   onUpdateCurrentMapRoot,
 }) => {
-  const [activeTab, setActiveTab] = useState<'md' | 'png' | 'svg' | 'opml' | 'freemind' | 'json' | 'import'>('md');
-  const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('arquivo');
+  // Which format was copied, not a bare boolean: the success state used
+  // to leak between the Markdown, OPML, FreeMind and JSON buttons.
+  const [copiedTab, setCopiedTab] = useState<TabId | null>(null);
   const [isExportingZip, setIsExportingZip] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
 
   // Import State
   const [importText, setImportText] = useState('');
-  const [importTarget, setImportTarget] = useState<'current_session' | 'new_session' | 'append_current'>('current_session');
+  const [importTarget, setImportTarget] = useState<ImportTarget>('current_session');
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const isDark = theme === 'noite';
+  const importTextId = useId();
+  const importStatusId = useId();
 
   const markdownContent = useMemo(() => exportToMarkdown(map), [map]);
   const opmlContent = useMemo(() => exportToOPML(map), [map]);
@@ -73,11 +153,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopy = async (text: string) => {
+  const handleCopy = async (text: string, tab: TabId) => {
     const success = await copyToClipboard(text);
     if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedTab(tab);
+      setTimeout(() => setCopiedTab((current) => (current === tab ? null : current)), 2000);
     }
   };
 
@@ -98,31 +178,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     exportSessionMarkdown(map);
   };
 
-  // Export 2: All sessions of current client zipped
-  const handleExportClientSessionsZip = async () => {
+  const handleRunZip = async (run: () => Promise<void>) => {
+    setExportStatus('Compactando o arquivo .zip…');
+    setIsExportingZip(true);
     try {
-      setIsExportingZip(true);
-      const allMaps = initialMaps && initialMaps.length > 0 ? initialMaps : await getAllMaps();
-      const clientSessions = allMaps.filter((m) => m.clientId === map.clientId || m.clientName === map.clientName);
-      await exportClientSessionsZip(map.clientName || 'Cliente', clientSessions.length > 0 ? clientSessions : [map]);
+      await run();
+      setExportStatus('Arquivo .zip pronto.');
+    } catch {
+      setExportStatus('Não foi possível gerar o arquivo .zip. Tente novamente.');
     } finally {
       setIsExportingZip(false);
     }
   };
 
+  // Export 2: All sessions of current client zipped
+  const handleExportClientSessionsZip = () =>
+    handleRunZip(async () => {
+      const allMaps = initialMaps && initialMaps.length > 0 ? initialMaps : await getAllMaps();
+      const clientSessions = allMaps.filter((m) => m.clientId === map.clientId || m.clientName === map.clientName);
+      await exportClientSessionsZip(map.clientName || 'Cliente', clientSessions.length > 0 ? clientSessions : [map]);
+    });
+
   // Export 3: All sessions of all clients zipped
-  const handleExportAllClientsZip = async () => {
-    try {
-      setIsExportingZip(true);
+  const handleExportAllClientsZip = () =>
+    handleRunZip(async () => {
       const [allClients, allMaps] = await Promise.all([
         initialClients && initialClients.length > 0 ? Promise.resolve(initialClients) : getAllClients(),
         initialMaps && initialMaps.length > 0 ? Promise.resolve(initialMaps) : getAllMaps(),
       ]);
       await exportAllClientsZip(allClients, allMaps);
-    } finally {
-      setIsExportingZip(false);
-    }
-  };
+    });
 
   const handleFullBackup = async () => {
     const all = await getAllMaps();
@@ -263,531 +348,361 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
+  const clientLabel = map.clientName || 'o cliente';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div
-        className={`w-full max-w-3xl rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[92vh] ${
-          isDark ? 'bg-[#0B0F19] border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-        }`}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <h3 className="text-base font-extrabold tracking-tight text-slate-950 dark:text-white">
-              Exportar & Importar Sessões
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Cliente: <strong className="font-bold text-slate-950 dark:text-white">{map.clientName || 'Cliente'}</strong> · Sessão: <span className="font-mono font-semibold">{map.sessionDate || map.title}</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Exportar & Importar Sessões"
+      description={`Cliente: ${map.clientName || 'Cliente'} · Sessão: ${map.sessionDate || map.title}`}
+      maxWidth="max-w-3xl"
+    >
+      <Tabs
+        label="Formato de exportação e importação"
+        items={TAB_ITEMS}
+        value={activeTab}
+        onChange={setActiveTab}
+        idPrefix="export"
+        className="mb-5 flex-wrap [&_[role=tab]]:min-h-touch"
+      />
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 pt-3 border-b border-slate-200 dark:border-slate-800 overflow-x-auto text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => setActiveTab('md')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'md'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            Markdown (.md / .zip)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('import')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'import'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Importar Markdown</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('png')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'png'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            Imagem PNG (2×)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('svg')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'svg'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            Vetor SVG
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('opml')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'opml'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            OPML 2.0
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('freemind')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'freemind'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            FreeMind (.mm)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('json')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'json'
-                ? 'border-amber-500 text-slate-950 dark:text-white font-extrabold'
-                : 'border-transparent text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            JSON Backup
-          </button>
-        </div>
+      {activeTab === 'arquivo' && (
+        <TabPanel id="export-panel-arquivo" labelledBy="export-tab-arquivo" className="space-y-5">
+          {/* One primary action, four secondary ones. The three exports
+              used to be three equal-weight icon cards where the rarest
+              (full practice backup) was the loudest.
 
-        {/* Tab Body */}
-        <div className="flex-1 overflow-y-auto p-6 text-sm">
-          {activeTab === 'md' && (
-            <div className="space-y-5">
-              {/* 3 Export Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* 1. Single Session Markdown */}
-                <div
-                  className={`p-4 rounded-xl border flex flex-col justify-between ${
-                    isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-slate-950 dark:text-white font-bold text-xs">
-                      <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      <span>Uma Única Sessão</span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 leading-snug">
-                      Exporta apenas esta sessão atual em arquivo <code>.md</code> individual formatado.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleExportSingleSession}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-slate-100 text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Baixar Sessão (.md)</span>
+              Responsive: SettingRow lays its label and control out in a
+              fixed side-by-side row with no wrap. Below 640px — and at
+              200% browser zoom, which halves the CSS viewport — that
+              crushes the label into a one-word-per-line column. These two
+              utilities re-point the row's own flex container instead of
+              forking the component, so every row stacks and goes
+              full-bleed on a phone. */}
+          <div
+            className="divide-y divide-line max-sm:[&>div>div]:flex-col max-sm:[&_button]:w-full"
+            aria-busy={isExportingZip}
+          >
+            <div className="py-3 first:pt-0">
+              <SettingRow
+                id="export-md"
+                align="start"
+                label={
+                  <>
+                    <FileText className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                    Sessão atual
+                  </>
+                }
+                description={<>Arquivo <code>.md</code> individual, formatado para leitura.</>}
+                control={
+                  <button type="button" onClick={handleExportSingleSession} className="ctl ctl-primary shrink-0">
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                    Baixar .md
                   </button>
-                </div>
+                }
+              />
+            </div>
 
-                {/* 2. All Sessions of Current Client (ZIP) */}
-                <div
-                  className={`p-4 rounded-xl border flex flex-col justify-between ${
-                    isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-slate-950 dark:text-white font-bold text-xs">
-                      <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      <span>Todas Sessões do Cliente</span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 leading-snug">
-                      Gera um arquivo <code>.zip</code> com todas as sessões em Markdown de <strong>{map.clientName || 'Cliente'}</strong>.
-                    </p>
-                  </div>
+            <div className="py-3">
+              <SettingRow
+                id="export-client-zip"
+                align="start"
+                label={
+                  <>
+                    <Archive className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                    Todas as sessões de {clientLabel}
+                  </>
+                }
+                description={<>Arquivo <code>.zip</code> com todas as sessões em Markdown deste cliente.</>}
+                control={
                   <button
                     type="button"
                     onClick={handleExportClientSessionsZip}
                     disabled={isExportingZip}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    className="ctl shrink-0"
                   >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>{isExportingZip ? 'Compactando…' : `Zipar ${map.clientName || 'Cliente'} (.zip)`}</span>
+                    <Archive className="w-4 h-4" aria-hidden="true" />
+                    {isExportingZip ? 'Compactando…' : 'Baixar .zip'}
                   </button>
-                </div>
+                }
+              />
+            </div>
 
-                {/* 3. All Sessions of All Clients (ZIP) */}
-                <div
-                  className={`p-4 rounded-xl border flex flex-col justify-between ${
-                    isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-slate-950 dark:text-white font-bold text-xs">
-                      <FolderArchive className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      <span>Todos os Clientes & Sessões</span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 leading-snug">
-                      Gera um arquivo <code>.zip</code> completo com pastas separadas por cliente contendo todo o consultório.
-                    </p>
-                  </div>
+            <div className="py-3">
+              <SettingRow
+                id="export-all-zip"
+                align="start"
+                label={
+                  <>
+                    <FolderArchive className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                    Todos os clientes
+                  </>
+                }
+                description={<>Arquivo <code>.zip</code> completo, com uma pasta por cliente.</>}
+                control={
                   <button
                     type="button"
                     onClick={handleExportAllClientsZip}
                     disabled={isExportingZip}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border-2 border-slate-950 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-950 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                    className="ctl shrink-0"
                   >
-                    <FolderArchive className="w-3.5 h-3.5" />
-                    <span>{isExportingZip ? 'Compactando…' : 'Zipar Tudo (.zip)'}</span>
+                    <FolderArchive className="w-4 h-4" aria-hidden="true" />
+                    {isExportingZip ? 'Compactando…' : 'Baixar .zip'}
                   </button>
-                </div>
-              </div>
+                }
+              />
+            </div>
 
-              {/* Markdown Preview & Copy */}
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">
-                    Prévia do Conteúdo da Sessão Atual:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(markdownContent)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Copiado!' : 'Copiar Texto'}</span>
+            <div className="py-3">
+              <SettingRow
+                id="export-png"
+                align="start"
+                label={
+                  <>
+                    <Image className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                    Imagem PNG (2×)
+                  </>
+                }
+                description="Rasteriza o mapa atual em alta resolução, com fundo neutro do tema atual."
+                control={
+                  <button type="button" onClick={handleDownloadPNG} className="ctl shrink-0">
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                    Baixar PNG
                   </button>
-                </div>
-                <pre
-                  className={`p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-52 border ${
-                    isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
-                  }`}
-                >
-                  {markdownContent}
-                </pre>
-              </div>
+                }
+              />
+            </div>
+
+            <div className="py-3 last:pb-0">
+              <SettingRow
+                id="export-svg"
+                align="start"
+                label={
+                  <>
+                    <Code className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                    Vetor SVG
+                  </>
+                }
+                description="Arquivo vetorial escalável do mapa atual."
+                control={
+                  <button type="button" onClick={handleDownloadSVG} className="ctl shrink-0">
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                    Baixar SVG
+                  </button>
+                }
+              />
+            </div>
+          </div>
+
+          {/* Zip progress is async and silent for a screen reader. */}
+          <p role="status" className="sr-only">
+            {exportStatus}
+          </p>
+
+          <Preview
+            title="Prévia do conteúdo da sessão atual"
+            content={markdownContent}
+            copied={copiedTab === 'arquivo'}
+            onCopy={() => handleCopy(markdownContent, 'arquivo')}
+          />
+        </TabPanel>
+      )}
+
+      {activeTab === 'importar' && (
+        <TabPanel id="export-panel-importar" labelledBy="export-tab-importar" className="space-y-5">
+          <fieldset>
+            <legend className="text-xs font-bold text-content uppercase tracking-wide mb-2">
+              1. Escolha o destino da importação
+            </legend>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+              {IMPORT_TARGETS.map((target) => {
+                const selected = importTarget === target.value;
+                return (
+                  <label
+                    key={target.value}
+                    className={`flex items-start gap-2.5 p-3 rounded-control border cursor-pointer transition-colors ${
+                      selected
+                        ? 'border-accent bg-accent-soft text-content font-bold'
+                        : 'border-line text-content-muted hover:bg-surface-inset'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importTarget"
+                      value={target.value}
+                      checked={selected}
+                      onChange={() => setImportTarget(target.value)}
+                      className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--accent)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-extrabold">{target.label}</span>
+                      <span className="block text-xs font-normal mt-0.5">
+                        {target.describe(map)}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="text-xs font-bold text-content uppercase tracking-wide mb-2">
+              2. Arquivo Markdown (.md) ou texto colado
+            </legend>
+            <div className="mb-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="ctl max-sm:w-full"
+              >
+                <Upload className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                Selecionar arquivo .md / .txt
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".md,.markdown,.txt"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
+
+            <label htmlFor={importTextId} className="sr-only">
+              Conteúdo Markdown, OPML ou JSON para importar
+            </label>
+            <textarea
+              id={importTextId}
+              rows={8}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              aria-describedby={importStatus ? importStatusId : undefined}
+              placeholder={`# Tópico Principal\n- Ponto 1\n  - Subponto A\n  - Subponto B\n- Ponto 2\n  - Subponto C`}
+              className="w-full p-3.5 rounded-control font-mono text-xs leading-relaxed bg-surface-sunken border border-line text-content placeholder:text-content-subtle"
+            />
+          </fieldset>
+
+          {importStatus && (
+            <div
+              id={importStatusId}
+              // role="alert" is an assertive interruption and belongs on
+              // failures. Announcing a successful import assertively was a
+              // misuse added by the a11y pass; success is a polite status.
+              role={importStatus.type === 'error' ? 'alert' : 'status'}
+              aria-live={importStatus.type === 'error' ? 'assertive' : 'polite'}
+              className={`text-xs p-3 rounded-control border font-bold ${
+                importStatus.type === 'success'
+                  ? 'border-line bg-surface-inset text-positive'
+                  : 'border-negative/40 bg-surface-inset text-negative'
+              }`}
+            >
+              {importStatus.message}
             </div>
           )}
 
-          {activeTab === 'import' && (
-            <div className="space-y-5">
-              {/* Target selection */}
-              <div>
-                <label className="block text-xs font-bold text-slate-950 dark:text-white mb-2 uppercase tracking-wide">
-                  1. Escolha o destino da importação:
-                </label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                      importTarget === 'current_session'
-                        ? 'border-2 border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-slate-950 dark:text-white font-bold'
-                        : 'border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="importTarget"
-                      checked={importTarget === 'current_session'}
-                      onChange={() => setImportTarget('current_session')}
-                      className="mt-0.5 accent-amber-500"
-                    />
-                    <div>
-                      <div className="font-extrabold">Na Sessão Atual</div>
-                      <div className="text-[11px] font-normal opacity-80 mt-0.5">
-                        Substitui os tópicos da sessão atual ({map.sessionDate || map.title})
-                      </div>
-                    </div>
-                  </label>
+          {/* Stacks below 640px: side by side these two buttons total
+              ~300px of chrome, which is the entire content width of a
+              375px dialog. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <button type="button" onClick={onClose} className="ctl w-full sm:w-auto">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDoImport}
+              disabled={!importText.trim()}
+              className="ctl ctl-primary w-full sm:w-auto"
+            >
+              <Upload className="w-4 h-4" aria-hidden="true" />
+              Confirmar importação
+            </button>
+          </div>
+        </TabPanel>
+      )}
 
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                      importTarget === 'new_session'
-                        ? 'border-2 border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-slate-950 dark:text-white font-bold'
-                        : 'border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="importTarget"
-                      checked={importTarget === 'new_session'}
-                      onChange={() => setImportTarget('new_session')}
-                      className="mt-0.5 accent-amber-500"
-                    />
-                    <div>
-                      <div className="font-extrabold">Como Nova Sessão</div>
-                      <div className="text-[11px] font-normal opacity-80 mt-0.5">
-                        Cria nova sessão datada para {map.clientName || 'o cliente'}
-                      </div>
-                    </div>
-                  </label>
+      {activeTab === 'opml' && (
+        <TabPanel id="export-panel-opml" labelledBy="export-tab-opml">
+          <Preview
+            title="Formato padrão OPML 2.0 para outline e mapas"
+            content={opmlContent}
+            copied={copiedTab === 'opml'}
+            onCopy={() => handleCopy(opmlContent, 'opml')}
+            download={
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFile(opmlContent, `${sanitizeFilename(map.title)}.opml`, 'text/x-opml')
+                }
+                className="ctl ctl-primary"
+              >
+                <Download className="w-4 h-4" aria-hidden="true" />
+                Baixar .opml
+              </button>
+            }
+          />
+        </TabPanel>
+      )}
 
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                      importTarget === 'append_current'
-                        ? 'border-2 border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-slate-950 dark:text-white font-bold'
-                        : 'border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="importTarget"
-                      checked={importTarget === 'append_current'}
-                      onChange={() => setImportTarget('append_current')}
-                      className="mt-0.5 accent-amber-500"
-                    />
-                    <div>
-                      <div className="font-extrabold">Anexar ao Final</div>
-                      <div className="text-[11px] font-normal opacity-80 mt-0.5">
-                        Mantém os tópicos atuais e adiciona os novos abaixo
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
+      {activeTab === 'freemind' && (
+        <TabPanel id="export-panel-freemind" labelledBy="export-tab-freemind">
+          <Preview
+            title="Formato compatível com FreeMind (.mm)"
+            content={freeMindContent}
+            copied={copiedTab === 'freemind'}
+            onCopy={() => handleCopy(freeMindContent, 'freemind')}
+            download={
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFile(
+                    freeMindContent,
+                    `${sanitizeFilename(map.title)}.mm`,
+                    'application/x-freemind'
+                  )
+                }
+                className="ctl ctl-primary"
+              >
+                <Download className="w-4 h-4" aria-hidden="true" />
+                Baixar .mm
+              </button>
+            }
+          />
+        </TabPanel>
+      )}
 
-              {/* File upload or paste */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-950 dark:text-white uppercase tracking-wide">
-                    2. Carregue um arquivo Markdown (.md) ou cole o texto:
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span>Selecionar Arquivo .md / .txt</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".md,.markdown,.txt"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </div>
-
-                <textarea
-                  rows={8}
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  placeholder={`# Tópico Principal\n- Ponto 1\n  - Subponto A\n  - Subponto B\n- Ponto 2\n  - Subponto C`}
-                  className={`w-full p-3.5 rounded-xl font-mono text-xs border outline-none leading-relaxed ${
-                    isDark
-                      ? 'bg-slate-950 border-slate-800 text-white focus:border-amber-400 placeholder:text-slate-500'
-                      : 'bg-slate-50 border-slate-300 text-slate-950 focus:border-amber-500 placeholder:text-slate-500'
-                  }`}
-                />
-              </div>
-
-              {importStatus && (
-                <div
-                  className={`text-xs p-3 rounded-xl border font-bold flex items-center gap-2 ${
-                    importStatus.type === 'success'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                      : 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
-                  }`}
-                >
-                  <span>{importStatus.message}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white cursor-pointer"
-                >
-                  Cancelar
+      {activeTab === 'json' && (
+        <TabPanel id="export-panel-json" labelledBy="export-tab-json">
+          <Preview
+            title="Backup completo ou mapa único em JSON"
+            content={jsonContent}
+            copied={copiedTab === 'json'}
+            onCopy={() => handleCopy(jsonContent, 'json')}
+            download={
+              <>
+                <button type="button" onClick={handleFullBackup} className="ctl">
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                  Backup de todos os mapas
                 </button>
                 <button
                   type="button"
-                  onClick={handleDoImport}
-                  disabled={!importText.trim()}
-                  className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-slate-950 dark:bg-white dark:text-slate-950 rounded-xl hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors shadow-sm disabled:opacity-40 cursor-pointer"
+                  onClick={() =>
+                    downloadFile(
+                      jsonContent,
+                      `${sanitizeFilename(map.title)}.json`,
+                      'application/json'
+                    )
+                  }
+                  className="ctl ctl-primary"
                 >
-                  <Upload className="w-4 h-4" />
-                  <span>Confirmar Importação de Markdown</span>
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                  Baixar este mapa
                 </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'png' && (
-            <div className="space-y-4 text-center py-6">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <Image className="w-8 h-8" />
-              </div>
-              <div>
-                <h4 className="font-bold text-base text-slate-950 dark:text-white">Exportar Imagem de Alta Resolução</h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto mt-1 font-medium">
-                  Gera um PNG nítido em resolução 2× com o mapa completo e fundo neutro correspondente ao tema atual.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleDownloadPNG}
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-slate-950 dark:bg-white dark:text-slate-950 rounded-xl hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Baixar Imagem PNG</span>
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'svg' && (
-            <div className="space-y-4 text-center py-6">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Code className="w-8 h-8" />
-              </div>
-              <div>
-                <h4 className="font-bold text-base text-slate-950 dark:text-white">Exportar Vetor SVG</h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto mt-1 font-medium">
-                  Arquivo vetorial escalável infinitamente, perfeito para ilustrações, relatórios e apresentações.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleDownloadSVG}
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-slate-950 dark:bg-white dark:text-slate-950 rounded-xl hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Baixar Vetor SVG</span>
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'opml' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium">
-                <span>Formato padrão OPML 2.0 para outline e mapas:</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(opmlContent)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Copiado!' : 'Copiar'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadFile(
-                        opmlContent,
-                        `${sanitizeFilename(map.title)}.opml`,
-                        'text/x-opml'
-                      )
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 hover:bg-slate-800 font-bold transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Baixar .opml</span>
-                  </button>
-                </div>
-              </div>
-              <pre
-                className={`p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-64 border ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
-                }`}
-              >
-                {opmlContent}
-              </pre>
-            </div>
-          )}
-
-          {activeTab === 'freemind' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium">
-                <span>Formato compatível com FreeMind (.mm):</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(freeMindContent)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Copiado!' : 'Copiar'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadFile(
-                        freeMindContent,
-                        `${sanitizeFilename(map.title)}.mm`,
-                        'application/x-freemind'
-                      )
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 hover:bg-slate-800 font-bold transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Baixar .mm</span>
-                  </button>
-                </div>
-              </div>
-              <pre
-                className={`p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-64 border ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
-                }`}
-              >
-                {freeMindContent}
-              </pre>
-            </div>
-          )}
-
-          {activeTab === 'json' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium">
-                <span>Backup completo ou mapa único em JSON:</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleFullBackup}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Backup de Todos os Mapas</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadFile(
-                        jsonContent,
-                        `${sanitizeFilename(map.title)}.json`,
-                        'application/json'
-                      )
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 hover:bg-slate-800 font-bold transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Baixar este mapa</span>
-                  </button>
-                </div>
-              </div>
-              <pre
-                className={`p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-64 border ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
-                }`}
-              >
-                {jsonContent}
-              </pre>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+              </>
+            }
+          />
+        </TabPanel>
+      )}
+    </Modal>
   );
 };

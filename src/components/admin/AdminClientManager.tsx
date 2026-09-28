@@ -3,15 +3,11 @@ import {
   X,
   Plus,
   Search,
-  User,
   Users,
-  Calendar,
   Layers,
   Trash2,
-  Copy,
   Edit2,
   Check,
-  Play,
   ArrowRight,
   Download,
   Upload,
@@ -22,6 +18,7 @@ import { Client, MindMap } from '../../types';
 import { createNewSession, saveMap, saveClient, deleteClient, deleteMap } from '../../services/storage';
 import { countTotalNodes, formatSessionTimestamp, parseMarkdownToTree } from '../../utils/tree';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
+import { Modal, ConfirmDialog } from '../ui/Modal';
 
 interface AdminClientManagerProps {
   isOpen: boolean;
@@ -32,6 +29,12 @@ interface AdminClientManagerProps {
   activeClientId: string | null;
   onSelectSession: (map: MindMap) => void;
   onRefreshData: () => void;
+  /**
+   * Retained for API compatibility with the host view. Every colour in
+   * this panel now resolves through the semantic token layer, so the
+   * theme is no longer read here — swapping a hex for a token is what
+   * makes the dark theme stop being a parallel set of literals.
+   */
   theme: 'papel' | 'noite';
 }
 
@@ -44,7 +47,6 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   activeClientId,
   onSelectSession,
   onRefreshData,
-  theme,
 }) => {
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
     return activeClientId || (clients[0]?.id ?? '');
@@ -59,9 +61,18 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  if (!isOpen) return null;
+  // Destructive actions: confirm, then keep a restorable window open.
+  const [pendingClientDelete, setPendingClientDelete] = useState<Client | null>(null);
+  const [pendingSessionDelete, setPendingSessionDelete] = useState<MindMap | null>(null);
+  const [undoClientDeleteState, setUndoClientDeleteState] = useState<{
+    client: Client;
+    sessionCount: number;
+  } | null>(null);
+  const [undoSessionDeleteState, setUndoSessionDeleteState] = useState<MindMap | null>(
+    null
+  );
 
-  const isDark = theme === 'noite';
+  if (!isOpen) return null;
 
   const filteredClients = clients.filter((c) =>
     c.name.toLowerCase().includes(clientSearch.toLowerCase())
@@ -169,246 +180,305 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     }
   };
 
-  // Delete client
-  const handleDeleteClient = async (clientId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm('Tem certeza que deseja excluir este cliente e suas sessões?')) {
-      await deleteClient(clientId);
-      const remaining = clients.filter((c) => c.id !== clientId);
-      if (remaining.length > 0) {
-        setSelectedClientId(remaining[0].id);
-      }
-      onRefreshData();
+  // Delete client — routed through a real dialog with a restorable
+  // window. A native window.confirm() cannot be styled, is announced
+  // inconsistently, and offers no way back from deleting a client's
+  // entire session history.
+  const confirmClientDelete = async () => {
+    const target = pendingClientDelete;
+    setPendingClientDelete(null);
+    if (!target) return;
+    const sessionCount = maps.filter((m) => m.clientId === target.id).length;
+    await deleteClient(target.id);
+    const remaining = clients.filter((c) => c.id !== target.id);
+    if (remaining.length > 0) {
+      setSelectedClientId(remaining[0].id);
     }
+    onRefreshData();
+    setUndoClientDeleteState({ client: target, sessionCount });
+  };
+
+  const handleDeleteClient = (client: Client) => {
+    setPendingClientDelete(client);
   };
 
   // Delete session
-  const handleDeleteSession = async (session: MindMap, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm(`Excluir a sessão ${session.sessionDate || session.title}?`)) {
-      await deleteMap(session.id);
-      onRefreshData();
-    }
+  const confirmSessionDelete = async () => {
+    const target = pendingSessionDelete;
+    setPendingSessionDelete(null);
+    if (!target) return;
+    await deleteMap(target.id);
+    onRefreshData();
+    setUndoSessionDeleteState(target);
+  };
+
+  const handleDeleteSession = (session: MindMap) => {
+    setPendingSessionDelete(session);
+  };
+
+  // Undo paths — restoration is possible because both records are held
+  // in memory for the life of the open dialog.
+  const handleUndoClientDelete = async () => {
+    const target = undoClientDeleteState;
+    setUndoClientDeleteState(null);
+    if (!target) return;
+    await saveClient(target.client);
+    onRefreshData();
+  };
+
+  const handleUndoSessionDelete = async () => {
+    const target = undoSessionDeleteState;
+    setUndoSessionDeleteState(null);
+    if (!target) return;
+    await saveMap(target);
+    onRefreshData();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div
-        className={`w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl border flex flex-col overflow-hidden ${
-          isDark
-            ? 'bg-[#0B0F19] border-slate-800 text-slate-100'
-            : 'bg-white border-slate-300 text-slate-900'
-        }`}
+    <>
+      {/* The overlay chrome (backdrop, header, close button, dialog
+          role, Escape, focus trap and focus restore) belongs to Modal.
+          What is left here is only this panel's own layout. */}
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="Painel do Terapeuta · Clientes & Sessões"
+        description="Organize cada cliente e inicie novas sessões datadas em tempo real"
+        icon={<Users className="w-5 h-5" />}
+        maxWidth="max-w-4xl"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-800 dark:text-amber-400">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-extrabold tracking-tight text-slate-950 dark:text-white">
-                Painel do Terapeuta · Clientes & Sessões
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Organize cada cliente e inicie novas sessões datadas em tempo real
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        {/* -m-6 cancels the Modal body padding so the two columns can
+            reach the panel edge and own their own scroll areas.
 
-        {/* 2-Column Workspace */}
-        <div className="flex-1 flex overflow-hidden">
+            RESPONSIVE: the split is a row only from `md` (768px) up.
+            Below that the two panes stack — clients on top, sessions
+            underneath — and each is bounded by a max-height instead of
+            the fixed 70vh row, so a long action bar can never be
+            clipped by an `overflow-hidden` parent. A 288px fixed left
+            column inside a 375px viewport left ~39px for the session
+            list, which is not a layout, it is a rendering error.
+            Stacking (rather than a drawer or a <select>) keeps search,
+            rename and per-client delete reachable, which a collapsed
+            picker would have to re-implement. */}
+        <div className="-m-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
           {/* Left Column: Client List */}
-          <div className="w-72 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-950/60">
+          <div className="w-full md:w-72 md:shrink-0 min-h-0 max-h-[40vh] md:max-h-none border-b md:border-b-0 md:border-r border-line flex flex-col bg-surface-sunken">
             {/* Search and + Client button */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+            <div className="p-3 border-b border-line space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-bold text-content uppercase tracking-wider">
                   Clientes ({clients.length})
-                </span>
+                </h3>
                 <button
                   type="button"
                   onClick={() => setIsCreatingClient(true)}
-                  className="flex items-center gap-1 text-xs font-bold text-amber-800 dark:text-amber-400 hover:text-amber-950 dark:hover:text-amber-300 transition-colors"
+                  className="ctl ctl-primary px-2.5 text-xs font-bold"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Novo</span>
                 </button>
               </div>
 
               {isCreatingClient && (
-                <form onSubmit={handleSaveNewClient} className="flex items-center gap-1.5 pt-1">
+                <form onSubmit={handleSaveNewClient} className="flex items-center gap-2 pt-1">
+                  <label htmlFor="admin-new-client-name" className="sr-only">
+                    Nome do novo cliente
+                  </label>
                   <input
+                    id="admin-new-client-name"
                     autoFocus
                     type="text"
                     value={newClientName}
                     onChange={(e) => setNewClientName(e.target.value)}
                     placeholder="Nome do cliente…"
-                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border-2 border-amber-500 bg-white dark:bg-slate-900 text-slate-950 dark:text-white font-medium placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none"
+                    className="flex-1 min-w-0 h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content font-medium placeholder:text-content-subtle"
                   />
                   <button
                     type="submit"
-                    className="p-1 rounded-lg bg-slate-950 text-white dark:bg-white dark:text-slate-950 hover:opacity-90 transition-opacity"
+                    className="ctl ctl-primary w-11 px-0"
                     title="Confirmar"
+                    aria-label="Confirmar novo cliente"
                   >
-                    <Check className="w-3.5 h-3.5" />
+                    <Check className="w-4 h-4" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsCreatingClient(false)}
-                    className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                    className="ctl w-11 px-0"
+                    aria-label="Cancelar novo cliente"
                     title="Cancelar"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </form>
               )}
 
               <div className="relative flex items-center">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-500 dark:text-slate-400" />
+                <label htmlFor="admin-client-search" className="sr-only">
+                  Buscar cliente
+                </label>
+                <Search
+                  className="w-4 h-4 absolute left-3 text-content-muted pointer-events-none"
+                  aria-hidden="true"
+                />
                 <input
+                  id="admin-client-search"
                   type="text"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
                   placeholder="Buscar cliente…"
-                  className="w-full pl-8 pr-2.5 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-950 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:border-amber-500 transition-colors"
+                  className="w-full h-11 pl-10 pr-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
                 />
               </div>
             </div>
 
             {/* Clients Scrollable List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-              {filteredClients.map((client) => {
-                const isSelected = client.id === currentClient?.id;
-                const count = maps.filter((m) => m.clientId === client.id).length;
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
+              {filteredClients.length === 0 ? (
+                <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel">
+                  Nenhum cliente encontrado. Use “Novo” para cadastrar.
+                </p>
+              ) : (
+                filteredClients.map((client) => {
+                  const isSelected = client.id === currentClient?.id;
+                  const count = maps.filter((m) => m.clientId === client.id).length;
 
-                return (
-                  <div
-                    key={client.id}
-                    onClick={() => setSelectedClientId(client.id)}
-                    className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
-                      isSelected
-                        ? isDark
-                          ? 'bg-slate-800 border-2 border-amber-400 text-white shadow-md ring-1 ring-amber-400/20'
-                          : 'bg-white border-2 border-slate-950 text-slate-950 shadow-xs ring-1 ring-slate-950/10'
-                        : isDark
-                        ? 'border border-transparent hover:border-slate-700 hover:bg-slate-800/60 text-slate-300'
-                        : 'border border-transparent hover:border-slate-300 hover:bg-white text-slate-800'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0 pr-2">
+                  return (
+                    <div
+                      key={client.id}
+                      className={`flex items-center gap-1 p-1.5 rounded-panel border transition-colors ${
+                        isSelected
+                          ? 'bg-accent-soft border-2 border-content'
+                          : 'border border-transparent hover:border-line hover:bg-surface-inset'
+                      }`}
+                    >
+                      {/* Selection is a real button, sibling to the row
+                          actions, so it is keyboard reachable and no
+                          control is ever nested inside another. */}
                       {editingClientId === client.id ? (
                         <form
                           onSubmit={(e) => handleRenameClient(client.id, e)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1"
+                          className="flex-1 min-w-0 flex items-center gap-1"
                         >
+                          <label
+                            htmlFor={`admin-rename-${client.id}`}
+                            className="sr-only"
+                          >
+                            Renomear {client.name}
+                          </label>
                           <input
+                            id={`admin-rename-${client.id}`}
                             autoFocus
                             type="text"
                             value={editingClientName}
                             onChange={(e) => setEditingClientName(e.target.value)}
-                            className="flex-1 px-1.5 py-0.5 text-xs rounded border border-slate-400 bg-white dark:bg-slate-900 text-slate-950 dark:text-white"
+                            className="flex-1 min-w-0 h-11 px-2.5 text-sm rounded-control border border-line bg-surface-raised text-content"
                           />
-                          <button type="submit" className="p-0.5 text-emerald-600 dark:text-emerald-400">
-                            <Check className="w-3 h-3" />
+                          <button
+                            type="submit"
+                            className="ctl ctl-primary w-11 px-0"
+                            aria-label={`Confirmar novo nome de ${client.name}`}
+                          >
+                            <Check className="w-4 h-4" aria-hidden="true" />
                           </button>
                         </form>
                       ) : (
-                        <div
-                          className={`text-xs truncate ${
-                            isSelected
-                              ? 'font-extrabold text-slate-950 dark:text-white'
-                              : 'font-semibold text-slate-900 dark:text-slate-100'
-                          }`}
-                        >
-                          {client.name}
-                        </div>
-                      )}
-                      <div
-                        className={`text-[11px] font-mono mt-0.5 ${
-                          isSelected
-                            ? isDark
-                              ? 'text-amber-400 font-bold'
-                              : 'text-amber-700 font-bold'
-                            : isDark
-                            ? 'text-slate-400 font-medium'
-                            : 'text-slate-600 font-medium'
-                        }`}
-                      >
-                        {count} {count === 1 ? 'sessão' : 'sessões'}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingClientId(client.id);
-                          setEditingClientName(client.name);
-                        }}
-                        title="Renomear cliente"
-                        className="p-1 rounded text-slate-600 hover:text-slate-950 hover:bg-slate-200 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-700 transition-colors"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                      {clients.length > 1 && (
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteClient(client.id, e)}
-                          title="Excluir cliente"
-                          className="p-1 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-100 dark:text-rose-400 dark:hover:text-rose-200 dark:hover:bg-rose-950 transition-colors"
+                          onClick={() => setSelectedClientId(client.id)}
+                          aria-current={isSelected ? 'true' : undefined}
+                          className="flex-1 min-w-0 text-left px-1 py-1.5 min-h-11 rounded-control"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <div
+                            className={`text-xs break-words leading-snug text-content ${
+                              isSelected ? 'font-extrabold' : 'font-semibold'
+                            }`}
+                          >
+                            {client.name}
+                          </div>
+                          <div
+                            className={`text-[11px] font-mono mt-0.5 ${
+                              isSelected
+                                ? 'text-accent-text font-bold'
+                                : 'text-content-muted font-medium'
+                            }`}
+                          >
+                            {count} {count === 1 ? 'sessão' : 'sessões'}
+                          </div>
                         </button>
                       )}
+
+                      {/* Always visible: with hover-only opacity these
+                          were unreachable by keyboard and by touch. */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingClientId(client.id);
+                            setEditingClientName(client.name);
+                          }}
+                          aria-label={`Renomear ${client.name}`}
+                          className="ctl w-11 px-0"
+                        >
+                          <Edit2 className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                        {clients.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteClient(client)}
+                            aria-label={`Excluir ${client.name}`}
+                            className="ctl ctl-danger w-11 px-0"
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
             {/* Left Column Footer: Export All Clients ZIP */}
-            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50">
+            <div className="p-3 border-t border-line bg-surface">
               <button
                 type="button"
                 onClick={handleExportAllClientsZip}
                 disabled={isExporting}
                 title="Exportar todas as sessões de todos os clientes em um arquivo .zip completo"
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                className="ctl w-full text-xs font-bold shadow-2xs"
               >
-                <FolderArchive className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>{isExporting ? 'Compactando…' : 'Zipar Todos os Clientes (.zip)'}</span>
+                <FolderArchive className="w-3.5 h-3.5 text-positive shrink-0" aria-hidden="true" />
+                <span className="text-left leading-snug">
+                  {isExporting ? 'Compactando…' : 'Zipar Todos os Clientes (.zip)'}
+                </span>
               </button>
             </div>
           </div>
 
-          {/* Right Column: Sessions for Selected Client */}
-          <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
+          {/* Right Column: Sessions for Selected Client.
+              Stacked below `md` the column scrolls as a whole and the
+              list inside it does not, so a phone gets one predictable
+              scroll region per pane instead of a nested one. From `md`
+              up it is a fixed-height pane whose list scrolls on its
+              own, as before. */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-surface-raised max-h-[46vh] md:max-h-none overflow-y-auto md:overflow-hidden">
             {currentClient ? (
               <>
                 {/* Client Session Actions Bar */}
-                <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-400">
+                <div className="p-4 sm:p-5 border-b border-line flex items-center justify-between gap-3 flex-wrap shrink-0">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-accent-text">
                       Cliente Selecionado
                     </span>
-                    <h2 className="text-xl font-black tracking-tight text-slate-950 dark:text-white">
+                    <h3 className="text-xl font-black tracking-tight text-content break-words">
                       {currentClient.name}
-                    </h2>
+                    </h3>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {/* Stacked full-width below `sm`; the three labels total
+                      ~380px and would have overflowed a 375px viewport. */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                     {/* Hidden file input for importing Markdown directly */}
                     <input
                       ref={importFileInputRef}
@@ -423,21 +493,23 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       type="button"
                       onClick={handleExportCurrentClientZip}
                       disabled={isExporting}
+                      aria-label={`Exportar todas as ${clientSessions.length} sessões de ${currentClient.name} em .zip`}
                       title={`Exportar todas as ${clientSessions.length} sessões de ${currentClient.name} compactadas em .zip`}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                      className="ctl w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
-                      <Archive className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                      <span className="hidden sm:inline">Exportar (.zip)</span>
+                      <Archive className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
+                      <span>Exportar (.zip)</span>
                     </button>
 
                     {/* Import Markdown file */}
                     <button
                       type="button"
                       onClick={() => importFileInputRef.current?.click()}
+                      aria-label="Importar arquivo Markdown (.md) como nova sessão para este cliente"
                       title="Importar arquivo Markdown (.md) como nova sessão para este cliente"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs border border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 shadow-2xs transition-colors cursor-pointer"
+                      className="ctl w-full sm:w-auto text-xs font-bold shadow-2xs text-accent-text"
                     >
-                      <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <Upload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                       <span>+ Importar (.md)</span>
                     </button>
 
@@ -445,75 +517,78 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     <button
                       type="button"
                       onClick={handleCreateSession}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs text-white bg-slate-950 dark:bg-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-slate-100 shadow-sm transition-all cursor-pointer"
+                      className="ctl ctl-primary w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                       <span>+ Nova Sessão</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Sessions List */}
-                <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                {/* Sessions List. Scrolls on its own only once the pane
+                    is a fixed-height column; stacked, the pane owns
+                    the scroll. */}
+                <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
+                  <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
                     Histórico de Sessões ({clientSessions.length})
-                  </div>
+                  </h3>
 
                   {clientSessions.length === 0 ? (
-                    <div className="py-12 text-center text-xs font-medium text-slate-600 dark:text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-6">
-                      Nenhuma sessão iniciada para este cliente. Clique em "+ Nova Sessão" ou "+ Importar (.md)" acima para começar.
+                    <div className="py-12 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
+                      Nenhuma sessão iniciada para este cliente. Clique em “+ Nova Sessão” ou
+                      “+ Importar (.md)” acima para começar.
                     </div>
                   ) : (
                     clientSessions.map((session) => {
                       const isActive = session.id === activeMapId;
                       const nodeCount = countTotalNodes(session.root);
+                      const sessionLabel = session.sessionDate || session.title;
 
                       return (
                         <div
                           key={session.id}
-                          className={`p-4 rounded-xl border transition-all flex items-center justify-between gap-4 ${
+                          className={`p-4 rounded-panel border transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 ${
                             isActive
-                              ? isDark
-                                ? 'bg-slate-800 border-2 border-amber-400 shadow-md ring-1 ring-amber-400/20'
-                                : 'bg-amber-50/90 border-2 border-amber-500 shadow-sm'
-                              : isDark
-                              ? 'bg-slate-900/80 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
-                              : 'bg-white border border-slate-300 hover:border-slate-400 hover:bg-slate-50 shadow-2xs'
+                              ? 'bg-accent-soft border-2 border-content shadow-sm'
+                              : 'bg-surface-raised border border-line hover:border-line-muted hover:bg-surface-sunken shadow-2xs'
                           }`}
                         >
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-sm text-slate-950 dark:text-white">
-                                {session.sessionDate || session.title}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-sm text-content break-words">
+                                {sessionLabel}
                               </span>
                               {isActive && (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-500 uppercase tracking-wide">
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-accent text-content-onaccent uppercase tracking-wide shrink-0">
                                   sessão ativa
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                              <span className="flex items-center gap-1 font-mono">
-                                <Layers className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                            {/* Wraps instead of truncating: at 200% zoom a
+                                clipped session root is unreadable, and the
+                                root line is the only description the card
+                                has. */}
+                            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-content-muted font-medium">
+                              <span className="flex items-center gap-1 font-mono shrink-0">
+                                <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
                                 <span>{nodeCount} balões</span>
                               </span>
                               <span aria-hidden="true">·</span>
-                              <span className="truncate">
-                                Raiz: {session.root.text}
-                              </span>
+                              <span className="min-w-0 break-words">Raiz: {session.root.text}</span>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-2 flex-wrap shrink-0">
                             {/* Download Single Session Markdown Button */}
                             <button
                               type="button"
                               onClick={() => exportSessionMarkdown(session)}
+                              aria-label={`Baixar a sessão de ${sessionLabel} em Markdown`}
                               title="Baixar esta sessão em Markdown (.md)"
-                              className="p-2 rounded-lg text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                              className="ctl w-11 px-0"
                             >
-                              <Download className="w-3.5 h-3.5" />
+                              <Download className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
 
                             <button
@@ -522,28 +597,22 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                 onSelectSession(session);
                                 onClose();
                               }}
-                              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                isActive
-                                  ? isDark
-                                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 font-black shadow-xs'
-                                    : 'bg-slate-950 hover:bg-slate-800 text-white font-bold shadow-xs'
-                                  : isDark
-                                  ? 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold'
-                                  : 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-900 font-bold shadow-2xs'
+                              className={`ctl text-xs font-bold ${
+                                isActive ? 'ctl-primary' : ''
                               }`}
                             >
                               <span>{isActive ? 'Continuar' : 'Abrir Sessão'}</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
+                              <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             </button>
 
                             {clientSessions.length > 1 && (
                               <button
                                 type="button"
-                                onClick={(e) => handleDeleteSession(session, e)}
-                                title="Excluir sessão"
-                                className="p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-200 dark:hover:bg-rose-950/60 transition-colors"
+                                onClick={() => handleDeleteSession(session)}
+                                aria-label={`Excluir sessão ${sessionLabel}`}
+                                className="ctl ctl-danger w-11 px-0"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4" aria-hidden="true" />
                               </button>
                             )}
                           </div>
@@ -554,13 +623,105 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full text-xs font-medium text-slate-600 dark:text-slate-400">
+              <div className="flex items-center justify-center h-full p-6 text-center text-xs font-medium text-content-muted">
                 Selecione ou crie um cliente para visualizar as sessões.
               </div>
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      {/* Destructive confirmations replace window.confirm(): styled,
+          announced, and paired with a restorable window below. They are
+          siblings of the panel, not children — a confirmation nested
+          inside a focus trap is unreachable. */}
+      <ConfirmDialog
+        isOpen={pendingClientDelete !== null}
+        title="Excluir este cliente?"
+        isDestructive
+        confirmLabel="Excluir cliente"
+        onCancel={() => setPendingClientDelete(null)}
+        onConfirm={confirmClientDelete}
+        description={
+          pendingClientDelete ? (
+            <>
+              <p>
+                <strong>{pendingClientDelete.name}</strong> e todas as suas sessões serão
+                removidas deste navegador. Não há servidor: o apagamento é definitivo e
+                local.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Você poderá restaurar o cadastro logo após, pela janela de desfazer.
+              </p>
+            </>
+          ) : null
+        }
+      />
+
+      <ConfirmDialog
+        isOpen={pendingSessionDelete !== null}
+        title="Excluir esta sessão?"
+        isDestructive
+        confirmLabel="Excluir sessão"
+        onCancel={() => setPendingSessionDelete(null)}
+        onConfirm={confirmSessionDelete}
+        description={
+          pendingSessionDelete ? (
+            <p>
+              A sessão de <strong>{pendingSessionDelete.clientName}</strong> em{' '}
+              <strong>{pendingSessionDelete.sessionDate || pendingSessionDelete.title}</strong>{' '}
+              será removida. Você poderá restaurá-la logo após, pela janela de desfazer.
+            </p>
+          ) : null
+        }
+      />
+
+      {/* Undo window: the deleted record stays restorable for as long as
+          the panel is open. There is no countdown — see needsDecision. */}
+      {undoClientDeleteState && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
+        >
+          <span>
+            Cliente <strong>{undoClientDeleteState.client.name}</strong> excluído
+            {undoClientDeleteState.sessionCount > 0
+              ? ` (${undoClientDeleteState.sessionCount} ${
+                  undoClientDeleteState.sessionCount === 1 ? 'sessão' : 'sessões'
+                })`
+              : ''}
+            .
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoClientDelete}
+            className="ctl ctl-primary px-4"
+          >
+            Desfazer
+          </button>
+        </div>
+      )}
+
+      {undoSessionDeleteState && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
+        >
+          <span>
+            Sessão <strong>{undoSessionDeleteState.sessionDate || undoSessionDeleteState.title}</strong>{' '}
+            excluída.
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoSessionDelete}
+            className="ctl ctl-primary px-4"
+          >
+            Desfazer
+          </button>
+        </div>
+      )}
+    </>
   );
 };

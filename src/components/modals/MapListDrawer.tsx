@@ -15,6 +15,7 @@ import { MindMap } from '../../types';
 import { countTotalNodes } from '../../utils/tree';
 import { getAllMaps, deleteMap, saveMap } from '../../services/storage';
 import { downloadFile } from '../../utils/export';
+import { useDialogA11y } from '../ui/Modal';
 
 interface MapListDrawerProps {
   isOpen: boolean;
@@ -39,25 +40,31 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   onDuplicateMap,
   onRenameMap,
   onDeleteMapWithUndo,
-  theme,
 }) => {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
-  if (!isOpen) return null;
+  const panelRef = React.useRef<HTMLDivElement>(null);
 
-  const isDark = theme === 'noite';
+  // Escape, focus trap, focus move-in/restore and scroll lock come from the
+  // shared dialog hook. This drawer used to carry its own copy of all of it,
+  // which had already drifted from Modal's (different focusable selectors, and
+  // it silently dropped focus when the panel held none).
+  const onKeyDown = useDialogA11y(panelRef, isOpen, onClose);
+
+  // A drawer is not a Modal: the name "theme" is kept in the props for
+  // API compatibility but the shell now reads tokens from index.css.
+  if (!isOpen) return null;
 
   const filteredMaps = maps.filter((m) =>
     (m.title || '').toLowerCase().includes(search.toLowerCase()) ||
     (m.root?.text || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const startRename = (map: MindMap, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingId(map.id);
-    setEditingTitle(map.title);
+  const startRename = (mapId: string, title: string) => {
+    setEditingId(mapId);
+    setEditingTitle(title);
   };
 
   const confirmRename = (mapId: string, e: React.FormEvent) => {
@@ -78,55 +85,73 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-start bg-black/40 backdrop-blur-xs">
+    <div
+      className="fixed inset-0 z-50 flex justify-start bg-black/50 backdrop-blur-xs"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
-        className={`w-full max-w-md h-full shadow-2xl border-r flex flex-col ${
-          isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
-        }`}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="map-drawer-title"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="w-full max-w-md h-full shadow-2xl border-r border-line bg-surface-raised text-content flex flex-col focus:outline-none"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
           <div>
-            <h3 className="text-base font-extrabold text-slate-950 dark:text-white">Mapas & Sessões</h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+            <h2
+              id="map-drawer-title"
+              className="text-base font-extrabold text-content"
+            >
+              Mapas &amp; Sessões
+            </h2>
+            <p className="text-xs text-content-muted font-medium">
               {maps.length} {maps.length === 1 ? 'mapa salvo' : 'mapas salvos'} neste navegador
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label="Fechar Mapas e Sessões"
+            className="ctl w-9 h-9 !min-h-0 px-0 shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Action bar & Search */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 space-y-3">
+        <div className="p-4 border-b border-line space-y-3 shrink-0">
           <button
             type="button"
             onClick={() => {
               onCreateNewMap();
               onClose();
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-slate-950 dark:bg-white dark:text-slate-950 rounded-xl hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors shadow-xs cursor-pointer"
+            className="ctl ctl-primary w-full"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             <span>Novo Mapa</span>
           </button>
 
           <div className="relative flex items-center">
-            <Search className="w-4 h-4 absolute left-3 text-slate-500 dark:text-slate-400" />
+            <Search
+              className="w-4 h-4 absolute left-3 text-content-subtle"
+              aria-hidden="true"
+            />
+            <label htmlFor="map-search" className="sr-only">
+              Buscar mapa por cliente ou anotação
+            </label>
             <input
-              type="text"
+              id="map-search"
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por cliente ou anotação…"
-              className={`w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border outline-none font-medium ${
-                isDark
-                  ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-amber-400'
-                  : 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-amber-500'
-              }`}
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-control border border-line bg-surface font-medium text-content placeholder:text-content-subtle"
             />
           </div>
         </div>
@@ -134,8 +159,16 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
         {/* Map List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
           {filteredMaps.length === 0 ? (
-            <div className="py-12 text-center text-xs font-medium text-slate-600 dark:text-slate-400">
-              Nenhum mapa encontrado.
+            <div className="py-12 text-center text-xs font-medium text-content-muted">
+              {search ? (
+                <>
+                  Nenhum mapa encontrado para <strong>&quot;{search}&quot;</strong>.
+                  <br />
+                  Tente outro termo.
+                </>
+              ) : (
+                'Nenhum mapa salvo ainda. Crie o primeiro para começar.'
+              )}
             </div>
           ) : (
             filteredMaps.map((m) => {
@@ -149,108 +182,112 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               return (
                 <div
                   key={m.id}
-                  onClick={() => {
-                    onSelectMap(m.id);
-                    onClose();
-                  }}
-                  className={`group p-3 rounded-xl border transition-all cursor-pointer ${
+                  className={`group p-3 rounded-panel border transition-colors ${
                     isActive
-                      ? isDark
-                        ? 'bg-slate-800 border-2 border-amber-400 shadow-md ring-1 ring-amber-400/20'
-                        : 'bg-amber-50/90 border-2 border-amber-500 shadow-sm'
-                      : isDark
-                      ? 'bg-slate-900/80 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
-                      : 'bg-white border border-slate-300 hover:border-slate-400 hover:bg-slate-50 shadow-2xs'
+                      ? 'bg-accent-soft border-2 border-accent shadow-sm'
+                      : 'bg-surface-raised border border-line hover:bg-surface'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    {editingId === m.id ? (
-                      <form
-                        onSubmit={(e) => confirmRename(m.id, e)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 flex-1"
-                      >
-                        <input
-                          autoFocus
-                          type="text"
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          className="flex-1 px-2 py-0.5 text-xs rounded border border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                        />
-                        <button
-                          type="submit"
-                          className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                      </form>
-                    ) : (
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold truncate text-slate-950 dark:text-white">
-                            {m.title || 'Sem título'}
-                          </h4>
-                          {isActive && (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-500 uppercase tracking-wide">
-                              ativo
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate mt-0.5">
-                          Tema: {m.root.text}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectMap(m.id);
+                        onClose();
+                      }}
+                      aria-current={isActive ? 'true' : undefined}
+                      className="flex-1 min-w-0 text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold truncate text-content">
+                          {m.title || 'Sem título'}
+                        </h4>
+                        {isActive && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-accent text-content-onaccent uppercase tracking-wide">
+                            ativo
+                          </span>
+                        )}
                       </div>
-                    )}
+                      <p className="text-[11px] font-medium text-content-muted truncate mt-0.5">
+                        Tema: {m.root.text}
+                      </p>
+                    </button>
 
-                    {/* Action buttons on card hover */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Siblings of the selection button, never children:
+                        a <button> may not contain interactive content, and
+                        nesting them swallowed these names in the outer
+                        button's accessible name. */}
+                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                       <button
                         type="button"
-                        onClick={(e) => startRename(m, e)}
-                        title="Renomear"
-                        className="p-1 rounded text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/50"
+                        onClick={() => startRename(m.id, m.title)}
+                        aria-label={`Renomear ${m.title || 'mapa sem título'}`}
+                        className="ctl w-8 h-8 !min-h-0 px-0"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDuplicateMap(m);
-                        }}
-                        title="Duplicar"
-                        className="p-1 rounded text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/50"
+                        onClick={() => onDuplicateMap(m)}
+                        aria-label={`Duplicar ${m.title || 'mapa sem título'}`}
+                        className="ctl w-8 h-8 !min-h-0 px-0"
                       >
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       {maps.length > 1 && (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteMapWithUndo(m);
-                          }}
-                          title="Excluir"
-                          className="p-1 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-200 dark:hover:bg-rose-950/40"
+                          onClick={() => onDeleteMapWithUndo(m)}
+                          aria-label={`Excluir ${m.title || 'mapa sem título'}`}
+                          className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Card metadata (zero-pill text with separators) */}
-                  <div className="flex items-center gap-2 mt-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  {/* Card metadata */}
+                  <div className="flex items-center gap-2 mt-2 text-[11px] font-medium text-content-muted">
                     <span className="flex items-center gap-1 font-mono">
-                      <Layers className="w-3 h-3 text-amber-700 dark:text-amber-400" />
+                      <Layers className="w-3 h-3 text-accent-text" aria-hidden="true" />
                       <span>{nodeCount} balões</span>
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="flex items-center gap-1 font-mono">
-                      <Calendar className="w-3 h-3" />
+                      <Calendar className="w-3 h-3" aria-hidden="true" />
                       <span>{formattedDate}</span>
                     </span>
                   </div>
+
+                  {editingId === m.id && (
+                    <form
+                      onSubmit={(e) => confirmRename(m.id, e)}
+                      className="flex items-center gap-1.5 mt-2 pt-2 border-t border-line"
+                    >
+                      <label htmlFor={`rename-${m.id}`} className="sr-only">
+                        Novo nome do mapa
+                      </label>
+                      <input
+                        id={`rename-${m.id}`}
+                        autoFocus
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        className="flex-1 px-2 py-1.5 text-xs rounded-control border border-line bg-surface text-content"
+                      />
+                      <button
+                        type="submit"
+                        aria-label="Confirmar novo nome"
+                        className="ctl ctl-primary w-8 h-8 !min-h-0 px-0"
+                      >
+                        <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                    </form>
+                  )}
                 </div>
               );
             })
@@ -258,13 +295,9 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
         </div>
 
         {/* Footer Backup */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleBackupAll}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-colors cursor-pointer"
-          >
-            <FileDown className="w-3.5 h-3.5" />
+        <div className="p-4 border-t border-line bg-surface flex items-center justify-between shrink-0">
+          <button type="button" onClick={handleBackupAll} className="ctl">
+            <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Fazer Backup Completo (JSON)</span>
           </button>
         </div>

@@ -1,9 +1,14 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Maximize2, Minus, Plus, RotateCcw, Target } from 'lucide-react';
 import { MindMapNode } from '../../types';
 import { useMindMapLayout } from './useMindMapLayout';
 import { BalloonNode } from './BalloonNode';
 import { findPathToNode } from '../../utils/tree';
+
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 1.2;
+const PAN_STEP = 60;
 
 interface MindMapCanvasProps {
   root: MindMapNode;
@@ -50,6 +55,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   const localSvgRef = useRef<SVGSVGElement | null>(null);
   const svgRef = externalSvgRef || localSvgRef;
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const nodeRefs = useRef<Record<string, SVGGElement | null>>({});
 
   const [transform, setTransform] = useState<{ x: number; y: number; k: number }>({
     x: 0,
@@ -71,6 +77,62 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     highlightedPath,
     fontScale
   );
+
+  // Roving tabindex: the single node that is reachable with Tab.
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+
+  // Visual (top-to-bottom) order of the visible nodes — Up/Down follows
+  // what the user sees, not the depth-first order the layout emits.
+  const navOrder = useMemo(
+    () => [...nodes].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.id),
+    [nodes]
+  );
+
+  // Sibling position of every node, for aria-posinset / aria-setsize.
+  const siblingInfo = useMemo(() => {
+    const map = new Map<string, { pos: number; size: number }>();
+    const groups = new Map<string | null, string[]>();
+    nodes.forEach((n) => {
+      const list = groups.get(n.parentId);
+      if (list) list.push(n.id);
+      else groups.set(n.parentId, [n.id]);
+    });
+    groups.forEach((ids) => {
+      ids.forEach((id, i) => map.set(id, { pos: i + 1, size: ids.length }));
+    });
+    return map;
+  }, [nodes]);
+
+  // The roving target must always exist: if it was collapsed away, fall back
+  // to the selection or the root so the map never has zero tabbable nodes.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    if (activeNodeId && nodes.some((n) => n.id === activeNodeId)) return;
+    const keepSelection = selectedNodeId && nodes.some((n) => n.id === selectedNodeId);
+    setActiveNodeId(keepSelection ? selectedNodeId : nodes[0].id);
+  }, [nodes, activeNodeId, selectedNodeId]);
+
+  const focusNode = useCallback((nodeId: string) => {
+    setActiveNodeId(nodeId);
+    // Roving tabindex + imperative move: the DOM node already exists, the
+    // scroll-into-view is the browser's job once it takes focus.
+    nodeRefs.current[nodeId]?.focus();
+  }, []);
+
+  const zoomBy = useCallback((factor: number) => {
+    setTransform((prev) => ({
+      ...prev,
+      k: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.k * factor)),
+    }));
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setTransform({
+      x: (containerRef.current?.clientWidth || 800) / 2,
+      y: (containerRef.current?.clientHeight || 600) / 2,
+      k: 1,
+    });
+  }, []);
 
   // Center & Fit entire map
   const fitToScreen = useCallback(() => {
@@ -100,6 +162,36 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   useEffect(() => {
     fitToScreen();
   }, [root.id]);
+
+  // The canvas is a percentage of a resizable split, so it is resized by
+  // dragging a divider, maximising it, or a layout collapse — never by a
+  // window resize event, and nothing in the app fires one. Without this the
+  // map kept its old transform and sat half off-screen after the pane changed.
+  // A change under 24px is ignored (a scrollbar, a 1px nudge) so the map does
+  // not re-fit on every keystroke-driven relayout; a real change re-frames the
+  // map, which is the right trade — a half-visible map is worse than losing a
+  // manual pan.
+  const fitRef = useRef(fitToScreen);
+  useEffect(() => {
+    fitRef.current = fitToScreen;
+  });
+  const lastFitSizeRef = useRef<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === 0 || h === 0) return;
+      const last = lastFitSizeRef.current;
+      if (last && Math.abs(w - last.w) < 24 && Math.abs(h - last.h) < 24) return;
+      lastFitSizeRef.current = { w, h };
+      fitRef.current();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Focus Zoom Mode: Zoom in on node + parents + children!
   useEffect(() => {
@@ -170,13 +262,132 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     const mouseY = e.clientY - rect.top;
 
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    const newK = Math.min(2.5, Math.max(0.3, transform.k * zoomFactor));
+    const newK = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, transform.k * zoomFactor));
 
     const newX = mouseX - (mouseX - transform.x) * (newK / transform.k);
     const newY = mouseY - (mouseY - transform.y) * (newK / transform.k);
 
     setTransform({ x: newX, y: newY, k: newK });
   };
+
+  // Keyboard equivalent of the wheel/drag: zoom on +/-, pan on the arrows
+  // while the container itself holds focus (a focused node owns the arrows).
+  const handleContainerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === '0') {
+        e.preventDefault();
+        fitToScreen();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case '+':
+      case '=':
+        e.preventDefault();
+        zoomBy(ZOOM_STEP);
+        return;
+      case '-':
+      case '_':
+        e.preventDefault();
+        zoomBy(1 / ZOOM_STEP);
+        return;
+      default:
+        break;
+    }
+
+    if (e.target !== containerRef.current) return;
+
+    const pan = (dx: number, dy: number) => {
+      e.preventDefault();
+      setTransform((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+    };
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        pan(PAN_STEP, 0);
+        break;
+      case 'ArrowRight':
+        pan(-PAN_STEP, 0);
+        break;
+      case 'ArrowUp':
+        pan(0, PAN_STEP);
+        break;
+      case 'ArrowDown':
+        pan(0, -PAN_STEP);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Tree navigation on the focused node (WAI-ARIA tree pattern).
+  const handleNodeKeyDown = useCallback(
+    (nodeId: string, e: React.KeyboardEvent) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const index = navOrder.indexOf(nodeId);
+      e.stopPropagation();
+
+      const firstChild = nodes.find((n) => n.parentId === nodeId);
+
+      switch (e.key) {
+        case 'ArrowDown':
+          if (index >= 0 && index < navOrder.length - 1) {
+            e.preventDefault();
+            focusNode(navOrder[index + 1]);
+          }
+          break;
+        case 'ArrowUp':
+          if (index > 0) {
+            e.preventDefault();
+            focusNode(navOrder[index - 1]);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (node.hasChildren && node.collapsed) {
+            // No handler means the read-only client window: expanding is not
+            // offered, so the key does nothing rather than implying it can.
+            onToggleCollapse?.(nodeId);
+          } else if (firstChild) {
+            focusNode(firstChild.id);
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (node.hasChildren && !node.collapsed) {
+            onToggleCollapse?.(nodeId);
+            if (node.parentId) focusNode(node.parentId);
+          } else if (node.parentId) {
+            focusNode(node.parentId);
+          }
+          break;
+        case 'Home':
+          if (navOrder.length) {
+            e.preventDefault();
+            focusNode(navOrder[0]);
+          }
+          break;
+        case 'End':
+          if (navOrder.length) {
+            e.preventDefault();
+            focusNode(navOrder[navOrder.length - 1]);
+          }
+          break;
+        case 'Enter':
+        case ' ':
+          // Always swallowed: Space would otherwise scroll the page out from
+          // under the map when the canvas is read-only (client window).
+          e.preventDefault();
+          onNodeClick?.(nodeId);
+          break;
+        default:
+          break;
+      }
+    },
+    [nodes, navOrder, focusNode, onNodeClick, onToggleCollapse]
+  );
 
   // Pointer Down (Pan drag)
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -210,23 +421,57 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   };
 
   const isDark = theme === 'noite';
-  const gridDotColor = isDark ? '#334155' : '#D1D5DB';
+
+  // SVG geometry cannot take a Tailwind class, but it does resolve CSS custom
+  // properties, so the canvas reads the same tokens as the rest of the app
+  // rather than carrying its own hex literals.
+  //
+  // SC 1.4.11 (3:1 against --surface):
+  //   connector  var(--border)            4.85:1 papel · 4.04:1 noite
+  //   highlight  var(--accent-text)       5.02:1 papel · 11.11:1 noite
+  // Decorative only (background texture, and the wide glow under the
+  // highlighted path) stays exempt.
+  const gridDotColor = 'var(--border-muted)';
+  const connectorColor = 'var(--border)';
+  const highlightStroke = 'var(--accent-text)';
+
+  const mapLabel = clientName
+    ? `Mapa mental da sessão com ${clientName}${sessionDate ? `, ${sessionDate}` : ''}`
+    : 'Mapa mental da sessão';
 
   return (
     <div
       ref={containerRef}
+      role="application"
+      tabIndex={0}
+      aria-label={mapLabel}
+      aria-describedby="mapa-teclas"
+      onKeyDown={handleContainerKeyDown}
       onWheel={handleWheel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      className={`relative w-full h-full select-none overflow-hidden ${
+      /* The canvas is a percentage of a resizable split, so its usable width
+         is not the viewport width: at 1280px it can be 793px (62% pane) or
+         1280px (maximised) and at 375px it is 233px. A viewport breakpoint
+         cannot tell those apart — a container query can, and Tailwind v4 ships
+         `@container` + the `@min-*` variants, so nothing is hand-written and
+         index.css stays untouched. */
+      className={`@container relative w-full h-full select-none overflow-hidden bg-surface ${
         isDragging ? 'cursor-grabbing' : 'cursor-grab'
       }`}
-      style={{
-        backgroundColor: isDark ? '#0B0F17' : '#F7F6F2',
-      }}
     >
+      {/* Describes only the keys that actually work in this instance. The
+          read-only client window has no onToggleCollapse, so promising
+          "seta para a direita abre" there is a false instruction read out to
+          a screen-reader user on every focus. */}
+      <p id="mapa-teclas" className="sr-only">
+        {onToggleCollapse
+          ? 'Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis, a seta para a direita abre ou entra no primeiro filho, a seta para a esquerda fecha ou volta ao pai, e Enter ou Espaço selecionam o ponto em modo edição. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo.'
+          : 'Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis e Enter ou Espaço selecionam o ponto. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo.'}
+      </p>
+
       <svg
         ref={svgRef}
         className="w-full h-full block"
@@ -245,12 +490,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           </pattern>
         </defs>
 
-        {/* Background Dots */}
+        {/* Background Dots — decorative texture, hidden from AT */}
         <rect
           width="100%"
           height="100%"
           fill={`url(#bg-dots-${theme})`}
           className="pointer-events-none"
+          aria-hidden="true"
         />
 
         {/* World Transform Group */}
@@ -258,8 +504,9 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           transform={`translate(${transform.x}, ${transform.y}) scale(${transform.k})`}
           style={{ transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
-          {/* Connector Links */}
-          <g className="links-group">
+          {/* Connector Links — the tree structure is carried by
+              aria-level/posinset, so the curves are hidden from AT. */}
+          <g className="links-group" aria-hidden="true">
             {links.map((link) => {
               const isHigh = link.isHighlighted;
               return (
@@ -268,7 +515,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
                     <path
                       d={link.path}
                       fill="none"
-                      stroke="#F59E0B"
+                      stroke="var(--accent)"
                       strokeWidth="6"
                       strokeOpacity="0.5"
                       strokeLinecap="round"
@@ -277,7 +524,11 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
                   <path
                     d={link.path}
                     fill="none"
-                    stroke={isHigh ? '#D97706' : (isDark ? '#475569' : link.color)}
+                    /* Papel: the branch palette, which measures 4.64:1-9.58:1
+                       as a 2.2px stroke on --surface. Noite: the palette is far
+                       too dark on a dark canvas, so connectors take the neutral
+                       --border token instead. */
+                    stroke={isHigh ? highlightStroke : (isDark ? connectorColor : link.color)}
                     strokeWidth={isHigh ? 3.5 : 2.2}
                     strokeOpacity={isHigh ? 1 : 0.9}
                     strokeLinecap="round"
@@ -303,12 +554,18 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           </g>
 
           {/* Balloon Nodes */}
-          <g className="nodes-group">
+          <g
+            className="nodes-group"
+            role="tree"
+            aria-label="Pontos do mapa"
+            aria-orientation="horizontal"
+          >
             {nodes.map((node) => {
               const isRoot = node.id === root.id;
               const isTargetParent = draft?.active && draft.mode === 'add' && draft.parentId === node.id;
               const isEditing = draft?.active && draft.mode === 'edit' && draft.targetId === node.id;
               const isSelected = selectedNodeId === node.id;
+              const siblings = siblingInfo.get(node.id);
 
               return (
                 <BalloonNode
@@ -321,13 +578,23 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
                   theme={theme}
                   fontScale={fontScale}
                   liveTextMode={liveTextMode}
+                  isFocusTarget={node.id === activeNodeId}
+                  level={node.depth + 1}
+                  posInSet={siblings?.pos ?? 1}
+                  setSize={siblings?.size ?? 1}
+                  nodeRef={(el) => {
+                    nodeRefs.current[node.id] = el;
+                  }}
+                  onNodeFocus={setActiveNodeId}
+                  onNodeKeyDown={handleNodeKeyDown}
                   onNodeClick={onNodeClick}
                   onToggleCollapse={onToggleCollapse}
                 />
               );
             })}
 
-            {/* Ghost Balloon Node */}
+            {/* Ghost Balloon Node — a preview of a node that does not exist
+                yet, so it is not part of the tree. */}
             {ghostNode && (
               <BalloonNode
                 key={ghostNode.id}
@@ -345,7 +612,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
                   hasChildren: false,
                   childCount: 0,
                   parentId: ghostNode.parentId,
-                  node: null as any,
+                  node: {
+                    id: ghostNode.id,
+                    text: ghostNode.text,
+                    collapsed: false,
+                    color: ghostNode.color,
+                    children: [],
+                  },
                 }}
                 isGhost={true}
                 ghostText={ghostNode.text}
@@ -358,86 +631,80 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         </g>
       </svg>
 
-      {/* Floating Canvas Controls */}
+      {/* Floating Canvas Controls.
+          Every button clears the 44px touch floor (min-w/min-h-touch, the
+          `--spacing-touch` token = 2.75rem). The cluster wraps and caps its own
+          width instead of overflowing, and the one text label is dropped on a
+          narrow canvas — decided by the canvas width, not the viewport, so the
+          same 5 buttons read as a label + 4 icons on a wide pane and as 5
+          icons on a 233px one without a horizontal scrollbar either way. */}
       <div
-        className={`absolute bottom-4 right-4 flex items-center gap-1 p-1 rounded-xl border shadow-md backdrop-blur-md transition-opacity ${
-          isDark
-            ? 'bg-slate-900/90 border-slate-700 text-slate-200'
-            : 'bg-white/95 border-stone-300 text-stone-800'
-        } ${readOnly ? 'opacity-40 hover:opacity-100' : 'opacity-90 hover:opacity-100'}`}
+        className="absolute bottom-4 right-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-0.5 rounded-panel border border-line bg-surface-raised p-1 text-content shadow-md"
       >
         {/* Toggle Focus Zoom Mode Button */}
-        {onToggleFocusZoomMode && (
+        {onToggleFocusZoomMode && !readOnly && (
           <>
             <button
               type="button"
               onClick={onToggleFocusZoomMode}
+              aria-pressed={focusZoomMode}
+              aria-label="Zoom no Foco"
               title={
                 focusZoomMode
                   ? 'Foco com Zoom ATIVADO (aproxima o nó, pais e filhos ao navegar no outline)'
                   : 'Ativar Foco com Zoom (aproxima nó + pais + filhos ao navegar)'
               }
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg transition-colors ${
+              className={`flex min-h-touch min-w-touch items-center justify-center gap-1 rounded-control px-2.5 text-xs font-semibold transition-colors @min-[24rem]:px-3 ${
                 focusZoomMode
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'hover:bg-black/5 dark:hover:bg-white/10 text-stone-600 dark:text-slate-300'
+                  ? 'bg-accent text-content-onaccent shadow-xs'
+                  : 'hover:bg-content/10 text-content-muted'
               }`}
             >
-              <Target className="w-3.5 h-3.5" />
-              <span>Zoom no Foco</span>
+              <Target className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="hidden whitespace-nowrap @min-[24rem]:inline">Zoom no Foco</span>
             </button>
-            <div className="w-[1px] h-4 bg-stone-300 dark:bg-slate-700 mx-0.5" />
+            <div className="mx-0.5 h-6 w-px shrink-0 bg-line-muted" aria-hidden="true" />
           </>
         )}
 
         <button
           type="button"
-          onClick={() =>
-            setTransform((prev) => ({
-              ...prev,
-              k: Math.min(2.5, prev.k * 1.2),
-            }))
-          }
+          onClick={() => zoomBy(ZOOM_STEP)}
+          disabled={transform.k >= MAX_ZOOM}
+          aria-label="Aumentar zoom"
           title="Aumentar zoom (+)"
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4" aria-hidden="true" />
         </button>
         <button
           type="button"
-          onClick={() =>
-            setTransform((prev) => ({
-              ...prev,
-              k: Math.max(0.3, prev.k * 0.8),
-            }))
-          }
+          onClick={() => zoomBy(1 / ZOOM_STEP)}
+          disabled={transform.k <= MIN_ZOOM}
+          aria-label="Diminuir zoom"
           title="Diminuir zoom (-)"
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
         >
-          <Minus className="w-4 h-4" />
+          <Minus className="w-4 h-4" aria-hidden="true" />
         </button>
-        <div className="w-[1px] h-4 bg-stone-300 dark:bg-slate-700 mx-0.5" />
+        <div className="mx-0.5 h-6 w-px shrink-0 bg-line-muted" aria-hidden="true" />
         <button
           type="button"
           onClick={fitToScreen}
+          aria-label="Ajustar mapa à tela"
           title="Ajustar mapa à tela (Ctrl+0)"
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 transition-colors"
         >
-          <Maximize2 className="w-4 h-4" />
+          <Maximize2 className="w-4 h-4" aria-hidden="true" />
         </button>
         <button
           type="button"
-          onClick={() =>
-            setTransform({
-              x: (containerRef.current?.clientWidth || 800) / 2,
-              y: (containerRef.current?.clientHeight || 600) / 2,
-              k: 1,
-            })
-          }
+          onClick={resetZoom}
+          aria-label="Resetar zoom para 100%"
           title="Resetar zoom para 100%"
-          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 transition-colors"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -143,11 +143,22 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     };
   }, [resetDwellTimer]);
 
-  useEffect(() => {
-    if (activeNodeId) {
-      startDwellTimer(activeNodeId);
-    }
-  }, [activeNodeId, startDwellTimer]);
+  // The dwell timer is armed from a deliberate POINTER click on a row (see
+  // the row onClick below), never from activeNodeId.
+  //
+  // It used to run off `activeNodeId`, which meant every ArrowUp/ArrowDown
+  // step re-armed it — a keyboard user scanning the outline lit up the
+  // client's screen on every row they passed, with focusDwellSeconds: 0 in
+  // Settings as the only escape. Arming on click keeps the feature intact
+  // for the mouse flow it was designed for and removes it from traversal.
+  //
+  // Note: the client-facing highlight on traversal does NOT actually come
+  // from this timer. focusInput() already broadcasts onSelectNode(id,
+  // 'navigate') synchronously, and ClientView treats every `reason`
+  // identically (ClientView.tsx:114), so the dwell only re-sent the node it
+  // had already sent. See the report: if traversal should stop moving the
+  // client's highlight at all, focusInput's 'navigate' call is the line to
+  // change, not this one.
 
   // Create Child directly (Ctrl+Enter or button)
   const handleCreateChild = (item: FlatOutlineItem) => {
@@ -349,38 +360,47 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   };
 
   return (
-    <div
-      className={`flex flex-col h-full overflow-hidden select-text ${
-        isDark ? 'bg-[#0E131F] text-slate-100' : 'bg-white text-slate-900'
-      }`}
-    >
+    /* The pane is NOT sized by the viewport: TherapistView gives it an inline
+       `width: {outlineWidthPercent}%` of a flex row, so the same pane can be
+       547px on a 1440px screen and 142px on a 375px one, and a user's zoom
+       moves it again. A viewport breakpoint (sm:/md:) would therefore be the
+       wrong axis twice over. This component declares itself a query CONTAINER
+       and every rule below is written against the pane's own inline size. */
+    <div className="@container flex flex-col h-full min-w-0 overflow-hidden select-text bg-surface-raised text-content">
       {/* Refined Sidebar Header */}
-      <div
-        className={`px-4 py-3 border-b shrink-0 ${
-          isDark
-            ? 'bg-[#131926] border-slate-800 text-slate-100'
-            : 'bg-slate-50 border-slate-200 text-slate-900'
-        }`}
-      >
-        <div className="flex items-center justify-between text-xs font-bold tracking-tight">
-          <span className="uppercase text-[11px] tracking-wider text-slate-700 dark:text-slate-300">
+      <div className="px-4 py-3 border-b border-line-muted shrink-0 bg-surface-inset text-content">
+        {/* Both header rows wrap instead of crushing: at 200% zoom inside a
+            291px pane the title + counter cannot share a line. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-bold tracking-tight">
+          <span className="uppercase text-[11px] tracking-wider text-content-muted">
             Tópicos da Sessão
           </span>
-          <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+          <span className="font-mono text-[11px] font-bold text-content-muted">
             {flatItems.length} balões
           </span>
         </div>
-        <div className="flex items-center gap-2 mt-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-400">
-          <span>Enter: <strong className="font-semibold text-slate-900 dark:text-slate-200">Irmão</strong></span>
-          <span>·</span>
-          <span className="font-bold text-amber-700 dark:text-amber-400">Ctrl+Enter: Filho</span>
-          <span>·</span>
+        {/* Hierarchy is carried by weight, not colour: text-accent-text on
+            bg-surface-inset is 4.40:1 in the papel theme, just under AA. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-[11px] font-mono text-content-muted">
+          <span>
+            Enter: <strong className="font-semibold text-content">Irmão</strong>
+          </span>
+          <span aria-hidden="true">·</span>
+          <strong className="font-bold text-content">Ctrl+Enter: Filho</strong>
+          <span aria-hidden="true">·</span>
           <span>Tab: Indentar</span>
         </div>
       </div>
 
-      {/* Lines Scrollable Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1 outline-none">
+      {/* Lines Scrollable Area.
+          `--indent-step` is the one knob the whole tree scales from. It used to
+          be a hard-coded 22px per level, so depth 12 asked for 274px of indent
+          inside a pane that is 142px wide on a phone — the overflow the
+          design audit flagged under C2. The row reads the step through
+          calc(), so shrinking it here re-spaces every level at once.
+          overflow-x-hidden (which overflow-y:auto already implies) keeps the
+          44px hit expanders from ever producing a sideways scrollbar. */}
+      <div className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto p-3 space-y-1 outline-none [--indent-step:22px] @max-[520px]:[--indent-step:14px] @max-[320px]:[--indent-step:8px]">
         {flatItems.map((item, index) => {
           const isRootItem = item.id === root.id;
           const isRowActive = activeNodeId === item.id;
@@ -388,109 +408,131 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           const charCount = item.text.length;
           const isCharWarning = charCount > 90;
 
-          // Compute unequivocal high-contrast visual styling (WCAG AAA compliant)
+          // The active row is a full row INVERSION, not a 1px ring — 20.17:1
+          // in papel. That is the strongest focus indicator in the app and
+          // the pattern the rest of the app should copy, so it is preserved
+          // exactly. index.css has no inverted-surface token, so the two
+          // inversion fills stay literal here (see report: needs a
+          // --surface-inverted pair). Everything else is a semantic token.
           let rowContainerStyle = '';
           let inputTextStyle = '';
-          let inputInlineColor = '';
           let bulletStyle = '';
 
           if (isRowActive) {
-            // Active typing line: MAXIMUM CONTRAST
-            if (isDark) {
-              rowContainerStyle = 'bg-slate-800 border-2 border-amber-400 text-white shadow-md ring-2 ring-amber-400/25';
-              inputTextStyle = '!text-white font-bold placeholder:text-slate-300 caret-amber-400';
-              inputInlineColor = '#FFFFFF';
-              bulletStyle = 'bg-amber-400 ring-2 ring-amber-400/40';
-            } else {
-              rowContainerStyle = 'bg-slate-950 border-2 border-amber-500 text-white shadow-md ring-2 ring-slate-950/15';
-              inputTextStyle = '!text-white font-bold placeholder:text-slate-300 caret-amber-400';
-              inputInlineColor = '#FFFFFF';
-              bulletStyle = 'bg-amber-400 ring-2 ring-white/50';
-            }
+            rowContainerStyle = isDark
+              ? 'bg-[#1e293b] border-2 border-accent text-white shadow-md ring-2 ring-accent/25'
+              : 'bg-[#020617] border-2 border-accent text-white shadow-md ring-2 ring-[#020617]/15';
+            // White-on-near-black placeholder: no token covers an inverted
+            // foreground, so slate-300 (13.59:1 / 9.85:1) is kept.
+            inputTextStyle =
+              '!text-white font-bold placeholder:text-slate-300 caret-accent';
+            bulletStyle = 'bg-accent ring-2 ring-accent/40';
           } else if (isRowSelected) {
-            // Selected node: Solid Gold/Amber badge with PURE BLACK TEXT (19:1 contrast)
-            if (isDark) {
-              rowContainerStyle = 'bg-amber-400 border-2 border-amber-300 text-black shadow-md font-extrabold';
-              inputTextStyle = '!text-black font-black placeholder:text-slate-900 caret-black';
-              inputInlineColor = '#000000';
-              bulletStyle = 'bg-black';
-            } else {
-              rowContainerStyle = 'bg-amber-300 border-2 border-amber-600 text-black shadow-sm font-extrabold';
-              inputTextStyle = '!text-black font-black placeholder:text-slate-900 caret-black';
-              inputInlineColor = '#000000';
-              bulletStyle = 'bg-black';
-            }
+            // Selected node: amber wash with PURE BLACK TEXT (18.86:1 papel /
+            // 12.58:1 noite). In papel the 2px --accent-text border carries the
+            // state against the page (5.02:1, up from 3.19:1 for the old
+            // border-amber-600). In noite the fill itself is 12.44:1 against
+            // the page, so the row needs no border — and a --border border
+            // there measured only 2.85:1 against the amber it was outlining,
+            // i.e. it was a 2px edge nobody could see.
+            rowContainerStyle = isDark
+              ? 'bg-accent text-black shadow-md font-extrabold'
+              : 'bg-accent-soft border-2 border-accent-text text-black shadow-sm font-extrabold';
+            inputTextStyle = '!text-black font-black placeholder:text-content-onaccent caret-black';
+            bulletStyle = 'bg-black';
           } else {
-            // Normal unselected line: High contrast dark text on light mode, bright on dark mode
-            if (isDark) {
-              rowContainerStyle = 'border border-transparent hover:bg-slate-800/80 text-slate-100';
-              inputTextStyle = isRootItem
-                ? 'font-extrabold text-white text-base font-mono'
-                : 'text-slate-100 font-semibold placeholder:text-slate-400 caret-amber-400';
-              inputInlineColor = '#F8FAFC';
-              bulletStyle = isRootItem ? 'bg-amber-400' : 'bg-slate-500';
-            } else {
-              rowContainerStyle = 'border border-transparent hover:bg-slate-100 text-slate-950';
-              inputTextStyle = isRootItem
-                ? 'font-extrabold text-slate-950 text-base font-mono'
-                : 'text-slate-950 font-bold placeholder:text-slate-500 caret-slate-950';
-              inputInlineColor = '#020617';
-              bulletStyle = isRootItem ? 'bg-slate-950' : 'bg-slate-500';
-            }
+            // Normal line. hover:bg-content/5 is a single token expression
+            // that washes correctly in both themes (4% darker in papel,
+            // lighter in noite), replacing two hardcoded slate hovers.
+            rowContainerStyle = 'border border-transparent hover:bg-content/5 text-content';
+            inputTextStyle = isRootItem
+              ? 'font-extrabold text-base font-mono'
+              : 'font-bold placeholder:text-content-muted caret-content';
+            bulletStyle = isRootItem ? 'bg-accent' : 'bg-content-muted';
           }
+
+          // Indent, clamped twice: the responsive step above, then a hard
+          // ceiling of 38% of the pane so no row — however deep the tree —
+          // can ask for more than a third of the space. `--indent-cap` is the
+          // single override point, so a future drag-to-resize handle has one
+          // knob to turn. Row padding and guide line both read this property,
+          // which is how the two copies of `level * 22` stopped drifting.
+          const padLeft = `min(calc(${item.level} * var(--indent-step, 22px) + 10px), var(--indent-cap, 38cqi))`;
 
           return (
             <div
               key={item.id}
               onClick={() => {
                 focusInput(item.id);
+                // Deliberate pointer activation arms the dwell auto-highlight.
+                // Keyboard traversal deliberately does not (see the note
+                // above the dwell timer).
+                startDwellTimer(item.id);
               }}
-              className={`group flex items-center py-2 px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}`}
-              style={{
-                paddingLeft: `${Math.max(10, item.level * 22 + 10)}px`,
-              }}
+              /* py-2.5, not py-2. At py-2 the row was 40px tall inside a 44px
+                 pitch: two controls shared one 44px band, and a ::before
+                 expander lost the 2px it poked past its own row to the NEXT
+                 row, which paints later. 46px rows give each expander a band
+                 of its own with room to spare. */
+              className={`group flex items-center py-2.5 px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}`}
+              style={
+                {
+                  '--pad-left': padLeft,
+                  paddingLeft: 'var(--pad-left)',
+                } as React.CSSProperties
+              }
             >
-              {/* Left indicator marker for active item */}
-              {isRowActive && (
-                <div
-                  className={`absolute left-0 top-1.5 bottom-1.5 w-1.5 rounded-r ${
-                    isDark ? 'bg-amber-400' : 'bg-amber-400'
-                  }`}
-                />
-              )}
-
-              {/* Indent Guide Line */}
+              {/* Indent Guide Line. --border-muted measured 2.56:1 / 2.45:1
+                  here, and the line is the only visual cue for how deep a row
+                  sits, so it takes the 3:1 --border token instead. */}
               {item.level > 0 && (
                 <div
-                  className={`absolute top-0 bottom-0 border-l ${
-                    isDark ? 'border-slate-800' : 'border-slate-200'
-                  }`}
-                  style={{ left: `${item.level * 22 - 3}px` }}
+                  className="absolute top-0 bottom-0 border-l border-line"
+                  style={{ left: 'calc(var(--pad-left) - 13px)' }}
                 />
               )}
 
-              {/* Collapse button or bullet dot */}
-              <div className="w-5 h-5 flex items-center justify-center shrink-0 mr-2">
+              {/* Collapse button or bullet dot. w-7, not w-5: the extra 4px of
+                  slack is what lets the chevron's 12px ::before expander land
+                  on the input's edge instead of being clipped by it — the
+                  input is a later sibling, so it wins any overlap. Same icon
+                  position, same 8px optical gap to the text. */}
+              <div className="w-7 h-5 flex items-center justify-center shrink-0 mr-2">
                 {item.hasChildren ? (
                   <button
                     type="button"
-                    tabIndex={-1}
+                    // Was tabIndex={-1}: collapse had NO keyboard equivalent
+                    // anywhere in the app, so a collapsed subtree could never
+                    // be re-expanded. It is always visible (no opacity-0), so
+                    // nothing was hiding it from the tab order.
+                    aria-expanded={!item.collapsed}
+                    aria-label={
+                      item.collapsed
+                        ? `Expandir ${item.text || 'tópico'}`
+                        : `Recolher ${item.text || 'tópico'}`
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
+                      resetDwellTimer();
                       onUpdateRoot(toggleNodeCollapse(root, item.id), 'collapse');
                     }}
-                    className={`p-0.5 rounded transition-colors ${
-                      isRowActive || isRowSelected
+                    /* 20x20 visual, 59x64 effective target. `relative` plus an
+                       invisible ::before grown 12px past every edge is the whole
+                       trick: the box model never moves, so the row keeps its
+                       density and the guide line stays aligned. Measured with
+                       elementFromPoint, not asserted. */
+                    className={`relative p-0.5 rounded transition-colors before:content-[''] before:absolute before:-inset-3 ${
+                      isRowActive
                         ? 'text-white hover:bg-white/20'
-                        : isDark
-                        ? 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        : 'text-slate-600 hover:text-slate-950 hover:bg-slate-200'
+                        : isRowSelected
+                        ? 'text-black hover:bg-black/15'
+                        : 'text-content-muted hover:text-content hover:bg-content/10'
                     }`}
                   >
                     {item.collapsed ? (
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronRight className="w-4 h-4" aria-hidden="true" />
                     ) : (
-                      <ChevronDown className="w-4 h-4" />
+                      <ChevronDown className="w-4 h-4" aria-hidden="true" />
                     )}
                   </button>
                 ) : (
@@ -498,8 +540,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 )}
               </div>
 
-              {/* Line Input with Guaranteed High-Contrast Typography */}
-              <div className="flex-1 relative flex items-center">
+              {/* Line Input with Guaranteed High-Contrast Typography.
+                  The inline style={{color}} is gone: `!text-white` / `!text-black`
+                  compile to !important and already win over inline styles, and
+                  the normal row inherits text-content from the row container. */}
+              {/* min-w-0 is load-bearing: a flex item defaults to
+                  min-width:auto, so the input's ~170px intrinsic width was
+                  setting the row's floor and the row's floor was setting the
+                  pane's floor. That is the whole reason the split overflowed. */}
+              <div className="flex-1 min-w-0 relative flex items-center">
                 <input
                   ref={(el) => {
                     if (el) inputRefs.current.set(item.id, el);
@@ -514,42 +563,67 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   onChange={(e) => handleInputChange(item, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, item, index)}
                   onPaste={(e) => handlePaste(e, item)}
-                  style={{ color: inputInlineColor }}
-                  className={`w-full bg-transparent border-0 outline-none text-sm transition-colors py-0.5 pr-24 ${inputTextStyle}`}
+                  /* pr reserves the row for the absolutely positioned control
+                     cluster. It is 112px on a normal pane but only 32px on a
+                     narrow one, where the + Filho button drops to icon-only —
+                     otherwise 96px of reserved space left ~16px of a 142px
+                     pane for the actual text, and the field looked broken. */
+                  className={`w-full bg-transparent border-0 outline-none text-sm transition-colors py-0.5 pr-8 @min-[384px]:pr-28 ${inputTextStyle}`}
                 />
 
                 {/* Right controls: + Filho button & counters */}
                 <div className="absolute right-1 flex items-center gap-1.5">
-                  {/* + Filho Action Button on hover/focus */}
+                  {/* + Filho. Was tabIndex={-1} + opacity-0, so it was
+                      unreachable by keyboard AND invisible to it: focusable
+                      but fully transparent. group-focus-within reveals it as
+                      soon as focus lands inside the row. Ctrl+Enter is still
+                      the fast path. pointer-coarse:opacity-100 closes the
+                      last gap — a touchscreen fires no hover, and an
+                      invisible-but-still-present button is an invisible click
+                      target sitting on top of the text. */}
                   <button
                     type="button"
-                    tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCreateChild(item);
                     }}
                     title="Criar nó filho dentro deste (Ctrl+Enter)"
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                    aria-label="Criar nó filho dentro deste tópico"
+                    /* 20px tall visual, 44px touch: the same invisible ::before
+                       expander as the chevron, 12px past every edge. The
+                       cluster is the row's last child, so it wins the hit over
+                       the input underneath it — which is why the expander can
+                       also claim the reserved gutter to its left. */
+                    className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-accent bg-accent text-content-onaccent transition-opacity before:content-[''] before:absolute before:-inset-3 ${
                       isRowActive
-                        ? 'opacity-100 bg-amber-400 text-slate-950 border-amber-500 hover:bg-amber-300'
-                        : 'opacity-0 group-hover:opacity-100 bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-400'
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100'
                     }`}
                   >
-                    <CornerDownRight className="w-3 h-3 text-amber-700" />
-                    <span>+ Filho</span>
+                    <CornerDownRight className="w-3 h-3" aria-hidden="true" />
+                    <span className="hidden @min-[384px]:inline">+ Filho</span>
                   </button>
 
-                  {/* Character Counter */}
+                  {/* Character Counter. Each state needs its own colour: the
+                      old single `text-accent-text` warning was 1.93:1 on the
+                      papel selected wash and exactly 1.00:1 on the noite one
+                      (both are --accent-text sitting on --accent-soft /
+                      --accent), and `text-accent` on the active row was
+                      9.10:1 / 9.03:1, which is fine. */}
                   {charCount > 70 && (
                     <span
-                      className={`text-[10px] font-mono tabular-nums ${
+                      /* Below 384px of pane the counter competes with the field
+                         for the only 32px of reserved gutter, so it stands down
+                         rather than overlapping the annotation. Input is still
+                         capped at 280 characters either way. */
+                      className={`hidden @min-[384px]:inline text-[10px] font-mono tabular-nums ${
                         isRowActive
-                          ? 'text-amber-300 font-bold'
+                          ? 'text-accent font-bold'
+                          : isRowSelected
+                          ? 'text-content-onaccent font-bold'
                           : isCharWarning
-                          ? 'text-amber-700 dark:text-amber-400 font-bold'
-                          : isDark
-                          ? 'text-slate-400'
-                          : 'text-slate-600'
+                          ? 'text-accent-text font-bold'
+                          : 'text-content-muted'
                       }`}
                       title={
                         isCharWarning
@@ -561,44 +635,69 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     </span>
                   )}
 
-                  {/* 3s Focus Dwell Circular Progress */}
-                  {isRowActive && dwellActive && dwellProgress > 0 && dwellProgress < 100 && (
-                    <div
-                      className="relative w-4 h-4 flex items-center justify-center"
-                      title={`Foco automático do cliente em ${Math.ceil(
-                        focusDwellSeconds - (dwellProgress / 100) * focusDwellSeconds
-                      )}s`}
-                    >
-                      <svg className="w-4 h-4 -rotate-90" viewBox="0 0 16 16">
-                        <circle
-                          cx="8"
-                          cy="8"
-                          r="6"
-                          fill="none"
-                          stroke={isDark ? '#475569' : '#CBD5E1'}
-                          strokeWidth="2.5"
-                        />
-                        <circle
-                          cx="8"
-                          cy="8"
-                          r="6"
-                          fill="none"
-                          stroke="#F59E0B"
-                          strokeWidth="2.5"
-                          strokeDasharray={37.7}
-                          strokeDashoffset={37.7 - (37.7 * dwellProgress) / 100}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </div>
-                  )}
+                  {/* Focus Dwell Circular Progress.
+                      Track was #CBD5E1 on white = 1.48:1 and the arc
+                      #F59E0B = 2.15:1; both fail SC 1.4.11 (needs 3:1).
+                      stroke-line is 4.76:1 / 3.90:1 and stroke-accent-text is
+                      5.02:1 / 11.12:1. One token each, so the isDark ternary
+                      is gone. role=progressbar (not a live region, so it does
+                      not spam a screen reader mid-animation). */}
+                  {isRowActive && dwellActive && dwellProgress > 0 && dwellProgress < 100 && (() => {
+                    const secondsLeft = Math.max(
+                      0,
+                      Math.ceil(focusDwellSeconds - (dwellProgress / 100) * focusDwellSeconds)
+                    );
+                    return (
+                      <div
+                        role="progressbar"
+                        aria-label="Foco automático do cliente"
+                        aria-valuemin={0}
+                        aria-valuemax={focusDwellSeconds}
+                        aria-valuenow={
+                          Math.round((dwellProgress / 100) * focusDwellSeconds * 10) / 10
+                        }
+                        aria-valuetext={`${secondsLeft}s para focar no cliente`}
+                        title={`Foco automático do cliente em ${secondsLeft}s`}
+                        className="w-4 h-4"
+                      >
+                        <svg
+                          className="w-4 h-4 -rotate-90"
+                          viewBox="0 0 16 16"
+                          aria-hidden="true"
+                        >
+                          <circle
+                            cx="8"
+                            cy="8"
+                            r="6"
+                            fill="none"
+                            className="stroke-line"
+                            strokeWidth="2.5"
+                          />
+                          <circle
+                            cx="8"
+                            cy="8"
+                            r="6"
+                            fill="none"
+                            className="stroke-accent-text"
+                            strokeWidth="2.5"
+                            strokeDasharray={37.7}
+                            strokeDashoffset={37.7 - (37.7 * dwellProgress) / 100}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
           );
         })}
 
-        {/* Add item button at bottom */}
+        {/* Add item button at bottom — .ctl replaces 12 hardcoded
+            slate/white classes and buys the 44px touch target floor.
+            max-w-full lets it shrink below its label's natural width so it
+            wraps to two lines inside a narrow pane instead of forcing one. */}
         <div className="pt-2 pl-2">
           <button
             type="button"
@@ -606,10 +705,11 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
               const { root: newRoot, newNode } = addChild(root, root.id, '');
               onUpdateRoot(newRoot, 'add');
               focusInput(newNode.id);
+              startDwellTimer(newNode.id);
             }}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-800 hover:text-black dark:text-slate-200 dark:hover:text-white transition-colors py-2 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-2xs cursor-pointer"
+            className="ctl max-w-full cursor-pointer justify-center text-center text-xs font-bold leading-tight shadow-2xs"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Adicionar Novo Tópico</span>
           </button>
         </div>

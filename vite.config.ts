@@ -5,10 +5,15 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages project site: https://calionauta.github.io/sessionmap/
+    base: '/sessionmap/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        // import.meta.dirname instead of __dirname: Vite 8's native config
+        // loader is ESM, where __dirname is not defined and emits a
+        // deprecation warning.
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

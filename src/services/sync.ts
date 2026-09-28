@@ -1,7 +1,16 @@
 import { SyncMessage } from '../types';
 
-const CHANNEL_NAME = 'narratips_sync_channel';
-const STORAGE_SYNC_KEY = 'narratips_sync_storage_event';
+/**
+ * Handshake identifiers shared by the therapist window and the client window.
+ * Both windows import this module, so both always agree on the name: never
+ * duplicate these literals anywhere else.
+ *
+ * Renaming them is a breaking change across an open session — a therapist on
+ * the previous build and a client on this build will not pair until BOTH
+ * windows are reloaded on the same build.
+ */
+export const SYNC_CHANNEL_NAME = 'sessionmap_sync_channel';
+export const SYNC_STORAGE_KEY = 'sessionmap_sync_storage_event';
 
 type MessageHandler = (msg: SyncMessage) => void;
 
@@ -18,7 +27,7 @@ class SyncService {
     if (typeof window !== 'undefined') {
       try {
         if ('BroadcastChannel' in window) {
-          this.channel = new BroadcastChannel(CHANNEL_NAME);
+          this.channel = new BroadcastChannel(SYNC_CHANNEL_NAME);
           this.channel.onmessage = (event) => {
             this.handleIncoming(event.data);
           };
@@ -30,7 +39,7 @@ class SyncService {
 
       // Storage event fallback
       window.addEventListener('storage', (e) => {
-        if (e.key === STORAGE_SYNC_KEY && e.newValue) {
+        if (e.key === SYNC_STORAGE_KEY && e.newValue) {
           try {
             const data = JSON.parse(e.newValue);
             this.handleIncoming(data);
@@ -102,7 +111,7 @@ class SyncService {
     try {
       // Storage fallback
       const payload = JSON.stringify({ ...msg, _t: Date.now() });
-      localStorage.setItem(STORAGE_SYNC_KEY, payload);
+      localStorage.setItem(SYNC_STORAGE_KEY, payload);
     } catch {
       // ignore
     }
