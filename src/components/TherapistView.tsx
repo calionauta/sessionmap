@@ -134,7 +134,7 @@ export const TherapistView: React.FC = () => {
   useEffect(() => {
     const title = activeMap
       ? `PRIVADO · ${activeMap.clientName || 'Cliente'} (${activeMap.sessionDate || activeMap.title})`
-      : 'PRIVADO · sessionmap';
+      : 'PRIVADO · SessionMap';
     document.title = title;
   }, [activeMap]);
 
@@ -193,7 +193,7 @@ export const TherapistView: React.FC = () => {
     const clientUrl = `${window.location.origin}${window.location.pathname}?view=client`;
     const newWin = window.open(
       clientUrl,
-      'NarratipsClientMap',
+      'SessionMapClient',
       'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no,resizable=yes'
     );
     if (newWin) {
@@ -418,7 +418,7 @@ export const TherapistView: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1.5">
             <span className="text-base font-black tracking-tight text-content">
-              Narratips
+              SessionMap
             </span>
             {/* Decorative brand ornament next to the wordmark — no state, so
                 it is exempt from SC 1.4.11 and hidden from AT. */}

@@ -79,7 +79,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
     const all = await getAllMaps();
     downloadFile(
       JSON.stringify(all, null, 2),
-      `narratips_backup_completo_${new Date().toISOString().slice(0, 10)}.json`,
+      `sessionmap_backup_completo_${new Date().toISOString().slice(0, 10)}.json`,
       'application/json'
     );
   };

@@ -214,7 +214,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const backupJson = JSON.stringify(all, null, 2);
     downloadFile(
       backupJson,
-      `narratips_backup_${new Date().toISOString().slice(0, 10)}.json`,
+      `sessionmap_backup_${new Date().toISOString().slice(0, 10)}.json`,
       'application/json'
     );
   };

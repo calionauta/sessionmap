@@ -55,6 +55,29 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [dwellActive, setDwellActive] = useState<boolean>(false);
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  /**
+   * Focus that could not be applied synchronously because the target input
+   * had not mounted yet. Applied by the input's ref callback, and flushed as a
+   * safety net by the effect below in case the row reuses an existing node id.
+   */
+  const pendingFocusRef = useRef<{ nodeId: string; selectAll: boolean } | null>(null);
+
+  /**
+   * Stable focus helper shared by focusInput() and the input ref callback.
+   * A ref (not a closure) so the ref callback does not need to be re-created
+   * on every render just to reach it.
+   */
+  const applyFocusRef = useRef(
+    (el: HTMLInputElement, _nodeId: string, selectAll: boolean) => {
+      el.focus();
+      if (selectAll) {
+        el.select();
+      } else {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    }
+  );
   const dwellTimerRef = useRef<number | null>(null);
   const dwellAnimRef = useRef<number | null>(null);
   const dwellStartTimeRef = useRef<number>(0);
@@ -81,15 +104,19 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         });
       }
 
+      // The target input may not exist yet. Creating a sibling/child calls
+      // onUpdateRoot, which only SCHEDULES a re-render; React has not
+      // committed the new <input> by the time this runs, so
+      // inputRefs.current has no entry for it. Previously that case fell
+      // through silently, the new row mounted with the caret still in the
+      // previous row, and typing edited the wrong node.
+      //
+      // Record the intent and let the ref callback apply it on mount.
       const el = inputRefs.current.get(nodeId);
       if (el) {
-        el.focus();
-        if (selectAll) {
-          el.select();
-        } else {
-          const len = el.value.length;
-          el.setSelectionRange(len, len);
-        }
+        applyFocusRef.current(el, nodeId, selectAll);
+      } else {
+        pendingFocusRef.current = { nodeId, selectAll };
       }
     },
     [onSelectNode, root, onDraftChange]
@@ -142,6 +169,23 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       resetDwellTimer();
     };
   }, [resetDwellTimer]);
+
+  // Safety net: if a deferred focus is still pending after the commit, the row
+  // either rendered or the target no longer exists. Applying it here covers the
+  // case where React reuses an already-mounted input (same node id), which does
+  // not re-run the ref callback, and clears the request when the target is gone
+  // so a later stray mount cannot steal focus.
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    const el = inputRefs.current.get(pending.nodeId);
+    if (el) {
+      pendingFocusRef.current = null;
+      applyFocusRef.current(el, pending.nodeId, pending.selectAll);
+    } else if (findNodeById(root, pending.nodeId) === null) {
+      pendingFocusRef.current = null;
+    }
+  });
 
   // The dwell timer is armed from a deliberate POINTER click on a row (see
   // the row onClick below), never from activeNodeId.
@@ -551,8 +595,18 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
               <div className="flex-1 min-w-0 relative flex items-center">
                 <input
                   ref={(el) => {
-                    if (el) inputRefs.current.set(item.id, el);
-                    else inputRefs.current.delete(item.id);
+                    if (el) {
+                      inputRefs.current.set(item.id, el);
+                      // This input just mounted, so a focus request that was
+                      // deferred because it did not exist can land now.
+                      const pending = pendingFocusRef.current;
+                      if (pending && pending.nodeId === item.id) {
+                        pendingFocusRef.current = null;
+                        applyFocusRef.current(el, item.id, pending.selectAll);
+                      }
+                    } else {
+                      inputRefs.current.delete(item.id);
+                    }
                   }}
                   type="text"
                   value={item.text}

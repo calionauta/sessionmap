@@ -208,7 +208,7 @@ export async function exportAllClientsZip(
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
-  downloadBlob(blob, `narratips_todos_clientes_${today}.zip`);
+  downloadBlob(blob, `sessionmap_todos_clientes_${today}.zip`);
 }
 
 /**
