@@ -1,0 +1,82 @@
+export interface MindMapNode {
+  id: string;
+  text: string;
+  collapsed?: boolean;
+  color?: string | null;
+  children: MindMapNode[];
+}
+
+export interface MindMapView {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  createdAt: string;
+  notes?: string;
+}
+
+export interface MindMap {
+  schema: 1;
+  id: string;
+  title: string; // e.g. "28/09/2026 14:08:17"
+  clientId: string;
+  clientName: string;
+  sessionDate: string; // "DD/MM/YYYY HH:mm:ss"
+  createdAt: string;
+  updatedAt: string;
+  root: MindMapNode;
+  view?: MindMapView;
+}
+
+export interface Settings {
+  theme: 'papel' | 'noite';
+  liveTextMode: 'live' | 'confirm_only';
+  thinBarAlwaysVisible: boolean;
+  focusDwellSeconds: number;
+  autoFitOnAdd: boolean;
+  clientFontScale: number;
+  focusZoomMode: boolean; // Zoom in on active node + parents + children when navigating
+}
+
+export type SyncMessage =
+  | { type: 'snapshot'; map: MindMap }
+  | {
+      type: 'draft';
+      draft: {
+        mode: 'add' | 'edit';
+        parentId: string | null;
+        targetId?: string | null;
+        parentText?: string;
+        text: string;
+        active: boolean;
+      };
+    }
+  | {
+      type: 'select';
+      selection: {
+        nodeId: string | null;
+        reason: 'focus3s' | 'click' | 'clear' | 'navigate';
+      };
+    }
+  | { type: 'pause'; paused: boolean }
+  | { type: 'view_sync'; view: MindMapView }
+  | { type: 'client_font_scale'; scale: number }
+  | { type: 'ping' }
+  | { type: 'pong' }
+  | { type: 'bye' };
+
+export interface FlatOutlineItem {
+  id: string;
+  text: string;
+  level: number;
+  parentId: string | null;
+  collapsed: boolean;
+  hasChildren: boolean;
+  childCount: number;
+  indexInParent: number;
+  node: MindMapNode;
+}
