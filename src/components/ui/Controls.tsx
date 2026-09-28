@@ -78,9 +78,13 @@ export function Switch({ label, checked, onChange }: SwitchProps) {
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative w-11 h-6 shrink-0 rounded-full transition-colors cursor-pointer ${
-        checked ? 'bg-accent' : 'bg-surface-inset border border-line'
-      }`}
+      /* 44x24 visible track. The ::before expander grows the hit area to the
+         44px touch floor vertically (24 + 2*10) without changing how the switch
+         looks, which is the same trick the outline row controls use. */
+      className={`relative w-11 h-6 shrink-0 rounded-full transition-colors cursor-pointer
+        before:content-[''] before:absolute before:-inset-y-2.5 before:inset-x-0 ${
+          checked ? 'bg-accent' : 'bg-surface-inset border border-line'
+        }`}
     >
       {/* The knob is a shape, so SC 1.4.11 applies to its edge against the
           track it sits on. The old plain white disc measured 1.14:1 on the
@@ -92,20 +96,29 @@ export function Switch({ label, checked, onChange }: SwitchProps) {
           instead, which is both measurable and a stronger state cue than a
           tint change:
 
-            OFF  knob --surface-raised + a 1px --text ring
-                 13.11:1 / 15.22:1 against --surface-inset
-            ON   knob --text-on-accent, no ring needed
-                  8.31:1 / 12.44:1 against --accent
+            OFF  knob --surface-raised with a --text edge
+                  the dark edge is what makes a light disc readable on a light
+                  track; the disc on its own is only ~1.1:1
+            ON   knob --text-on-accent, edge matching the fill so the disc
+                  reads as one solid shape
 
           The knob visibly flips light-to-dark on toggle, so the state also
           survives SC 1.4.1 and Windows High Contrast, where the fills are
-          replaced wholesale. */}
+          replaced wholesale.
+
+          Geometry is identical in both states on purpose. The knob used to
+          carry a border only when off, and because sizing is border-box that
+          made the visible disc 14px off and 16px on, so the switch appeared to
+          change size as well as colour. The border is now always present and
+          only its colour differs. The inset is 4px on BOTH sides: left-1 plus
+          translate-x-5 rather than -6, because the knob was landing flush
+          against the right edge of the 44px track. */}
       <span
         aria-hidden="true"
-        className={`absolute top-1 w-4 h-4 rounded-full shadow-md transition-transform ${
+        className={`absolute left-1 top-1 w-4 h-4 rounded-full border shadow-md transition-transform ${
           checked
-            ? 'translate-x-6 bg-content-onaccent'
-            : 'translate-x-1 bg-surface-raised border border-content'
+            ? 'translate-x-5 bg-content-onaccent border-content-onaccent'
+            : 'translate-x-0 bg-surface-raised border-content'
         }`}
       />
     </button>

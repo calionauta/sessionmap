@@ -351,16 +351,17 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                           >
                             <Archive className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
-                          {maps.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteMapWithUndo(m)}
-                              aria-label={`Excluir ${m.title || 'mapa sem título'}`}
-                              className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                            </button>
-                          )}
+                          {/* No "keep at least one" guard: an empty library
+                              is a legitimate state, and the drawer already
+                              renders an empty state plus a create button. */}
+                          <button
+                            type="button"
+                            onClick={() => onDeleteMapWithUndo(m)}
+                            aria-label={`Excluir ${m.title || 'mapa sem título'}`}
+                            className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
                         </>
                       )}
                     </div>

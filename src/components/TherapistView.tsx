@@ -18,6 +18,8 @@ import {
   Undo2,
   Redo2,
   Layers,
+  Plus,
+  CornerDownRight,
 } from 'lucide-react';
 import { Client, MindMap, MindMapNode, Settings } from '../types';
 import { OutlineEditor } from './outline/OutlineEditor';
@@ -41,6 +43,9 @@ import {
   archiveMap,
   unarchiveMap,
   isArchived,
+  pruneEmptyLeaves,
+  getMap,
+  tidyOutline,
 } from '../services/storage';
 import { syncService } from '../services/sync';
 import {
@@ -48,6 +53,8 @@ import {
   findNodeById,
   generateNodeId,
   toggleNodeCollapse,
+  formatSessionTimestamp,
+  normalizeOutline,
 } from '../utils/tree';
 
 export const TherapistView: React.FC = () => {
@@ -225,6 +232,11 @@ export const TherapistView: React.FC = () => {
   const handleUpdateRoot = (newRoot: MindMapNode, reason: string = 'edit') => {
     if (!activeMap) return;
 
+    // Structural invariant, applied to every update rather than per key press:
+    // a blank node never keeps children. See normalizeOutline for why the
+    // per-key guards were not enough.
+    newRoot = normalizeOutline(newRoot);
+
     if (reason !== 'typing') {
       const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
       nextHistory.push(newRoot);
@@ -322,24 +334,66 @@ export const TherapistView: React.FC = () => {
       setSelectedNodeId(null);
       setDraft(null);
     }
+
+    // Commit point for the session being left: drop any row that was created
+    // but never typed into. The outline cancels these on blur, so this only
+    // catches a node whose input was never mounted or lost focus some other
+    // way (a tab switch that unmounted it, for instance).
+    //
+    // Deliberately NOT done in handleUpdateRoot: addChild/Enter create a blank
+    // row and immediately push it, so pruning on every update would delete
+    // the row before the user could type into it.
+    void commitPrunedRoot(mapId);
+  };
+
+  const commitPrunedRoot = async (mapId: string) => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    const current = (await getMap(mapId)) ?? maps.find((m) => m.id === mapId);
+    if (!current) return;
+    const pruned = tidyOutline(current.root);
+    if (pruned === current.root) return;
+    await saveMap({ ...current, root: pruned, updatedAt: new Date().toISOString() });
+    await refreshAllData();
   };
 
   // Create New Map (Quick from Drawer)
   const handleCreateNewMap = async () => {
-    const client = clients[0] || { id: 'c_default', name: 'Cliente' };
+    // The session must belong to the client currently in context, not to
+    // clients[0]. Picking the first client meant every new session landed on
+    // the same patient, so the session history in the admin panel was empty
+    // for everyone else — the sessions existed, filed under the wrong person.
+    const inContext =
+      (activeMap &&
+        clients.find((c) => c.id === activeMap.clientId && !isArchived(c))) ||
+      null;
+
+    // Archived clients are excluded: creating new work for a closed case
+    // defeats the point of archiving it.
+    const client =
+      inContext || clients.find((c) => !isArchived(c)) || clients[0] || null;
+
+    if (!client) return;
+
     const newId = `m_${Date.now().toString(36)}`;
+    // Numbered per client, so two clients each start at "Sessão 1".
+    const clientSessionCount = maps.filter(
+      (m) => m.clientId === client.id
+    ).length;
     const newMap: MindMap = {
       schema: 1,
       id: newId,
       clientId: client.id,
       clientName: client.name,
-      sessionDate: new Date().toLocaleDateString('pt-BR'),
-      title: `Sessão ${maps.length + 1}`,
+      sessionDate: formatSessionTimestamp(),
+      title: `Sessão ${clientSessionCount + 1}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       root: {
         id: generateNodeId(),
-        text: client.name,
+        text: formatSessionTimestamp(),
         children: [
           { id: generateNodeId(), text: 'Tópico Principal', children: [] },
         ],
@@ -414,24 +468,54 @@ export const TherapistView: React.FC = () => {
     setSettings(newSettings);
     saveSettings(newSettings);
     syncService.send({ type: 'client_font_scale', scale: newSettings.clientFontScale });
+    // The client window renders the same map, so it follows the focus-zoom
+    // setting live rather than needing a reload.
+    syncService.send({ type: 'focus_zoom_mode', enabled: newSettings.focusZoomMode });
   };
 
   const isDark = settings.theme === 'noite';
   const highlightedPath = activeMap && selectedNodeId ? findPathToNode(activeMap.root, selectedNodeId) : null;
 
-  // Thin Bar preview text (properly resolved to target parent, not grandparent!)
-  let thinBarPreviewText = '';
+  /**
+   * The "what am I editing" mirror above the canvas.
+   *
+   * It used to be one line — "Adicionando em <pai> › <texto>" — which put the
+   * context and the text being typed on the same baseline, in the same weight
+   * and the same colour. The two fought for the same horizontal space, and
+   * neither read as primary: the eye had no way to tell which half was the
+   * live content and which was the location.
+   *
+   * Stacked instead, one line each, so nothing competes for width:
+   *
+   *     Trabalho › Prazo › Reunião      <- where, small and quiet
+   *     Ligação com a equipe… ▌          <- what, bold and accented
+   *
+   * The path is the full ancestor chain, not just the immediate parent: in a
+   * deep map "Reunião" alone is ambiguous, and the whole point is to answer
+   * "where in the session am I?" at a glance. It truncates from the left so
+   * the most specific ancestor — the one that disambiguates — always survives,
+   * and the typed text is never pushed off the bar.
+   */
+  let draftPath: string[] = [];
+  let draftVerb = '';
   if (draft && draft.active && activeMap) {
-    if (draft.mode === 'add') {
-      const parentName =
-        draft.parentText ||
-        (draft.parentId === activeMap.root.id
-          ? activeMap.root.text
-          : (draft.parentId ? findNodeById(activeMap.root, draft.parentId)?.text : activeMap.root.text));
-      thinBarPreviewText = `Adicionando em ${parentName || 'Tópico'} › ${draft.text || ''}`;
-    } else {
-      thinBarPreviewText = `Editando › ${draft.text || ''}`;
+    const parentId = draft.parentId ?? null;
+    if (parentId) {
+      const ids = findPathToNode(activeMap.root, parentId) ?? [parentId];
+      draftPath = ids
+        .map((id) => findNodeById(activeMap.root, id)?.text?.trim() ?? '')
+        .filter(Boolean);
     }
+    // draft.parentText is the authoritative label the outline already resolved;
+    // use it as the final segment so the mirror never disagrees with it.
+    if (draft.parentText?.trim() && draftPath[draftPath.length - 1] !== draft.parentText.trim()) {
+      if (draftPath.length === 0) {
+        draftPath = [draft.parentText.trim()];
+      } else {
+        draftPath[draftPath.length - 1] = draft.parentText.trim();
+      }
+    }
+    draftVerb = draft.mode === 'add' ? 'Novo subitem em' : 'Editando';
   }
 
   return (
@@ -706,31 +790,62 @@ export const TherapistView: React.FC = () => {
               svgRef={svgCanvasRef}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-content-muted text-xs font-medium">
-              Nenhuma sessão selecionada.
+            /* Empty is a real state now that deleting the last session sticks:
+               previously the sample map was reseeded, so this branch was
+               nearly unreachable and said nothing actionable when it was. */
+            <div className="flex flex-col items-center justify-center gap-3 h-full p-6 text-center">
+              <p className="text-content-muted text-xs font-medium">
+                Nenhuma sessão ativa neste navegador.
+              </p>
+              <button
+                type="button"
+                onClick={handleCreateNewMap}
+                className="ctl ctl-primary"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>Nova sessão</span>
+              </button>
             </div>
           )}
 
           {/* Mirror of Thin Bar at Bottom. Solid --surface-raised rather than
               a /95 wash: the label and the live caret are both text, and a
-              composited background is not a pair that can be measured. */}
+              composited background is not a pair that can be measured.
+
+              Two stacked lines, not one. See draftPath for why the location
+              and the live text are separated vertically. The whole region is
+              one live region so a screen reader hears the location and the
+              text as a single announcement rather than two unrelated strings. */}
           {draft && draft.active && (
             <div
               role="status"
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300"
+              aria-live="polite"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 w-[min(38rem,calc(100%-2rem))]"
             >
-              <div className="px-4 py-1.5 rounded-xl shadow-lg border border-line bg-surface-raised text-content max-w-lg flex items-center gap-2">
-                <span className="text-xs font-bold text-accent-text shrink-0">
-                  {thinBarPreviewText}
-                </span>
-                {settings.liveTextMode === 'live' && (
-                  <span
-                    aria-hidden="true"
-                    className="animate-ping font-mono text-accent-text text-xs shrink-0"
-                  >
-                    ▌
+              <div className="px-4 py-2 rounded-panel shadow-lg border border-line bg-surface-raised text-content">
+                {/* Line 1 — where. Quiet, small, truncates from the left so
+                    the nearest ancestor is the part that survives. */}
+                <div className="flex items-center gap-1.5 text-[11px] leading-tight text-content-muted">
+                  <CornerDownRight className="w-3 h-3 shrink-0" aria-hidden="true" />
+                  <span className="shrink-0 font-semibold">{draftVerb}</span>
+                  <span className="min-w-0 truncate [direction:rtl] text-end" title={draftPath.join(' › ')}>
+                    <span dir="ltr">
+                      {draftPath.length > 0 ? draftPath.join('  ›  ') : 'Tópico raiz'}
+                    </span>
                   </span>
-                )}
+                </div>
+                {/* Line 2 — what. The only accented, bold, live element here,
+                    so the eye lands on the text and the caret with it. */}
+                <div className="mt-0.5 flex items-center gap-1 text-sm font-bold leading-tight text-accent-text">
+                  <span className="min-w-0 truncate">
+                    {draft.text || <span className="text-content-subtle">digitando…</span>}
+                  </span>
+                  {settings.liveTextMode === 'live' && (
+                    <span aria-hidden="true" className="animate-ping font-mono text-xs shrink-0">
+                      ▌
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -224,32 +224,119 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Exports mindmap SVG to file
+ * Prepares a standalone SVG for export.
+ *
+ * Two things break a live <svg> when it is serialised into a file:
+ *
+ * 1. CSS custom properties. The connectors are stroked with `var(--border)`
+ *    and `var(--accent)`. A standalone SVG has no document and therefore no
+ *    :root, so those references resolve to nothing and every line renders
+ *    invisible — the balloons survived because they paint with literal hex.
+ *    That is exactly the reported symptom: the root node appeared, unconnected.
+ *    Resolved to concrete values against the live document before cloning.
+ *
+ * 2. The viewport transform. The map lives inside a <g> carrying the
+ *    pan/zoom. Measuring svgElement.getBBox() includes that transform, so the
+ *    exported frame followed the camera: zoomed in and it exported a huge
+ *    mostly-empty canvas, and the content was pushed toward a corner. The
+ *    world group's own bbox is measured in its local coordinates instead, and
+ *    the clone's transform is reset to identity, so the export always frames
+ *    the map itself rather than the current view of it.
  */
-export function exportToSVG(svgElement: SVGSVGElement, title: string, theme: 'papel' | 'noite') {
-  const clone = svgElement.cloneNode(true) as SVGSVGElement;
-  const bbox = svgElement.getBBox();
-  const padding = 60;
-  const width = Math.max(800, bbox.width + padding * 2);
-  const height = Math.max(600, bbox.height + padding * 2);
+function buildExportSVG(
+  svgElement: SVGSVGElement,
+  theme: 'papel' | 'noite'
+): { svgString: string; width: number; height: number; bgColor: string } {
+  const resolved = new Map<string, string>();
+  const styles = getComputedStyle(document.documentElement);
+  const resolveVar = (name: string): string => {
+    const cached = resolved.get(name);
+    if (cached) return cached;
+    const value = styles.getPropertyValue(name).trim();
+    const fallback = value || '#000000';
+    resolved.set(name, fallback);
+    return fallback;
+  };
 
-  clone.setAttribute('viewBox', `${bbox.x - padding} ${bbox.y - padding} ${width} ${height}`);
+  const clone = svgElement.cloneNode(true) as SVGSVGElement;
+
+  // Inline every var() reference found in presentation attributes.
+  const walk = clone as unknown as Element;
+  const all = [walk, ...Array.from(walk.querySelectorAll('*'))];
+  const VAR_ATTRS = [
+    'fill',
+    'stroke',
+    'stop-color',
+    'flood-color',
+    'lighting-color',
+    'color',
+  ];
+  for (const el of all) {
+    for (const attr of VAR_ATTRS) {
+      const value = el.getAttribute?.(attr);
+      if (!value || !value.includes('var(')) continue;
+      el.setAttribute(
+        attr,
+        value.replace(/var\(\s*(--[\w-]+)\s*\)/g, (_m, name: string) => resolveVar(name))
+      );
+    }
+    // CSS-declared colours (the `style` attribute) too.
+    const inline = el.getAttribute?.('style');
+    if (inline && inline.includes('var(')) {
+      el.setAttribute(
+        'style',
+        inline.replace(/var\(\s*(--[\w-]+)\s*\)/g, (_m, name: string) => resolveVar(name))
+      );
+    }
+  }
+
+  // Frame the content, not the camera.
+  const world = svgElement.querySelector('[data-world="true"]') as SVGGElement | null;
+  const source: SVGGraphicsElement = world ?? svgElement;
+  const contentBox = source.getBBox();
+  const padding = 60;
+  const width = Math.max(800, Math.ceil(contentBox.width + padding * 2));
+  const height = Math.max(600, Math.ceil(contentBox.height + padding * 2));
+
+  if (world) {
+    const clonedWorld = clone.querySelector('[data-world="true"]');
+    clonedWorld?.removeAttribute('transform');
+    clonedWorld?.removeAttribute('style');
+  }
+
+  clone.setAttribute(
+    'viewBox',
+    `${contentBox.x - padding} ${contentBox.y - padding} ${width} ${height}`
+  );
   clone.setAttribute('width', String(width));
   clone.setAttribute('height', String(height));
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  // The typeface is a page-level rule too, so without this the exported file
+  // silently falls back to the browser default serif.
+  clone.setAttribute('font-family', styles.fontFamily || 'sans-serif');
 
-  // Insert background rect if needed
-  const bgColor = theme === 'noite' ? '#0F172A' : '#FBFBF9';
+  const bgColor = theme === 'noite' ? '#0F172A' : '#F7F6F2';
   const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  bgRect.setAttribute('x', `${bbox.x - padding}`);
-  bgRect.setAttribute('y', `${bbox.y - padding}`);
+  bgRect.setAttribute('x', String(contentBox.x - padding));
+  bgRect.setAttribute('y', String(contentBox.y - padding));
   bgRect.setAttribute('width', String(width));
   bgRect.setAttribute('height', String(height));
   bgRect.setAttribute('fill', bgColor);
   clone.insertBefore(bgRect, clone.firstChild);
 
-  const serializer = new XMLSerializer();
-  const svgString = serializer.serializeToString(clone);
+  return {
+    svgString: new XMLSerializer().serializeToString(clone),
+    width,
+    height,
+    bgColor,
+  };
+}
+
+/**
+ * Exports mindmap SVG to file
+ */
+export function exportToSVG(svgElement: SVGSVGElement, title: string, theme: 'papel' | 'noite') {
+  const { svgString } = buildExportSVG(svgElement, theme);
   downloadFile(svgString, `${sanitizeFilename(title)}.svg`, 'image/svg+xml');
 }
 
@@ -264,28 +351,10 @@ export function exportToPNG(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      const clone = svgElement.cloneNode(true) as SVGSVGElement;
-      const bbox = svgElement.getBBox();
-      const padding = 60;
-      const width = Math.max(800, Math.ceil(bbox.width + padding * 2));
-      const height = Math.max(600, Math.ceil(bbox.height + padding * 2));
-
-      clone.setAttribute('viewBox', `${bbox.x - padding} ${bbox.y - padding} ${width} ${height}`);
-      clone.setAttribute('width', String(width));
-      clone.setAttribute('height', String(height));
-      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-
-      const bgColor = theme === 'noite' ? '#0F172A' : '#FBFBF9';
-      const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      bgRect.setAttribute('x', `${bbox.x - padding}`);
-      bgRect.setAttribute('y', `${bbox.y - padding}`);
-      bgRect.setAttribute('width', String(width));
-      bgRect.setAttribute('height', String(height));
-      bgRect.setAttribute('fill', bgColor);
-      clone.insertBefore(bgRect, clone.firstChild);
-
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(clone);
+      // Same preparation as the SVG export: custom properties inlined and the
+      // pan/zoom transform dropped, so a PNG rasterises the map rather than
+      // whatever the therapist happens to be looking at.
+      const { svgString, width, height, bgColor } = buildExportSVG(svgElement, theme);
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
       const URLObj = window.URL || window.webkitURL || window;
       const blobURL = URLObj.createObjectURL(svgBlob);

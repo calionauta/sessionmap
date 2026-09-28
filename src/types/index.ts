@@ -77,6 +77,7 @@ export type SyncMessage =
   | { type: 'pause'; paused: boolean }
   | { type: 'view_sync'; view: MindMapView }
   | { type: 'client_font_scale'; scale: number }
+  | { type: 'focus_zoom_mode'; enabled: boolean }
   | { type: 'ping' }
   | { type: 'pong' }
   | { type: 'bye' };

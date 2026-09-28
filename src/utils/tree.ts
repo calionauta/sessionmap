@@ -340,6 +340,59 @@ export function moveSibling(
 }
 
 /**
+ * Enforces the outline invariant: a node with no text has no children.
+ *
+ * Blank rows used to be prevented by guarding the two key handlers that can
+ * create a child (Ctrl+Enter and "+ Filho"). That was not enough — the shape
+ * kept appearing:
+ *
+ *     - Ponto Inicial
+ *       -
+ *         -
+ *           - outro
+ *
+ * Because the guards were per-key-path, any other route into the same state
+ * (Tab re-indenting a blank row under another blank row, an import, a paste,
+ * a restored map) reproduced it. Worse, the stack of blanks could not be
+ * cleaned up afterwards either, because the cancel handler deliberately keeps
+ * a blank node that HAS children — which is what made the mess permanent.
+ *
+ * So the invariant is enforced structurally instead of per key press: when a
+ * blank node is found carrying children, they are lifted into its place. The
+ * children keep their content and their relative order; only the empty
+ * wrapper between them disappears. This is safe to run on EVERY tree update,
+ * because it never removes a node that has text.
+ *
+ * The root is exempt: it holds the session date, and its first child is a
+ * legitimate blank starting point.
+ *
+ * Returns the same object when nothing needed fixing, so callers can cheaply
+ * skip a no-op update.
+ */
+export function normalizeOutline(root: MindMapNode): MindMapNode {
+  const walk = (node: MindMapNode, isRoot: boolean): MindMapNode[] => {
+    const out: MindMapNode[] = [];
+    for (const rawChild of node.children || []) {
+      for (const child of walk(rawChild, false)) {
+        if (!isRoot && child.text.trim() === '' && (child.children || []).length > 0) {
+          // A blank wrapper: splice its children in its place, one level up.
+          out.push(...(child.children || []));
+        } else {
+          out.push(child);
+        }
+      }
+    }
+    if (out.length === (node.children || []).length && out.every((c, i) => c === (node.children || [])[i])) {
+      return [node];
+    }
+    return [{ ...node, children: out }];
+  };
+
+  const [normalized] = walk(root, true);
+  return normalized ?? root;
+}
+
+/**
  * Delete a node from the tree.
  * Root cannot be deleted (will just be cleared of children if requested).
  */

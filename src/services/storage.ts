@@ -1,5 +1,9 @@
 import { Client, MindMap, MindMapNode, Settings } from '../types';
-import { formatSessionTimestamp, generateNodeId } from '../utils/tree';
+import {
+  formatSessionTimestamp,
+  generateNodeId,
+  normalizeOutline,
+} from '../utils/tree';
 
 const DB_NAME = 'sessionmap_db';
 // 3 = renamed database: every record is copied out of narratips_db on upgrade.
@@ -92,6 +96,12 @@ const INITIAL_SAMPLE_MAP: MindMap = {
 
 const LS_MIGRATION_FLAG = 'sessionmap_keys_migrated';
 const IDB_MIGRATION_FLAG = 'sessionmap_db_migrated';
+/**
+ * Marks that the demo client has already been offered. Without it, "the list
+ * is empty" and "this install has never been used" are indistinguishable, and
+ * deleting the last client resurrects the sample.
+ */
+const CLIENTS_SEEDED_FLAG = 'sessionmap_clients_seeded';
 const LS_MIGRATED_SUFFIXES = [
   'settings',
   'active_map',
@@ -392,6 +402,55 @@ export async function requestPersistence(): Promise<boolean> {
 
 // =================== CLIENT OPERATIONS ===================
 
+/**
+ * Seeds the demo client, but ONLY on a genuine first run.
+ *
+ * This used to fire whenever the client list came back empty. Deleting the
+ * last client therefore resurrected the sample right after the delete: the
+ * row reappeared, and because the delete button is gated on
+ * `clients.length > 1` it had already lost its own button by then. A
+ * destructive action that un-does itself reads as the app being broken, and
+ * in a therapy tool it is worse than useless: it looks like the record is
+ * still there.
+ *
+ * An explicit flag distinguishes "never used" from "emptied on purpose", so a
+ * genuinely empty list stays empty and the UI is free to show its own empty
+ * state. Set again only by the reset path, never by a delete.
+ */
+function shouldSeedClients(): boolean {
+  try {
+    return !localStorage.getItem(CLIENTS_SEEDED_FLAG);
+  } catch {
+    return false;
+  }
+}
+
+function markClientsSeeded(): void {
+  try {
+    localStorage.setItem(CLIENTS_SEEDED_FLAG, new Date().toISOString());
+  } catch {
+    // ignore
+  }
+}
+
+const MAPS_SEEDED_FLAG = 'sessionmap_maps_seeded';
+
+function shouldSeedMaps(): boolean {
+  try {
+    return !localStorage.getItem(MAPS_SEEDED_FLAG);
+  } catch {
+    return false;
+  }
+}
+
+function markMapsSeeded(): void {
+  try {
+    localStorage.setItem(MAPS_SEEDED_FLAG, new Date().toISOString());
+  } catch {
+    // ignore
+  }
+}
+
 export async function getAllClients(): Promise<Client[]> {
   try {
     const db = await getDB();
@@ -400,10 +459,12 @@ export async function getAllClients(): Promise<Client[]> {
       const store = tx.objectStore(STORE_CLIENTS);
       const req = store.getAll();
       req.onsuccess = () => {
-        let clients: Client[] = req.result || [];
-        if (clients.length === 0 && canSeedDefaults()) {
+        const clients: Client[] = req.result || [];
+        if (clients.length === 0 && canSeedDefaults() && shouldSeedClients()) {
+          markClientsSeeded();
           saveClient(DEFAULT_SAMPLE_CLIENT);
-          clients = [DEFAULT_SAMPLE_CLIENT];
+          resolve([DEFAULT_SAMPLE_CLIENT]);
+          return;
         }
         resolve(clients.sort((a, b) => a.name.localeCompare(b.name)));
       };
@@ -418,9 +479,10 @@ export async function getAllClients(): Promise<Client[]> {
         // empty
       }
     }
-    const defaultList = [DEFAULT_SAMPLE_CLIENT];
-    localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify(defaultList));
-    return defaultList;
+    if (!shouldSeedClients()) return [];
+    markClientsSeeded();
+    localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify([DEFAULT_SAMPLE_CLIENT]));
+    return [DEFAULT_SAMPLE_CLIENT];
   }
 }
 
@@ -534,6 +596,59 @@ export function isArchived(record: { archivedAt?: string | null }): boolean {
   return Boolean(record.archivedAt);
 }
 
+/**
+ * Removes nodes the user created but never filled in.
+ *
+ * A node with empty text and no children is a placeholder, never a real
+ * thought: it carries no content, and the layout, the client balloons and
+ * every export format would still render it as "Sem título". Dropping it on
+ * blur is what makes "create a row and leave" cancel itself.
+ *
+ * A blank node that HAS children is kept, because it is now a structural
+ * parent and deleting it would take its subtree with it.
+ *
+ * The root is never removed: an empty root is a valid state (a session whose
+ * topic has not been typed yet) and removing it would throw away the session.
+ *
+ * Returns the same object when nothing changed, so callers can cheaply skip a
+ * no-op update and its autosave.
+ */
+export function pruneEmptyLeaves(root: MindMapNode): MindMapNode {
+  const walk = (node: MindMapNode, isRoot: boolean): MindMapNode | null => {
+    const original = node.children || [];
+    const kept: MindMapNode[] = [];
+    for (const child of original) {
+      const result = walk(child, false);
+      if (result) kept.push(result);
+    }
+
+    const isBlankLeaf = !isRoot && node.text.trim() === '' && original.length === 0;
+    if (isBlankLeaf) return null;
+
+    if (
+      kept.length === original.length &&
+      kept.every((c, i) => c === original[i])
+    ) {
+      return node;
+    }
+    return { ...node, children: kept };
+  };
+
+  return walk(root, true) ?? root;
+}
+
+/**
+ * Applies both outline rules at once: no blank node keeps children (the
+ * children are lifted into its place), and blank childless leaves are dropped.
+ *
+ * Used where a whole tree is committed, so a map that already accumulated
+ * stacked blank rows — from an import, a paste, or a build before the
+ * invariant existed — is repaired rather than preserved.
+ */
+export function tidyOutline(root: MindMapNode): MindMapNode {
+  return pruneEmptyLeaves(normalizeOutline(root));
+}
+
 // =================== SESSION / MINDMAP OPERATIONS ===================
 
 export function createNewSession(clientId: string, clientName: string): MindMap {
@@ -568,7 +683,11 @@ export async function getAllMaps(): Promise<MindMap[]> {
       const req = store.getAll();
       req.onsuccess = () => {
         let maps: MindMap[] = req.result || [];
-        if (maps.length === 0 && canSeedDefaults()) {
+        // Same reasoning as shouldSeedClients(): an empty map list means the
+        // user deleted everything, not that this is a fresh install. Reseeding
+        // here made every "delete all" resurrect the sample session.
+        if (maps.length === 0 && canSeedDefaults() && shouldSeedMaps()) {
+          markMapsSeeded();
           saveMap(INITIAL_SAMPLE_MAP);
           maps = [INITIAL_SAMPLE_MAP];
         }

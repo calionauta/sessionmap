@@ -63,6 +63,7 @@ export const ClientView: React.FC = () => {
   const [fontScale, setFontScale] = useState<number>(1.0);
   const [theme, setTheme] = useState<'papel' | 'noite'>('papel');
   const [liveTextMode, setLiveTextMode] = useState<'live' | 'confirm_only'>('live');
+  const [focusZoomMode, setFocusZoomMode] = useState<boolean>(false);
   const [thinBarAlwaysVisible, setThinBarAlwaysVisible] = useState<boolean>(false);
 
   // Auto-hide bottom bar after 4s idle
@@ -100,6 +101,12 @@ export const ClientView: React.FC = () => {
     setLiveTextMode(initialSettings.liveTextMode);
     setThinBarAlwaysVisible(initialSettings.thinBarAlwaysVisible);
     setFontScale(initialSettings.clientFontScale || 1.0);
+    // The client window is the larger of the two displays — it is projected,
+    // and read by someone who does not have the outline in front of them. It
+    // therefore follows the therapist's focus-zoom setting instead of silently
+    // using the component's `false` default: the setting exists precisely so
+    // the point being discussed is the biggest thing on the shared screen.
+    setFocusZoomMode(initialSettings.focusZoomMode);
 
     const unsubscribe = syncService.subscribe((msg: SyncMessage) => {
       if (msg.type === 'snapshot') {
@@ -125,6 +132,10 @@ export const ClientView: React.FC = () => {
         setIsPaused(msg.paused);
       } else if (msg.type === 'client_font_scale') {
         setFontScale(msg.scale);
+      } else if (msg.type === 'focus_zoom_mode') {
+        // Live, so toggling the setting while the client window is open takes
+        // effect there immediately instead of on the next reload.
+        setFocusZoomMode(msg.enabled);
       }
     });
 
@@ -271,6 +282,7 @@ export const ClientView: React.FC = () => {
             readOnly={true}
             clientName={map.clientName}
             sessionDate={map.sessionDate || map.title}
+            focusZoomMode={focusZoomMode}
           />
 
           {/* Floating Bottom Thin Bar (RF-20, RF-21, RF-23)

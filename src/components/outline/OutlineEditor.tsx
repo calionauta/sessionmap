@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Plus,
   CornerDownRight,
+  Info,
 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import {
@@ -53,6 +54,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [activeNodeId, setActiveNodeId] = useState<string | null>(root.id);
   const [dwellProgress, setDwellProgress] = useState<number>(0);
   const [dwellActive, setDwellActive] = useState<boolean>(false);
+  /** Transient explanation for a refused action, in a live region. */
+  const [hint, setHint] = useState<string>('');
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   /**
@@ -204,9 +207,34 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   // client's highlight at all, focusInput's 'navigate' call is the line to
   // change, not this one.
 
+  /**
+   * Refuses to create a child under a row with no text, and says why.
+   *
+   * Silently doing nothing (the previous behaviour) reads as a dropped key: the
+   * therapist presses Ctrl+Enter, nothing appears, and the app looks broken.
+   * The message is rendered in a live region, so it is announced rather than
+   * only shown, and the caret is returned to the row with its text selected so
+   * the next keystroke simply writes.
+   */
+  const rejectEmptyParent = (item: FlatOutlineItem) => {
+    setHint('Escreva a anotação antes de criar um subitem dentro dela.');
+    focusInput(item.id, true);
+  };
+
   // Create Child directly (Ctrl+Enter or button)
   const handleCreateChild = (item: FlatOutlineItem) => {
     resetDwellTimer();
+
+    // A child of an empty row would be a thought hanging off nothing. The
+    // parent has no text yet, so the tree would grow a subtree that renders as
+    // "Sem título" in the map and in every export. The root is exempt: it
+    // already holds the session date, and "Adicionar Novo Tópico" is meant to
+    // seed a first child under it.
+    if (item.id !== root.id && item.text.trim() === '') {
+      rejectEmptyParent(item);
+      return;
+    }
+
     const { root: newRoot, newNode } = addChild(root, item.id, '');
     onUpdateRoot(newRoot, 'addChild');
 
@@ -220,6 +248,35 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     });
 
     focusInput(newNode.id);
+  };
+
+  /**
+   * Cancels a row that was created but never typed into. Runs on blur, so
+   * moving the caret away drops the placeholder instead of leaving an empty
+   * balloon in the map.
+   *
+   * The node is only removed when it is blank AND childless. A blank node that
+   * acquired children is a real structural parent by then.
+   */
+  const handleCancelIfBlank = (item: FlatOutlineItem) => {
+    if (item.id === root.id) return;
+    if (item.text.trim() !== '') return;
+    if ((item.node.children || []).length > 0) return;
+
+    const { root: newRoot, nextFocusId } = deleteNode(root, item.id);
+    onUpdateRoot(newRoot, 'delete');
+    onDraftChange({
+      mode: 'add',
+      parentId: null,
+      targetId: null,
+      text: '',
+      active: false,
+    });
+    // Caret lands on the next row so navigation continues where the user
+    // expects; if this was the last row, on the one above.
+    if (nextFocusId) {
+      requestAnimationFrame(() => focusInput(nextFocusId));
+    }
   };
 
   // Keyboard navigation & tree actions
@@ -240,6 +297,18 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     // 2. Standard Enter: Create Sibling
     if (e.key === 'Enter') {
       e.preventDefault();
+
+      // Enter on a row that was never typed into cancels that row rather than
+      // leaving an empty one and starting the next: the user was mid-thought
+      // and a stray Return should not litter the map with placeholders. The
+      // session timestamp is the root, which is never blank in practice, so
+      // this does not make Enter inert on a fresh session.
+      if (item.id !== root.id && item.text.trim() === '') {
+        setHint('Anotação vazia descartada. Escreva algo antes de criar a próxima.');
+        handleCancelIfBlank(item);
+        return;
+      }
+
       const { root: newRoot, newNode } = addSibling(root, item.id, '');
       onUpdateRoot(newRoot, 'addSibling');
 
@@ -358,6 +427,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const handleInputChange = (item: FlatOutlineItem, newText: string) => {
     if (newText.length > 280) return;
 
+    // Typing resolves whatever hint was showing: the reason it appeared
+    // ("write before adding a subitem") no longer applies.
+    setHint('');
+
     resetDwellTimer();
     const newRoot = updateNodeText(root, item.id, newText);
     onUpdateRoot(newRoot, 'typing');
@@ -435,6 +508,23 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           <span>Tab: Indentar</span>
         </div>
       </div>
+
+      {/* Refused-action feedback.
+          role="status" + aria-live="polite" so a screen-reader user hears why
+          a key did nothing, instead of the app appearing to drop the input.
+          Fixed to the bottom of the pane so it never reflows the outline the
+          therapist is looking at, and it disappears on the next keystroke
+          because the hint is no longer true. */}
+      {hint && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="shrink-0 px-4 py-2 border-t border-line bg-accent-soft text-[11px] font-semibold text-content flex items-start gap-1.5"
+        >
+          <Info className="w-3.5 h-3.5 shrink-0 mt-px text-accent-text" aria-hidden="true" />
+          <span className="min-w-0">{hint}</span>
+        </div>
+      )}
 
       {/* Lines Scrollable Area.
           `--indent-step` is the one knob the whole tree scales from. It used to
@@ -614,6 +704,11 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   onFocus={() => {
                     focusInput(item.id);
                   }}
+                  /* Leaving a row that was created but never typed into cancels
+                     it, so "make a row and move on" leaves no empty balloon
+                     behind. Rows with text, the root, and blank rows that
+                     gained children are all left alone. */
+                  onBlur={() => handleCancelIfBlank(item)}
                   onChange={(e) => handleInputChange(item, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, item, index)}
                   onPaste={(e) => handlePaste(e, item)}
@@ -641,6 +736,11 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                       e.stopPropagation();
                       handleCreateChild(item);
                     }}
+                    /* Keep focus in the input. Without this the button takes
+                       focus on mousedown, blur fires, and a blank row is
+                       cancelled by the blur BEFORE this click handler runs —
+                       so "+ Filho" on an empty row would delete the row. */
+                    onMouseDown={(e) => e.preventDefault()}
                     title="Criar nó filho dentro deste (Ctrl+Enter)"
                     aria-label="Criar nó filho dentro deste tópico"
                     /* 20px tall visual, 44px touch: the same invisible ::before

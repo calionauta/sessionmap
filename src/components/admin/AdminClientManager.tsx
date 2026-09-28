@@ -14,6 +14,7 @@ import {
   Archive,
   ArchiveRestore,
   FolderArchive,
+  AlertTriangle,
 } from 'lucide-react';
 import { Client, MindMap } from '../../types';
 import {
@@ -32,6 +33,59 @@ import {
 import { countTotalNodes, formatSessionTimestamp, parseMarkdownToTree } from '../../utils/tree';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
 import { Modal, ConfirmDialog } from '../ui/Modal';
+
+/**
+ * A session whose clientId matches no client row.
+ *
+ * Extracted because the same markup was needed in two places, and the second
+ * copy is exactly the one that never rendered: it sat inside the
+ * `currentClient ? ... : ...` branch, so with no client selected the sessions
+ * it listed were invisible — the state right after deleting the last client.
+ */
+function OrphanSessionCard({
+  session,
+  canDelete,
+  onOpen,
+  onDelete,
+}: {
+  session: MindMap;
+  canDelete: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const nodeCount = countTotalNodes(session.root);
+  const sessionLabel = session.sessionDate || session.title;
+  return (
+    <div className="p-3 rounded-panel border border-caution/40 bg-surface flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-xs font-bold text-content break-words">{sessionLabel}</div>
+        <div className="text-[11px] text-content-muted font-medium mt-0.5 break-words">
+          <span className="font-mono">
+            {nodeCount} {nodeCount === 1 ? 'balão' : 'balões'}
+          </span>
+          {' · '}registrado como <strong>{session.clientName || 'sem nome'}</strong> (id{' '}
+          {session.clientId})
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button type="button" onClick={onOpen} className="ctl text-xs font-bold">
+          <span>Abrir</span>
+          <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        </button>
+        {canDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={`Excluir sessão ${sessionLabel}`}
+            className="ctl ctl-danger w-11 px-0"
+          >
+            <Trash2 className="w-4 h-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface AdminClientManagerProps {
   isOpen: boolean;
@@ -103,16 +157,33 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     c.name.toLowerCase().includes(searchTerm)
   );
 
+  // Prefer the selected client, but only within the view actually being shown.
+  // Falling back across scopes used to jump the selection to a different person
+  // when the selected one was filtered out, which reads as the history having
+  // emptied itself.
   const currentClient =
-    activeClients.find((c) => c.id === selectedClientId) ||
-    archivedClients.find((c) => c.id === selectedClientId) ||
-    activeClients[0] ||
-    null;
+    scopedClients.find((c) => c.id === selectedClientId) || scopedClients[0] || null;
 
   const clientSessions = maps
     .filter((m) => m.clientId === currentClient?.id)
     .filter((m) => (showArchived ? isArchived(m) : !isArchived(m)))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  /**
+   * Sessions whose clientId matches no client row.
+   *
+   * These used to be invisible everywhere: the per-client history filters on
+   * clientId, so a session recorded against a client that was renamed,
+   * removed or — as was the actual bug — never matched (every new session was
+   * filed under clients[0]) appeared in no list at all while still counting
+   * towards the "N clientes" export totals.
+   *
+   * Surfacing them is better than hiding them: a session nobody can see is
+   * indistinguishable from a lost one, and in this app that is clinical data.
+   */
+  const orphanedMaps = maps.filter(
+    (m) => !clients.some((c) => c.id === m.clientId)
+  );
 
   // Import Markdown file directly as a new session for current client
   const handleImportSessionFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -574,16 +645,15 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             >
                               <Archive className="w-4 h-4" aria-hidden="true" />
                             </button>
-                            {clients.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteClient(client)}
-                                aria-label={`Excluir ${client.name}`}
-                                className="ctl ctl-danger w-11 px-0"
-                              >
-                                <Trash2 className="w-4 h-4" aria-hidden="true" />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClient(client)}
+                              aria-label={`Excluir ${client.name}`}
+                              title="Excluir cliente e sessões"
+                              className="ctl ctl-danger w-11 px-0"
+                            >
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            </button>
                           </>
                         )}
                       </div>
@@ -796,11 +866,79 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       );
                     })
                   )}
+
+                  {/* Sessions that belong to no client row. Shown rather than
+                      hidden: a session nobody can see is indistinguishable
+                      from a lost one. Each is a real card with the same
+                      actions, so it can be opened, archived or deleted. */}
+                  {orphanedMaps.length > 0 && (
+                    <div className="pt-2 mt-2 border-t border-line">
+                      <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                        Sem cliente atribuído ({orphanedMaps.length})
+                      </h3>
+                      <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
+                        Estas sessões não correspondem a nenhum cliente na lista. Abra
+                        uma para ver a quem ela pertence, ou exclua se não for mais
+                        necessária.
+                      </p>
+                      <div className="space-y-2">
+                        {orphanedMaps.map((session) => (
+                          <OrphanSessionCard
+                            key={session.id}
+                            session={session}
+                            canDelete={orphanedMaps.length > 1}
+                            onOpen={() => {
+                              onSelectSession(session);
+                              onClose();
+                            }}
+                            onDelete={() => handleDeleteSession(session)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full p-6 text-center text-xs font-medium text-content-muted">
-                Selecione ou crie um cliente para visualizar as sessões.
+              /* No client selected. Orphaned sessions are shown here too —
+                 they used to live only inside the currentClient branch, so
+                 with no client at all (exactly the state right after
+                 deleting the last one) this pane said "select a client" while
+                 the sessions it was hiding stayed on disk. */
+              <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
+                <div className="py-6 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
+                  {clients.length === 0
+                    ? 'Nenhum cliente cadastrado neste navegador. Crie um cliente para iniciar uma sessão.'
+                    : 'Selecione um cliente para ver o histórico de sessões.'}
+                </div>
+
+                {orphanedMaps.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-line">
+                    <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                      Sem cliente atribuído ({orphanedMaps.length})
+                    </h3>
+                    <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
+                      Estas sessões não correspondem a nenhum cliente na lista. Abra uma
+                      para ver a quem ela pertence, ou exclua se não for mais necessária.
+                    </p>
+                    <div className="space-y-2">
+                      {orphanedMaps.map((session) => (
+                        <OrphanSessionCard
+                          key={session.id}
+                          session={session}
+                          canDelete={orphanedMaps.length > 1}
+                          onOpen={() => {
+                            onSelectSession(session);
+                            onClose();
+                          }}
+                          onDelete={() => handleDeleteSession(session)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

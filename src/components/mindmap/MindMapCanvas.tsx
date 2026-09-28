@@ -501,6 +501,10 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
 
         {/* World Transform Group */}
         <g
+          /* Marks the group the pan/zoom applies to. The image export reads
+             this to measure the content in its own coordinates instead of the
+             camera's, so the exported frame follows the map, not the view. */
+          data-world="true"
           transform={`translate(${transform.x}, ${transform.y}) scale(${transform.k})`}
           style={{ transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
