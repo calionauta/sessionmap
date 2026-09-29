@@ -6,7 +6,7 @@ registerDom();
 const { render, fireEvent, cleanup, act } = await import('@testing-library/react');
 const React = await import('react');
 const { MarkdownOutline } = await import('./MarkdownOutline');
-const { treeToMarkdown } = await import('../../utils/tree');
+const { treeToMarkdown, parseMarkdownToTree } = await import('../../utils/tree');
 import type { MindMapNode } from '../../types';
 
 const node = (
@@ -31,6 +31,15 @@ let updateCount = 0;
 let reasons: string[] = [];
 
 let selections: Array<{ nodeId: string | null; reason: string }> = [];
+/** Every draft the buffer broadcast, so the map's mirror can be asserted on. */
+let drafts: Array<{
+  mode: 'add' | 'edit';
+  parentId: string | null;
+  parentText?: string;
+  targetId?: string | null;
+  text: string;
+  active: boolean;
+}> = [];
 
 function setup(
   root: MindMapNode = fixture(),
@@ -41,6 +50,7 @@ function setup(
   updateCount = 0;
   reasons = [];
   selections = [];
+  drafts = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   render(
@@ -54,7 +64,9 @@ function setup(
       onSelectNode: (nodeId: string | null, reason: string) => {
         selections.push({ nodeId, reason });
       },
-      onDraftChange: () => {},
+      onDraftChange: (d: (typeof drafts)[number]) => {
+        drafts.push(d);
+      },
       selectedNodeId: null,
       focusDwellSeconds,
       theme: 'papel' as const,
@@ -109,6 +121,16 @@ async function waitPastDwell(seconds: number) {
   await act(async () => {
     await new Promise((r) => setTimeout(r, seconds * 1000 + 400));
   });
+}
+
+/** Puts the caret at the end of the line containing `fragment`. */
+function caretAtEndOfLine(fragment: string) {
+  const el = textarea();
+  const at = el.value.indexOf(fragment);
+  if (at === -1) throw new Error(`no line "${fragment}" in:\n${el.value}`);
+  const end = el.value.indexOf('\n', at);
+  caretAt(end === -1 ? el.value.length : end);
+  return at;
 }
 
 describe('the markdown buffer', () => {
@@ -344,6 +366,196 @@ describe('dwell in the markdown buffer', () => {
     caretOnLine('- mãe apoia');
     await waitPastDwell(1);
     expect(selections).toEqual([{ nodeId: 'f1', reason: 'focus3s' }]);
+  });
+
+  test('moving WITHIN one line does not re-arm', async () => {
+    // The dwell is about a topic, and a topic is a line. Left and right inside
+    // one line cannot change the answer, so restarting the timer on every arrow
+    // press was churn — and a therapist arrowing to read a long thought would
+    // keep pushing the highlight away.
+    setup(fixture(), true, 1);
+    caretOnLine('- cansaço');
+    const el = textarea();
+    const start = el.value.indexOf('- cansaço');
+    act(() => {
+      el.setSelectionRange(start + 2, start + 2);
+      fireEvent.select(el);
+    });
+    act(() => {
+      el.setSelectionRange(start + 4, start + 4);
+      fireEvent.select(el);
+    });
+    await waitPastDwell(1);
+    // Still fires — once, for the line it was armed on.
+    expect(selections).toEqual([{ nodeId: 't1', reason: 'focus3s' }]);
+  });
+});
+
+describe('Enter starts the next topic', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  test('adds a bullet at the same level', () => {
+    // The complaint this answers: a textarea reproduces the indent but not the
+    // bullet, so Enter produced a line the parser folded into the topic above
+    // as a wrapped paragraph. No new topic, and "- " had to be typed by hand.
+    setup();
+    caretAtEndOfLine('- cansaço');
+    press('Enter');
+    expect(textarea().value).toBe(
+      '# 28/09/2026\n- Trabalho\n  - cansaço\n  - \n  - chefe cobra\n    - prazos curtos\n- Família\n  - mãe apoia'
+    );
+  });
+
+  test('the new line really is a new topic, not more of the old one', () => {
+    // An empty bullet parses to nothing — it is a topic that exists only as a
+    // caret, which is why the ghost balloon stands in for it. It becomes a
+    // real sibling the moment it has text.
+    setup();
+    caretAtEndOfLine('- cansaço');
+    press('Enter');
+    const before = parseMarkdownToTree(textarea().value, '28/09/2026', null);
+    expect(before.children[0].children.map((c) => c.text)).toEqual([
+      'cansaço',
+      'chefe cobra',
+    ]);
+
+    const el = textarea();
+    const at = el.value.indexOf('\n  - \n') + '\n  - '.length;
+    type(el.value.slice(0, at) + 'sono' + el.value.slice(at));
+    const after = parseMarkdownToTree(textarea().value, '28/09/2026', null);
+    expect(after.children[0].children.map((c) => c.text)).toEqual([
+      'cansaço',
+      'sono',
+      'chefe cobra',
+    ]);
+  });
+
+  test('repeats the marker the line uses instead of normalising it', () => {
+    // Chosen over always writing "- ": a buffer pasted from a document that
+    // uses "*" stays in "*" while it is edited, and the canonical form arrives
+    // later as a rewrite the therapist can see. Swapping the marker under the
+    // caret with no visible cause is the worse surprise.
+    setup();
+    type('# 28/09/2026\n*  cansaço');
+    caretAtEndOfLine('*  cansaço');
+    press('Enter');
+    expect(textarea().value).toBe('# 28/09/2026\n*  cansaço\n*  ');
+  });
+
+  test('after the session heading, a top-level bullet', () => {
+    setup();
+    caretAtEndOfLine('# 28/09/2026');
+    press('Enter');
+    expect(textarea().value.split('\n')[1]).toBe('- ');
+  });
+
+  test('on an empty bullet it ends the topic instead of stacking blanks', () => {
+    // What every outliner does, and what the row editor already did here. The
+    // line goes with ONE of its two newlines: neither would leave a blank line
+    // where the topic was, both would join the lines above and below.
+    setup();
+    type('# 28/09/2026\n- cansaço\n- ');
+    caretAt(textarea().value.length);
+    press('Enter');
+    expect(textarea().value).toBe('# 28/09/2026\n- cansaço');
+  });
+
+  test('an empty bullet in the middle leaves the rest of the buffer alone', () => {
+    setup();
+    type('# 28/09/2026\n- cansaço\n- \n- Família');
+    caretAt(textarea().value.indexOf('- \n') + 2);
+    press('Enter');
+    expect(textarea().value).toBe('# 28/09/2026\n- cansaço\n- Família');
+  });
+
+  test('a wrapped paragraph keeps the browser behaviour', () => {
+    // A soft break is what was meant there, and taking the key would make a
+    // thought impossible to write over two lines.
+    setup();
+    type('# 28/09/2026\n- cansaço\n  e mais texto');
+    const el = textarea();
+    const at = el.value.indexOf('e mais');
+    act(() => {
+      el.setSelectionRange(at, at);
+    });
+    expect(fireEvent.keyDown(el, { key: 'Enter', cancelable: true })).toBe(true);
+  });
+
+  test('Shift+Enter is never taken', () => {
+    setup();
+    caretAtEndOfLine('- cansaço');
+    const before = textarea().value;
+    expect(
+      fireEvent.keyDown(textarea(), { key: 'Enter', shiftKey: true, cancelable: true })
+    ).toBe(true);
+    expect(textarea().value).toBe(before);
+  });
+});
+
+describe('a new, empty topic tells the map about it', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  test('an empty bullet is active, so the ghost balloon and footer appear', () => {
+    // The bug: the parser discards an empty bullet, so there was no node to
+    // find, the draft went out inactive, and the map said nothing at all while
+    // the therapist was starting a topic. A silent map is the whole problem.
+    setup();
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - ');
+    caretAt(textarea().value.length);
+    const draft = drafts[drafts.length - 1];
+    expect(draft.active).toBe(true);
+    expect(draft.mode).toBe('add');
+    expect(draft.text).toBe('');
+  });
+
+  test('it names the parent the line is indented under, not the one above it', () => {
+    // Worked out from the buffer's own indentation, because the tree cannot
+    // help: the node does not exist yet. The line above happens to be at the
+    // SAME indent, so it is a sibling, not the parent — the nearest SHALLOWER
+    // topic is the one that wins.
+    setup();
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - ');
+    caretAt(textarea().value.length);
+    expect(drafts[drafts.length - 1].parentText).toBe('Trabalho');
+  });
+
+  test('a bullet at column zero hangs off the session', () => {
+    setup();
+    type('# 28/09/2026\n- Trabalho\n- ');
+    caretAt(textarea().value.length);
+    const draft = drafts[drafts.length - 1];
+    expect(draft.parentText).toBe('28/09/2026');
+    expect(draft.active).toBe(true);
+  });
+
+  test('deeper than its parent, it still lands on the nearest shallower topic', () => {
+    setup();
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n    - ');
+    caretAt(textarea().value.length);
+    expect(drafts[drafts.length - 1].parentText).toBe('cansaço');
+  });
+
+  test('a wrapped paragraph is not a topic and says nothing', () => {
+    setup();
+    type('# 28/09/2026\n- cansaço\n  e mais texto');
+    caretAt(textarea().value.length);
+    expect(drafts[drafts.length - 1].active).toBe(false);
+  });
+
+  test('the session heading is not a topic either', () => {
+    // Otherwise the footer reads "Novo subitem em Tópico raiz" every time the
+    // caret touches the date line, describing an action nobody is taking.
+    setup();
+    caretOnLine('# 28/09/2026');
+    expect(drafts[drafts.length - 1].active).toBe(false);
   });
 });
 

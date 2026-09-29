@@ -3,6 +3,7 @@ import { Info, Keyboard, ListTree, MoveVertical, PanelLeft, Minimize2 } from 'lu
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import { findNodeById, moveNode, branchIndexOf, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { isLiftChord, moveCandidates, MOVE_REFUSAL_TEXT } from '../../utils/lift';
+import { readLine, lineIndexAt } from '../../utils/bufferLine';
 
 interface MarkdownOutlineProps {
   root: MindMapNode;
@@ -39,6 +40,49 @@ interface MarkdownOutlineProps {
 const PARSE_DEBOUNCE_MS = 400;
 
 const INDENT = '  ';
+
+/** Everything the caret's line implies, resolved against the parsed tree. */
+interface Caret {
+  /** The topic the caret is inside, or null when the line is not one yet. */
+  node: FlatOutlineItem | null;
+  /** Where a new topic on this line would attach. */
+  parentId: string | null;
+  parentText: string | undefined;
+  /** The line is the session heading or a bullet — either way the map cares. */
+  onBullet: boolean;
+  lineIndex: number;
+}
+
+/**
+ * The topic an empty bullet at `indent` would become a child of.
+ *
+ * Walks the lines above and takes the first one that is a topic at a SHALLOWER
+ * indent, which is exactly how the parser nests. A bullet at column zero finds
+ * nothing and returns null, and the caller reads that as the session root.
+ *
+ * Matching by text is what the rest of this file does, and the same limitation
+ * applies: two topics with identical text resolve to the first. Here the
+ * consequence is only which parent LABEL is shown, never the structure — the
+ * structure is the buffer's indentation, which is unambiguous.
+ */
+function parentAbove(
+  value: string,
+  lineIndex: number,
+  indent: string,
+  flatItems: FlatOutlineItem[],
+  rootId: string
+): FlatOutlineItem | null {
+  for (let i = lineIndex - 1; i >= 0; i--) {
+    const line = readLine(value, i);
+    if (line.isHeading) return null;
+    if (!line.isBullet || line.text === '') continue;
+    if (line.indent.length >= indent.length) continue;
+    return (
+      flatItems.find((f) => f.id !== rootId && f.text === line.text) ?? null
+    );
+  }
+  return null;
+}
 
 export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   root,
@@ -104,45 +148,98 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   );
 
   /**
-   * Which topic the caret is in, and its parent.
+   * Which topic the caret is in, and where a new one would land.
    *
    * The text has no ids, so the caret has to be mapped back to a node for the
    * client broadcast and the highlight. It is matched by the text of the line
    * the caret sits on: the rows model can hand over a node id, a text buffer
    * cannot, and the line is the only handle that exists.
+   *
+   * AN EMPTY BULGET IS THE INTERESTING CASE, and it is why this is not a
+   * one-liner. The parser discards a bullet with no text, so `- ` has no node
+   * to find — and this used to return "nothing at all" for it. That silenced
+   * everything downstream: the draft went out with `active: false`, so the
+   * ghost balloon did not appear, the footer mirror stayed hidden, and the
+   * client screen showed no sign that a topic was being started. Pressing Enter
+   * to write the next one produced a map that had nothing to say about it.
+   *
+   * The parent is therefore worked out from the BUFFER rather than from the
+   * tree: walk up the lines above, and the first topic at a shallower indent is
+   * the parent the parser would have given it. When there is none, the parent
+   * is the session root — which is also what a bullet at column zero means.
    */
-  const caretNode = useCallback((): { node: FlatOutlineItem | null; parentText: string | undefined } => {
+  const caretNode = useCallback((): Caret => {
     const el = textareaRef.current;
-    if (!el) return { node: null, parentText: undefined };
-    const before = el.value.slice(0, el.selectionStart);
-    const lineStart = before.lastIndexOf('\n') + 1;
+    const empty: Caret = {
+      node: null,
+      parentId: null,
+      parentText: undefined,
+      onBullet: false,
+      lineIndex: -1,
+    };
+    if (!el) return empty;
+
+    const value = el.value;
+    const lineIndex = lineIndexAt(value, el.selectionStart);
     // The WHOLE line, not just the part before the caret. A caret sitting one
     // character into "- cansaço" would otherwise read the line as "-" and match
     // no topic at all, so the highlight and the lift would both do nothing
     // until the therapist typed further into the text.
-    const lineEnd = el.value.indexOf('\n', el.selectionStart);
-    const line = el.value
-      .slice(lineStart, lineEnd === -1 ? el.value.length : lineEnd)
-      .replace(/^\s*#\s*/, '')
-      .replace(/^\s*[-*+]\s*/, '')
-      .trim();
-    const item = flatItems.find((i) => i.id !== parsedRoot.id && i.text === line);
-    if (!item) return { node: null, parentText: undefined };
-    const parent = item.parentId ? findNodeById(parsedRoot, item.parentId) : null;
-    return { node: item, parentText: parent?.text };
+    const line = readLine(value, lineIndex);
+
+    if (!line.isBullet) {
+      // The session heading is not a topic. Reporting it as one put "Novo
+      // subitem em Tópico raiz" in the footer whenever the caret touched the
+      // date line, which describes an action nobody is taking.
+      return { ...empty, lineIndex, onBullet: false, node: null };
+    }
+
+    const own = flatItems.find(
+      (i) => i.id !== parsedRoot.id && i.text === line.text && line.text !== ''
+    );
+
+    if (own) {
+      const parent = own.parentId ? findNodeById(parsedRoot, own.parentId) : null;
+      return {
+        node: own,
+        parentId: own.parentId ?? parsedRoot.id,
+        parentText: parent?.text,
+        onBullet: true,
+        lineIndex,
+      };
+    }
+
+    // An empty bullet: no node yet, so find the parent by indentation.
+    const parentItem = parentAbove(value, lineIndex, line.indent, flatItems, parsedRoot.id);
+    return {
+      node: null,
+      parentId: parentItem?.id ?? parsedRoot.id,
+      // A bullet at column zero has no shallower topic above it, so its parent
+      // is the session. Saying so here rather than leaving it undefined saves
+      // the view a fallback lookup to reach the same answer.
+      parentText: parentItem?.text ?? parsedRoot.text,
+      onBullet: true,
+      lineIndex,
+    };
   }, [flatItems, parsedRoot]);
 
-  const broadcastCaret = useCallback(() => {
-    const { node, parentText } = caretNode();
-    onDraftChange({
-      mode: node && node.text ? 'edit' : 'add',
-      parentId: node?.parentId ?? null,
-      parentText,
-      targetId: node?.id ?? null,
-      text: node?.text ?? '',
-      active: Boolean(node),
-    });
-  }, [caretNode, onDraftChange]);
+  const broadcastCaret = useCallback(
+    (caret: Caret) => {
+      onDraftChange({
+        mode: caret.node && caret.node.text ? 'edit' : 'add',
+        parentId: caret.node ? (caret.node.parentId ?? parsedRoot.id) : caret.parentId,
+        parentText: caret.parentText,
+        targetId: caret.node?.id ?? null,
+        text: caret.node?.text ?? '',
+        /* active is true for a bullet even when it is empty. The whole point
+         * of the empty case is that something is being started: a ghost balloon
+         * and a footer that says where. `Boolean(node)` here is what made both
+         * of them vanish. */
+        active: caret.onBullet,
+      });
+    },
+    [onDraftChange, parsedRoot.id]
+  );
 
   /* ==================== DWELL (auto-focus) ==================== */
 
@@ -187,23 +284,44 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   useEffect(() => cancelDwell, [cancelDwell]);
 
   /**
+   * The line the dwell was last armed for.
+   *
+   * A dwell is about a TOPIC, and a topic is a line. Moving the caret left and
+   * right inside one line changes nothing the map can show, so re-arming on
+   * every arrow press was churn: a timer torn down and rebuilt for a balloon
+   * that was never going to be a different balloon. Only a change of line
+   * re-arms, which is also the only change that can change the answer.
+   *
+   * Typing is the exception and does re-arm, because it changes the text of the
+   * balloon. A therapist writing a thought and pausing to think should see the
+   * map catch up with what they have written so far, not with what they wrote
+   * before the pause.
+   */
+  const armedLineRef = useRef<number>(-1);
+
+  /**
    * Where the caret went, and what that should mean for the highlight.
    *
-   * Same two intents the row editor uses, for the same reason. Navigation
-   * ARMS the dwell rather than highlighting, or the setting would control
-   * nothing; a pointer click is a deliberate act on one topic and highlights
-   * at once.
+   * Same intents the row editor uses, for the same reason. Navigation ARMS the
+   * dwell rather than highlighting, or the setting would control nothing; a
+   * pointer click is a deliberate act on one topic and highlights at once.
    */
   const followCaret = useCallback(
-    (intent: 'navigate' | 'explicit') => {
-      const { node } = caretNode();
-      broadcastCaret();
+    (intent: 'navigate' | 'typing' | 'explicit') => {
+      const caret = caretNode();
+      broadcastCaret(caret);
+
       if (intent === 'explicit') {
         cancelDwell();
-        onSelectNode(node?.id ?? null, 'click');
-      } else {
-        armDwell(node?.id ?? null);
+        armedLineRef.current = caret.lineIndex;
+        onSelectNode(caret.node?.id ?? null, 'click');
+        return;
       }
+      if (intent === 'navigate' && caret.lineIndex === armedLineRef.current) {
+        return;
+      }
+      armedLineRef.current = caret.lineIndex;
+      armDwell(caret.node?.id ?? null);
     },
     [armDwell, broadcastCaret, cancelDwell, caretNode, onSelectNode]
   );
@@ -341,6 +459,86 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * earlier would close over them in their temporal dead zone and throw the
    * first time a key was pressed.
    */
+  /**
+   * Rewrites the buffer, puts the caret where it belongs, and re-broadcasts.
+   *
+   * The re-broadcast is explicit rather than left to the browser's `select`
+   * event, which setSelectionRange does fire but which fires only sometimes in
+   * practice and never in the test DOM. Without it, a key that rewrites the
+   * buffer programmatically leaves the map describing the line the caret just
+   * left. Calling it twice is harmless: followCaret ignores a second call on
+   * the same line.
+   */
+  const commitEdit = (next: string, caretAt: number) => {
+    setText(next);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.setSelectionRange(caretAt, caretAt);
+      followCaret('navigate');
+    });
+    scheduleParse();
+  };
+
+  /**
+   * Enter starts the next topic at the same level.
+   *
+   * A plain textarea's Enter reproduces the previous line's INDENT but not its
+   * bullet, so it produced a line the parser reads as a wrapped paragraph
+   * folded into the topic above — no new topic, no ghost balloon, and the
+   * therapist having to type "- " by hand every single time. It is the one
+   * thing a textarea cannot do and an outliner must, so it is taken here.
+   *
+   * The marker is REPEATED rather than normalised to "- ". A buffer pasted
+   * from a document that uses "*" keeps "*" while it is being edited, and the
+   * canonical "-" arrives later as a visible rewrite the therapist can see and
+   * undo. Swapping the marker under the caret with no visible cause is the
+   * worse surprise of the two.
+   *
+   * Enter on an EMPTY bullet ends the topic instead of nesting another one
+   * inside nothing, which is what every outliner does and what the row editor
+   * already did here ("Anotação vazia descartada"). Without it, a therapist who
+   * keeps pressing Enter walks down the buffer leaving a stack of blanks.
+   *
+   * Returns false for a line that is not a topic — a wrapped paragraph, a blank
+   * line — and the caller lets the browser have the key, because there a soft
+   * break IS what was meant. Shift+Enter is never intercepted: it is the way to
+   * write a thought that runs over two lines.
+   */
+  const insertTopicLine = (el: HTMLTextAreaElement): boolean => {
+    const { selectionStart, selectionEnd, value } = el;
+    const line = readLine(value, lineIndexAt(value, selectionStart));
+
+    // Leaving an empty topic: strip the bullet and put the caret where it was,
+    // so typing continues as prose at the old level.
+    if (line.isEmptyBullet) {
+      // The line disappears along with ONE of the two newlines that bracketed
+      // it. Taking neither leaves a blank line where the topic was; taking both
+      // would join the line above to the one below. The following newline goes
+      // first, and only the last line has to fall back to the one before it.
+      const hasFollowingNewline = line.end < value.length;
+      const keep = hasFollowingNewline ? line.start : Math.max(0, line.start - 1);
+      commitEdit(value.slice(0, keep) + value.slice(line.end + (hasFollowingNewline ? 1 : 0)), keep + line.indent.length);
+      return true;
+    }
+
+    // The session heading carries no bullet to repeat, so the first topic after
+    // it is always a top-level "- ".
+    const prefix = line.isHeading
+      ? '- '
+      : line.isBullet
+        ? line.indent + line.marker + line.gap
+        : null;
+    if (prefix === null) return false;
+
+    const insert = '\n' + prefix;
+    commitEdit(
+      value.slice(0, selectionEnd) + insert + value.slice(selectionEnd),
+      selectionEnd + insert.length
+    );
+    return true;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
 
@@ -383,6 +581,14 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       // The escape hatch for the captured Tab.
       e.preventDefault();
       el.blur();
+      return;
+    }
+
+    /* Enter starts the next topic. After the lift, because a lifted row's Enter
+     * is a commit — see the branch above. Shift+Enter is left alone so a
+     * thought can still run over two lines. */
+    if (e.key === 'Enter' && !e.shiftKey && insertTopicLine(el)) {
+      e.preventDefault();
       return;
     }
 
@@ -522,12 +728,17 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             setHint('');
             setText(e.target.value);
             scheduleParse();
-            followCaret('navigate');
+            followCaret('typing');
           }}
           onKeyDown={handleKeyDown}
           /* onSelect, not onKeyUp: a click, a drag-selection and every arrow
            * key all move the caret and all fire it, so the dwell follows the
-           * caret rather than a list of keys that would still miss the mouse. */
+           * caret rather than a list of keys that would still miss the mouse.
+           *
+           * 'navigate' rather than 'typing' on purpose — only a change of LINE
+           * re-arms the dwell from here, so the left and right arrows inside
+           * one topic do not keep restarting a timer whose answer cannot
+           * change. */
           onSelect={() => followCaret('navigate')}
           onClick={() => {
             /* Resolves the dwell the select above armed. Whichever order the
