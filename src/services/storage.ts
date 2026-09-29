@@ -27,6 +27,9 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFitOnAdd: true,
   clientFontScale: 1.0,
   focusZoomMode: true, // Default to true so therapist can see focus zoom in action!
+  // Re-parenting is opt-in. See the field comment in types/index.ts for why a
+  // finished feature still ships off.
+  enableNodeMove: false,
 };
 
 const DEFAULT_SAMPLE_CLIENT: Client = {

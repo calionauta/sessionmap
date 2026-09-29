@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -8,6 +8,8 @@ import {
   Search,
   X,
   ChevronUp,
+  MoveVertical,
+  Check,
 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import {
@@ -18,6 +20,12 @@ import {
   indentNode,
   unindentNode,
   moveSibling,
+  moveNode,
+  moveCandidates,
+  initialLiftTarget,
+  stepLiftTarget,
+  branchIndexOf,
+  MOVE_REFUSAL_TEXT,
   deleteNode,
   toggleNodeCollapse,
   findParentAndIndex,
@@ -43,6 +51,15 @@ interface OutlineEditorProps {
   focusDwellSeconds: number;
   theme: 'papel' | 'noite';
   /**
+   * Allows re-parenting a topic to another branch.
+   *
+   * Gated rather than always on because a move is the one edit the therapist
+   * cannot undo by typing: Ctrl+Z is the only way back, and a client is
+   * watching the shared screen when it lands. The operation itself is fully
+   * covered by tree.test.ts either way.
+   */
+  enableNodeMove: boolean;
+  /**
    * Hides the pane without unmounting it, while the client-notes panel takes
    * the full height. Kept mounted on purpose: unmounting would drop the row
    * focus and whatever the therapist had selected on the canvas.
@@ -58,10 +75,67 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   selectedNodeId,
   focusDwellSeconds = 3,
   theme,
+  enableNodeMove = false,
   hidden = false,
 }) => {
   const isDark = theme === 'noite';
-  const flatItems = flattenTree(root, 0, null, 0, true);
+
+  /**
+   * Re-parenting ("lift").
+   *
+   * `liftedId` is the node in flight; `liftTargetId` is the row the cursor is
+   * currently aiming at, and the destination is ALWAYS "last child of that
+   * row". One destination, one position — reordering after the move is
+   * Alt+Arrow, which is unambiguous on its own, whereas a move that could also
+   * land before or after some row has three plausible outcomes per gesture and
+   * one of them is always a mistake.
+   *
+   * The preview is a whole second ROOT, not a marker drawn between rows. That
+   * is the whole trick: flattenTree() already knows how to render a tree, so
+   * previewing means calling it on moveNode()'s result and letting the ordinary
+   * row renderer show the subtree sitting at its new depth, with its own guide
+   * line, in its new place. No placeholder rows, no second render path, and
+   * the mouse and the keyboard share the same preview because they are the same
+   * function.
+   *
+   * It is local state and MUST stay that way. Routing it through onUpdateRoot
+   * would push a history entry and broadcast a snapshot, so the client's screen
+   * would watch a subtree fly across and then snap back on Esc. Only Enter
+   * commits.
+   */
+  const [liftedId, setLiftedId] = useState<string | null>(null);
+  const [liftTargetId, setLiftTargetId] = useState<string | null>(null);
+
+  const isLifting = liftedId !== null;
+
+  /** The rows the lift cursor can land on, in visual order. */
+  const liftCandidates = useMemo(
+    () => (liftedId ? moveCandidates(root, liftedId) : []),
+    [root, liftedId]
+  );
+
+  /**
+   * The tree the outline actually renders.
+   *
+   * While lifting this is the preview: the same list of rows, recomputed from
+   * the moved tree, so the lifted subtree genuinely appears at its destination
+   * depth. The rows are keyed by node id (see the key= below), so React MOVES
+   * the input's DOM node instead of remounting it — focus, the caret and the
+   * registration in inputRefs all survive the whole lift, which is why there is
+   * no focus bookkeeping to write here.
+   */
+  const previewRoot = useMemo(() => {
+    if (!liftedId || !liftTargetId) return null;
+    return moveNode(root, liftedId, liftTargetId).root;
+  }, [root, liftedId, liftTargetId]);
+
+  const flatItems = flattenTree(
+    previewRoot ?? root,
+    0,
+    null,
+    0,
+    true
+  );
 
   const [activeNodeId, setActiveNodeId] = useState<string | null>(root.id);
   const [dwellProgress, setDwellProgress] = useState<number>(0);
@@ -304,6 +378,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const handleCreateChild = (item: FlatOutlineItem) => {
     resetDwellTimer();
 
+    // A lift is in flight: a new row would appear in the PREVIEW, then vanish
+    // on Esc, or land in a tree that is about to be replaced. Refuse instead.
+    if (isLifting) return;
+
     // A child of an empty row would be a thought hanging off nothing. The
     // parent has no text yet, so the tree would grow a subtree that renders as
     // "Sem título" in the map and in every export. The root is exempt: it
@@ -365,6 +443,35 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     currentIndex: number
   ) => {
     resetDwellTimer();
+
+    /* LIFT FIRST, before every other branch.
+     *
+     * Placed here rather than lower down because the arrow branches below move
+     * the caret and the selection. If the lift were handled after them, the very
+     * first arrow would edit the row instead of aiming the drop, and the whole
+     * gesture would look broken.
+     */
+    if (isLifting) {
+      handleLiftKey(e);
+      return;
+    }
+
+    /* 0. Alt+M: lift the row for re-parenting.
+     *
+     * A LATCH, not a hold. A held modifier has three failure modes that all
+     * land mid-session, in front of a client: keyup is lost when the window
+     * loses focus (alt-tab, screensaver), so the app stays stuck in "lifted"
+     * with no way for the therapist to know; Alt+Arrow is browser history in
+     * some environments and Ctrl+Arrow is word-jump inside the input, neither
+     * reliably preventable; and there is no key to hold on a touchscreen. The
+     * latch has none of these, and it needs the same visible state indicator
+     * that a hold would.
+     */
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'm') {
+      e.preventDefault();
+      startLift(item);
+      return;
+    }
 
     // 1. Ctrl+Enter or Cmd+Enter: CREATE DIRECT CHILD INSTANTLY!
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -502,9 +609,209 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     }
   };
 
+  /* ==================== RE-PARENTING (the lift) ==================== */
+
+  /**
+   * How long the "movido para…" confirmation stays up.
+   *
+   * The existing `hint` band is the wrong channel for a success message:
+   * handleInputChange clears it on the very next keystroke, so a confirmation
+   * would be unreadable. The lift is a two-step gesture, and the question
+   * "did it commit or not?" needs an answer that survives typing.
+   */
+  const LIFT_NOTICE_MS = 3500;
+  const [liftNotice, setLiftNotice] = useState<string>('');
+  const liftNoticeTimerRef = useRef<number | null>(null);
+
+  const sayLiftNotice = useCallback((message: string) => {
+    setLiftNotice(message);
+    if (liftNoticeTimerRef.current) window.clearTimeout(liftNoticeTimerRef.current);
+    liftNoticeTimerRef.current = window.setTimeout(() => {
+      setLiftNotice('');
+      liftNoticeTimerRef.current = null;
+    }, LIFT_NOTICE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (liftNoticeTimerRef.current) window.clearTimeout(liftNoticeTimerRef.current);
+    };
+  }, []);
+
+  /**
+   * A lift can only be driven from a row's input, because the arrow keys are
+   * handled there. If focus leaves the rows — the search field, a modal, another
+   * pane, or the tab itself — no keydown will ever reach the handler again, and
+   * the outline would stay in "moving" with the arrows inert and no visible way
+   * out. So focus leaving the pane ends the lift.
+   *
+   * This is the same reasoning that rules out a HELD modifier: a gesture the
+   * app cannot recover from is worse than one it never offered. The lift is
+   * local state, so cancelling costs nothing and the tree is untouched.
+   */
+  const outlinePaneRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isLifting) return;
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Node | null;
+      // relatedTarget is null when focus left the document entirely, which is
+      // the alt-tab case; both mean the row can no longer be driven.
+      if (!next || !outlinePaneRef.current?.contains(next)) {
+        setLiftedId(null);
+        setLiftTargetId(null);
+      }
+    };
+    document.addEventListener('focusout', onFocusOut);
+    return () => document.removeEventListener('focusout', onFocusOut);
+  }, [isLifting]);
+
+  /** Drops the lift without touching the tree. Esc is the usual way out. */
+  const cancelLift = useCallback(() => {
+    setLiftedId(null);
+    setLiftTargetId(null);
+  }, []);
+
+  /* A hidden pane is still mounted on purpose (see the `hidden` prop), so it
+     never fires blur and the focusout guard above never runs. Expanding the
+     client notes mid-lift would otherwise leave the outline "moving" behind a
+     panel, with the row focus intact underneath and no way for the therapist to
+     know why the arrows stopped aiming. */
+  useEffect(() => {
+    if (hidden) cancelLift();
+  }, [hidden, cancelLift]);
+
+  /**
+   * Lifts a row, aiming the cursor at the first candidate.
+   *
+   * The first candidate is the row ABOVE the lifted one, not the top of the
+   * outline: the mis-filed topic that motivates a move is nearly always a
+   * sibling or a cousin, so starting the cursor in the visual neighbourhood of
+   * where the row already sits makes Enter, which lands on the first candidate,
+   * do the obvious thing instead of teleporting the subtree to the top.
+   */
+  const startLift = useCallback(
+    (item: FlatOutlineItem) => {
+      if (!enableNodeMove) return;
+      if (item.id === root.id) {
+        setHint(MOVE_REFUSAL_TEXT.root);
+        return;
+      }
+      if (isLifting) return;
+
+      const candidates = moveCandidates(root, item.id);
+      if (candidates.length === 0) {
+        setHint('Não há outro tópico para receber este aqui.');
+        return;
+      }
+
+      setLiftedId(item.id);
+      setLiftTargetId(initialLiftTarget(root, item.id));
+    },
+    [enableNodeMove, isLifting, root]
+  );
+
+  /**
+   * Commits the lift: one moveNode, one onUpdateRoot.
+   *
+   * One commit is the whole point. Two calls (detach, then attach) would put two
+   * entries in the history stack and let the client window receive an
+   * intermediate state in which the subtree does not exist.
+   *
+   * The moved node is re-selected afterwards so the client sees WHERE it went.
+   * A move is a deliberate act, so it bypasses the dwell and highlights at
+   * once, for the same reason a click does: the dwell exists to stop the map
+   * chasing the therapist while they scan, not to delay a decision already
+   * made. The highlight path is recomputed from the committed tree, so the
+   * client's screen shows the new ancestry rather than a stale one.
+   */
+  const commitLift = useCallback(() => {
+    if (!liftedId || !liftTargetId) return;
+    const source = findNodeById(root, liftedId);
+    const target = findNodeById(root, liftTargetId);
+    if (!source || !target) {
+      cancelLift();
+      return;
+    }
+
+    const result = moveNode(root, liftedId, liftTargetId);
+    if (!result.success) {
+      cancelLift();
+      setHint(MOVE_REFUSAL_TEXT[result.refusal ?? 'no-change']);
+      return;
+    }
+
+    // Whether the balloon changes side in the map, which the outline cannot
+    // show: the map alternates top-level branches by index parity.
+    const before = branchIndexOf(root, liftedId);
+    const after = branchIndexOf(result.root, liftedId);
+    const flipsSide = before !== -1 && after !== -1 && before % 2 !== after % 2;
+
+    const label = target.text.trim() || 'a linha da sessão';
+    cancelLift();
+
+    onUpdateRoot(result.root, 'move');
+    onSelectNode(liftedId, 'click');
+    // The row keeps its id, so its input is the same element: the caret returns
+    // to the end of the text it was already in, with no focus bookkeeping.
+    focusInput(liftedId, false, 'explicit');
+
+    sayLiftNotice(
+      flipsSide
+        ? `“${source.text.trim() || 'Tópico'}” movido para “${label}”. Ele muda de lado no mapa para o cliente.`
+        : `“${source.text.trim() || 'Tópico'}” movido para “${label}”.`
+    );
+  }, [liftedId, liftTargetId, root, cancelLift, onUpdateRoot, onSelectNode, focusInput, sayLiftNotice]);
+
+  /**
+   * Keyboard control while a lift is in flight.
+   *
+   * Everything is swallowed. A keystroke that falls through to the input would
+   * edit the row that is in the air, and the therapist would type a word into a
+   * node whose position is about to change.
+   */
+  const handleLiftKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!liftCandidates.length) {
+      if (e.key === 'Escape') cancelLift();
+      return;
+    }
+
+    const step = (delta: number) => setLiftTargetId(stepLiftTarget(liftCandidates, liftTargetId, delta));
+
+    switch (e.key) {
+      case 'ArrowDown':
+        return step(1);
+      case 'ArrowUp':
+        return step(-1);
+      // A screenful at a time, for a destination that is not a neighbour. The
+      // pane can be three rows tall on a phone, so paging is not a luxury.
+      case 'PageDown':
+        return step(4);
+      case 'PageUp':
+        return step(-4);
+      case 'Home':
+        return setLiftTargetId(liftCandidates[0]);
+      case 'End':
+        return setLiftTargetId(liftCandidates[liftCandidates.length - 1]);
+      case 'Enter':
+        return commitLift();
+      case 'Escape':
+        cancelLift();
+        return;
+      default:
+        return;
+    }
+  };
+
   // Input change handler
   const handleInputChange = (item: FlatOutlineItem, newText: string) => {
     if (newText.length > 280) return;
+
+    // Typing during a lift would edit a node whose position is still being
+    // decided, so the text would be written into the wrong branch.
+    if (isLifting) return;
 
     // Typing resolves whatever hint was showing: the reason it appeared
     // ("write before adding a subitem") no longer applies.
@@ -568,6 +875,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
        section overflowed instead of the outline yielding space. As a flex
        child it should claim the remaining space and be allowed to shrink. */
     <div
+      ref={outlinePaneRef}
       className={`@container flex flex-1 min-h-0 flex-col min-w-0 overflow-hidden select-text bg-surface-raised text-content ${
         hidden ? 'hidden' : ''
       }`}
@@ -618,6 +926,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setMatchCursor(0);
+                }}
+                onFocus={() => {
+                  /* Focus leaving a row would strand the lift: no keydown would
+                   * ever reach handleLiftKey again, so the outline would sit in
+                   * "moving" with the arrow keys doing nothing and no visible way
+                   * out. The search field is the one focusable thing outside the
+                   * rows, so taking focus there drops the lift rather than
+                   * trapping it. */
+                  if (isLifting) cancelLift();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -697,6 +1014,44 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         )}
       </div>
 
+      {/* Lift-in-progress banner.
+          This is the state indicator a held modifier would have needed and
+          could not have provided honestly: while it is up, the outline is
+          showing a PREVIEW, arrows aim, Enter commits and Esc cancels. It sits
+          where the refusal hint sits rather than at the top, so it appears in
+          the same place the eye already goes for "what just happened to my
+          keystroke". */}
+      {isLifting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="shrink-0 px-4 py-2 border-t border-line bg-surface-inset text-[11px] font-semibold text-content flex items-start gap-1.5"
+        >
+          <MoveVertical className="w-3.5 h-3.5 shrink-0 mt-px text-accent-text" aria-hidden="true" />
+          <span className="min-w-0">
+            Movendo “{findNodeById(root, liftedId ?? '')?.text.trim() || 'tópico'}” —{' '}
+            <strong className="font-bold">setas</strong> escolhem o destino,{' '}
+            <strong className="font-bold">Enter</strong> confirma,{' '}
+            <strong className="font-bold">Esc</strong> cancela.
+          </span>
+        </div>
+      )}
+
+      {/* Move confirmation. Its own channel, not the hint band: the hint is
+          cleared by the next keystroke (see handleInputChange), and a success
+          message the therapist cannot finish reading is the same as no message
+          at all. Both are announced; they never show at once. */}
+      {liftNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="shrink-0 px-4 py-2 border-t border-line bg-accent-soft text-[11px] font-semibold text-content flex items-start gap-1.5"
+        >
+          <Check className="w-3.5 h-3.5 shrink-0 mt-px text-accent-text" aria-hidden="true" />
+          <span className="min-w-0">{liftNotice}</span>
+        </div>
+      )}
+
       {/* Refused-action feedback.
           role="status" + aria-live="polite" so a screen-reader user hears why
           a key did nothing, instead of the app appearing to drop the input.
@@ -727,6 +1082,12 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           const isRootItem = item.id === root.id;
           const isRowActive = activeNodeId === item.id;
           const isRowSelected = selectedNodeId === item.id;
+          // Lift state. The moved row is the one being carried; the target row
+          // is the destination. Note that `item` comes from the PREVIEW tree
+          // while lifting, so the moved row already renders at its new depth and
+          // this flag is the only thing that says which row is in the air.
+          const isLifted = isLifting && item.id === liftedId;
+          const isLiftTarget = isLifting && item.id === liftTargetId;
           const charCount = item.text.length;
           const isCharWarning = charCount > 90;
           // Search match state. The current match is called out more strongly
@@ -768,6 +1129,28 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
               : 'bg-accent-soft border-2 border-accent-text text-black shadow-sm font-extrabold';
             inputTextStyle = '!text-black font-black placeholder:text-content-onaccent caret-black';
             bulletStyle = 'bg-black';
+          } else if (isLiftTarget) {
+            /* THIRD row state: the drop destination.
+             *
+             * Deliberately neither of the two above. Reusing the amber wash
+             * would say "the client is looking here", and reusing the row
+             * inversion would say "the caret is here"; both are lies during a
+             * lift, and the second one would hide the caret the therapist
+             * actually needs to see. So it is a dashed outline with no fill
+             * change — legible next to both, and it reads as a target rather
+             * than as a selection.
+             *
+             * The row ABOVE the target is the last child it currently has, so
+             * the target is marked on its own edge rather than by an insertion
+             * caret, which would imply a "before/after" position the move
+             * cannot express.
+             */
+            rowContainerStyle =
+              'border-2 border-dashed border-accent-text bg-transparent text-content';
+            inputTextStyle = isRootItem
+              ? 'font-extrabold text-base font-mono'
+              : 'font-bold placeholder:text-content-muted caret-content';
+            bulletStyle = 'bg-accent-text';
           } else {
             // Normal line. hover:bg-content/5 is a single token expression
             // that washes correctly in both themes (4% darker in papel,
@@ -791,6 +1174,14 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             <div
               key={item.id}
               onClick={() => {
+                // A click during a lift aims the drop at that row, rather than
+                // jumping the caret there. Moving the caret mid-lift would
+                // leave the lifted node's input unfocused, and the very next
+                // arrow would edit instead of aiming.
+                if (isLifting) {
+                  if (liftCandidates.includes(item.id)) setLiftTargetId(item.id);
+                  return;
+                }
                 // A click on a row names one node on purpose, so it highlights
                 // immediately and does not wait out the dwell. Making the
                 // deliberate path wait while the accidental one did not was
@@ -848,6 +1239,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     }
                     onClick={(e) => {
                       e.stopPropagation();
+                      // Collapsing during a lift would collapse against the real
+                      // tree while the outline shows the preview, and the two
+                      // would disagree about what is visible.
+                      if (isLifting) return;
                       resetDwellTimer();
                       onUpdateRoot(toggleNodeCollapse(root, item.id), 'collapse');
                     }}
@@ -913,6 +1308,13 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     // broadcasting through the back door.
                     setActiveNodeId(item.id);
                   }}
+                  /* The lifted row must not be edited while its position is
+                     still being decided: the text would be written into the
+                     wrong branch. handleKeyDown swallows every key during a
+                     lift, and this closes the paths that do not go through it —
+                     a paste, a drag-drop of text, the mobile keyboard's
+                     autocorrect. */
+                  readOnly={isLifted}
                   /* Leaving a row that was created but never typed into cancels
                      it, so "make a row and move on" leaves no empty balloon
                      behind. Rows with text, the root, and blank rows that
@@ -943,6 +1345,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (isLifting) return;
                       handleCreateChild(item);
                     }}
                     /* Keep focus in the input. Without this the button takes

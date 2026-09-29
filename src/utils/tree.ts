@@ -325,6 +325,230 @@ export function unindentNode(
 }
 
 /**
+ * Every id in a node's subtree, the node itself included.
+ *
+ * Used to keep a move from targeting the moved node or anything below it: a
+ * node moved into its own descendant is a cycle, and every traversal in the app
+ * (flattenTree, findPathToNode, the layout walk) is recursive, so a cycle is a
+ * stack overflow rather than a wrong-looking row.
+ */
+export function subtreeIds(node: MindMapNode, acc: Set<string> = new Set()): Set<string> {
+  acc.add(node.id);
+  for (const child of node.children || []) {
+    subtreeIds(child, acc);
+  }
+  return acc;
+}
+
+/**
+ * Index of the top-level branch a node hangs from, or -1 for the root itself.
+ *
+ * The map alternates top-level branches left/right by index parity
+ * (useMindMapLayout), and a node inherits its colour from the branch it sits
+ * under. Both are decided at paint time from this index, so a move that
+ * changes it is the one move whose effect the outline cannot show — the row
+ * lands in exactly the same place in the list while the balloon changes side
+ * and colour on the client's screen.
+ */
+export function branchIndexOf(root: MindMapNode, nodeId: string): number {
+  for (let i = 0; i < (root.children || []).length; i++) {
+    const branch = root.children[i];
+    if (branch.id === nodeId) return i;
+    if (subtreeIds(branch).has(nodeId)) return i;
+  }
+  return -1;
+}
+
+/**
+ * The rows that could become a node's parent, in visual order.
+ *
+ * Deliberately excludes the node's own subtree (cycle), its current parent
+ * (reordering inside a parent is Alt+Up/ArrowDown, and mixing the two gives one
+ * action two meanings) and blank rows (see moveNode on why those are refused).
+ *
+ * The set is what the lift cursor walks, so it is a plain list of ids rather
+ * than a flag on each row: the cursor is a position in a list, and the rows
+ * that are not in the list are not places the cursor can be.
+ */
+export function moveCandidates(root: MindMapNode, sourceId: string): string[] {
+  const source = findNodeById(root, sourceId);
+  if (!source || source.id === root.id) return [];
+
+  const path = findPathToNode(root, sourceId) ?? [];
+  const currentParentId = path.length > 1 ? path[path.length - 2] : null;
+  const banned = subtreeIds(source);
+
+  return flattenTree(root, 0, null, 0, true)
+    .filter(
+      (item) =>
+        !banned.has(item.id) &&
+        item.id !== currentParentId &&
+        (item.id === root.id || item.text.trim() !== '')
+    )
+    .map((item) => item.id);
+}
+
+/**
+ * Where the lift cursor should sit when a row is lifted.
+ *
+ * The row ABOVE the lifted one, not the top of the outline. The mis-filed
+ * topic that motivates a move is nearly always a sibling or a cousin, so
+ * starting the cursor in the visual neighbourhood of where the row already
+ * sits means Enter — which lands on the current candidate — does the obvious
+ * thing instead of teleporting the subtree to the top of the session.
+ */
+export function initialLiftTarget(root: MindMapNode, sourceId: string): string | null {
+  const candidates = moveCandidates(root, sourceId);
+  if (candidates.length === 0) return null;
+
+  const order = flattenTree(root, 0, null, 0, true).map((i) => i.id);
+  const myIndex = order.indexOf(sourceId);
+  const before = candidates.filter((id) => order.indexOf(id) < myIndex);
+  return before.length > 0 ? before[before.length - 1] : candidates[0];
+}
+
+/**
+ * Moves the lift cursor by `delta`, clamped to the ends.
+ *
+ * The candidate list is a list, not a set of flags on the rows, so the cursor
+ * is a position in a list: it cannot stop anywhere the move would refuse, and
+ * the skip over an invalid row is visible as the highlight jumping rather than
+ * as a keystroke that appeared to do nothing.
+ */
+export function stepLiftTarget(
+  candidates: string[],
+  current: string | null,
+  delta: number
+): string | null {
+  if (candidates.length === 0) return null;
+  const from = Math.max(0, candidates.indexOf(current ?? ''));
+  return candidates[Math.min(candidates.length - 1, Math.max(0, from + delta))];
+}
+
+export type MoveRefusal =
+  | 'root'
+  | 'self'
+  | 'cycle'
+  | 'blank-parent'
+  | 'no-change';
+
+/**
+ * Moves a node to become the LAST CHILD of another node, carrying its whole
+ * subtree along.
+ *
+ * The subtree is the definition, not an option. A node has no position of its
+ * own — it has a path — so "move the parent and leave the children" is a
+ * different operation (a split, which raises the question of which children
+ * stay). Folding that choice into a move is what turns a structural edit into a
+ * guess. Ids are preserved throughout, which is what the outline keys its rows
+ * by, so a highlight the client already has on a descendant keeps resolving
+ * after the move. Object identity does NOT survive: the path to the
+ * destination is rebuilt, and the outline's rows are keyed by id rather than by
+ * reference precisely so that does not cost a remount.
+ *
+ * ONE destination and ONE position. Reordering after the move is Alt+Arrow
+ * (moveSibling), which is unambiguous on its own. A move that could also land
+ * "before" or "after" some row would have three plausible outcomes per gesture,
+ * and one of them is always a mistake.
+ *
+ * The whole tree is rebuilt in ONE pass, so the caller commits once. Two calls
+ * (detach, then attach) would put two entries in the history stack and let the
+ * client window receive an intermediate state where the subtree is gone.
+ *
+ * The new parent is force-expanded, as indentNode already does: a move into a
+ * collapsed parent would otherwise leave the node present in the outline and
+ * invisible on the shared screen, which is the worst failure available here.
+ */
+export function moveNode(
+  root: MindMapNode,
+  targetId: string,
+  newParentId: string
+): { root: MindMapNode; success: boolean; refusal: MoveRefusal | null } {
+  const refuse = (refusal: MoveRefusal) => ({ root, success: false, refusal });
+
+  if (targetId === root.id) return refuse('root');
+  if (newParentId === targetId) return refuse('self');
+
+  const target = findNodeById(root, targetId);
+  if (!target) return refuse('cycle');
+
+  // A blank parent is not a place a node can go. normalizeOutline runs on
+  // every update and dissolves a blank node that has children, so a move onto
+  // a blank row would be silently undone a frame later — the row would appear
+  // to bounce back with no explanation. Refusing it here is the same rule
+  // rejectEmptyParent already applies to creating a child.
+  if (newParentId !== root.id && (findNodeById(root, newParentId)?.text.trim() ?? '') === '') {
+    return refuse('blank-parent');
+  }
+
+  // A node moved into its own subtree is a cycle.
+  if (subtreeIds(target).has(newParentId)) return refuse('cycle');
+
+  // Looked up by id, not via findParentAndIndex: the root IS a legal target
+  // (it means "last child of the session row", i.e. a top-level branch), and
+  // findParentAndIndex returns {parent: null} for the root, which reads as a
+  // failure and refused the move with a wrong reason.
+  const newParent = findNodeById(root, newParentId);
+  if (!newParent) return refuse('cycle');
+
+  // Already the last child of that parent: nothing to do, and the caller must
+  // not commit — handleUpdateRoot records history for anything that is not
+  // typing, so a no-op here would leave an undo step that undoes nothing.
+  const siblings = newParent.children || [];
+  const alreadyLastChild =
+    findParentAndIndex(root, targetId)?.parent?.id === newParentId &&
+    siblings[siblings.length - 1]?.id === targetId;
+  if (alreadyLastChild) return refuse('no-change');
+
+  /**
+   * Rebuilds the whole tree with the target removed from EVERYWHERE it sits.
+   *
+   * A plain per-node `filter` is not enough. When the new parent is an ancestor
+   * of the target — moving a node up to the root is the common case, and
+   * Shift+Tab already covers it, so this path runs constantly — the target is a
+   * GRANDCHILD of the destination, and filtering each node's direct children
+   * leaves the original in place. Re-attaching then gives the tree two nodes
+   * with the same id: React reports duplicate keys, drops one, and the outline
+   * renders the subtree twice.
+   *
+   * So the removal is done over the entire tree first, and the target is
+   * re-attached afterwards. The subtree is passed in detached because the
+   * captured `target` still contains whatever was below it before the move.
+   */
+  const detachEverywhere = (node: MindMapNode): MindMapNode => ({
+    ...node,
+    children: (node.children || [])
+      .filter((c) => c.id !== targetId)
+      .map(detachEverywhere),
+  });
+
+  const detachedTarget = detachEverywhere(target);
+
+  const reattach = (node: MindMapNode): MindMapNode => {
+    if (node.id === newParentId) {
+      return { ...node, collapsed: false, children: [...(node.children || []), detachedTarget] };
+    }
+    return { ...node, children: (node.children || []).map(reattach) };
+  };
+
+  return { root: reattach(detachEverywhere(root)), success: true, refusal: null };
+}
+
+/**
+ * Human-readable reason a move was refused, for the live region.
+ *
+ * A refused action that says nothing reads as a dropped key, which is the
+ * failure rejectEmptyParent already documents for the create-child path.
+ */
+export const MOVE_REFUSAL_TEXT: Record<MoveRefusal, string> = {
+  root: 'A linha da sessão não pode ser movida.',
+  self: 'Um tópico não pode ficar dentro de si mesmo.',
+  cycle: 'Um tópico não pode ficar dentro do que já está abaixo dele.',
+  'blank-parent': 'Escreva a anotação antes de mover um tópico para dentro dela.',
+  'no-change': 'Esse tópico já é o último filho deste.',
+};
+
+/**
  * Move node up or down among its siblings (Alt+Up / Alt+Down).
  */
 export function moveSibling(
