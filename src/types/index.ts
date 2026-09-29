@@ -65,6 +65,23 @@ export interface Settings {
    * to accept that, and left off by everyone else.
    */
   enableNodeMove: boolean;
+  /**
+   * Scales the text of the outline rows — the therapist's own typing surface.
+   *
+   * Separate from clientFontScale, which sizes the balloons. Those are read by
+   * the client from across a room, these are read and typed by the therapist at
+   * close range, and the two want different sizes for different reasons.
+   */
+  outlineFontScale: number;
+  /**
+   * Hides the mind map pane so the outline takes the full width.
+   *
+   * The mirror of isMaximizedMap. Some sessions the therapist does not want the
+   * map in front of them at all — they are reading back and the client has the
+   * map on the second screen — and a 62% pane of empty canvas is a large piece
+   * of screen doing nothing.
+   */
+  maximizeOutline: boolean;
 }
 
 export type SyncMessage =

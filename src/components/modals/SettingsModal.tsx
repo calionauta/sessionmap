@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical } from 'lucide-react';
+import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical, PanelLeft } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
 import {
@@ -203,6 +203,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               label="Permitir mover tópicos entre hierarquias"
               checked={settings.enableNodeMove}
               onChange={(v) => update('enableNodeMove', v)}
+            />
+          }
+        />
+
+        <Divider />
+
+        <SettingRow
+          id="outline-font-scale"
+          label={
+            <>
+              <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+              <span>Tamanho da Fonte dos Tópicos</span>
+            </>
+          }
+          description="Aumenta a letra com que você escreve e lê os tópicos na coluna da esquerda. A altura das linhas e a indentação crescem junto, para a hierarquia continuar legível."
+          control={
+            <Segmented
+              label="Escala da fonte dos tópicos"
+              value={settings.outlineFontScale}
+              onChange={(v) => update('outlineFontScale', v)}
+              options={[0.85, 1.0, 1.15, 1.3, 1.5].map((s) => ({
+                value: s,
+                label: `${Math.round(s * 100)}%`,
+              }))}
+            />
+          }
+        />
+
+        <Divider />
+
+        <SettingRow
+          id="maximize-outline"
+          label={
+            <>
+              <PanelLeft className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+              <span>Tópicos em Tela Inteira</span>
+            </>
+          }
+          description={
+            settings.maximizeOutline
+              ? 'A prévia do mapa fica oculta e os tópicos ocupam toda a janela. Útil quando o cliente já tem o mapa na segunda tela e você só quer ler e escrever.'
+              : 'Deixa a prévia do mapa visível ao lado dos tópicos.'
+          }
+          control={
+            <Switch
+              label="Expandir os tópicos para a tela inteira"
+              checked={settings.maximizeOutline}
+              onChange={(v) => update('maximizeOutline', v)}
             />
           }
         />

@@ -88,6 +88,13 @@ interface OutlineEditorProps {
    */
   enableNodeMove: boolean;
   /**
+   * Multiplies every dimension of a row, not only the glyphs. Scales the text,
+   * the row's height, the indent step and the control gutter together, so the
+   * hierarchy stays readable at a larger size instead of the text growing
+   * inside rows that did not.
+   */
+  outlineFontScale?: number;
+  /**
    * Hides the pane without unmounting it, while the client-notes panel takes
    * the full height. Kept mounted on purpose: unmounting would drop the row
    * focus and whatever the therapist had selected on the canvas.
@@ -104,6 +111,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   focusDwellSeconds = 3,
   theme,
   enableNodeMove = false,
+  outlineFontScale = 1,
   hidden = false,
 }) => {
   const isDark = theme === 'noite';
@@ -940,6 +948,23 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       className={`@container flex flex-1 min-h-0 flex-col min-w-0 overflow-hidden select-text bg-surface-raised text-content ${
         hidden ? 'hidden' : ''
       }`}
+      /* --row-scale multiplies the whole row, not just the glyphs.
+       *
+       * Scaling only font-size would leave the text bigger inside rows sized
+       * for the old one: 46px rows with 20px text, indentation unchanged, so
+       * depth 6 ate the same space as before and the hierarchy became harder to
+       * read, not easier. Every dimension that belongs to a row — font, line
+       * height, vertical padding, the indent step, the gutter and the control
+       * cluster — reads this one property, so the rhythm is preserved at any
+       * size and there is a single knob to turn.
+       */
+      style={
+        {
+          '--row-scale': outlineFontScale,
+          // Clamped so an extreme value cannot make a row taller than the pane.
+          fontSize: `calc(1rem * var(--row-scale))`,
+        } as React.CSSProperties
+      }
     >
       {/* Refined Sidebar Header */}
       <div className="px-4 py-3 border-b border-line-muted shrink-0 bg-surface-inset text-content">
@@ -1238,7 +1263,13 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           // single override point, so a future drag-to-resize handle has one
           // knob to turn. Row padding and guide line both read this property,
           // which is how the two copies of `level * 22` stopped drifting.
-          const padLeft = `min(calc(${item.level} * var(--indent-step, 22px) + 10px), var(--indent-cap, 38cqi))`;
+          //
+          // The step is multiplied by --row-scale so a deeper level still costs
+          // proportionally the same at a larger text size. Without that, turning
+          // the font up would make each indent level visually smaller relative
+          // to the text, and the hierarchy would flatten exactly when the user
+          // asked for it to be easier to read.
+          const padLeft = `min(calc(${item.level} * var(--indent-step, 22px) * var(--row-scale, 1) + 10px), var(--indent-cap, 38cqi))`;
 
           return (
             <div
@@ -1263,8 +1294,12 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                  pitch: two controls shared one 44px band, and a ::before
                  expander lost the 2px it poked past its own row to the NEXT
                  row, which paints later. 46px rows give each expander a band
-                 of its own with room to spare. */
-              className={`group flex items-center py-2.5 px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}${
+                 of its own with room to spare.
+                 Both paddings scale with --row-scale so a larger font gets a
+                 proportionally taller row: the 46px band exists to give each
+                 row's controls their own space, and a 20px line inside a 46px
+                 box is a line that no longer has a band of its own. */
+              className={`group flex items-center px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}${
                 isCurrentMatch
                   ? ' ring-2 ring-accent ring-offset-1 ring-offset-surface-raised'
                   : isMatch
@@ -1275,6 +1310,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 {
                   '--pad-left': padLeft,
                   paddingLeft: 'var(--pad-left)',
+                  paddingTop: 'calc(0.625rem * var(--row-scale, 1))',
+                  paddingBottom: 'calc(0.625rem * var(--row-scale, 1))',
                 } as React.CSSProperties
               }
             >
@@ -1293,7 +1330,18 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   on the input's edge instead of being clipped by it — the
                   input is a later sibling, so it wins any overlap. Same icon
                   position, same 8px optical gap to the text. */}
-              <div className="w-7 h-5 flex items-center justify-center shrink-0 mr-2">
+              {/* Gutter. Scales with the row so the chevron, the bullet and
+                  the space before the text keep their proportions instead of
+                  crowding a larger line. The 4px of slack the original
+                  w-7 carried is preserved as a scaled minimum. */}
+              <div
+                className="flex items-center justify-center shrink-0"
+                style={{
+                  width: 'calc(1.75rem * var(--row-scale, 1))',
+                  height: 'calc(1.25rem * var(--row-scale, 1))',
+                  marginRight: 'calc(0.5rem * var(--row-scale, 1))',
+                }}
+              >
                 {item.hasChildren ? (
                   <button
                     type="button"
@@ -1400,11 +1448,38 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                      pane for the actual text, and the field looked broken.
                      Past 520px the Mover label joins in and the reserve grows
                      to match, for the same reason. */
-                  className={`w-full bg-transparent border-0 outline-none text-sm transition-colors py-0.5 pr-8 @min-[384px]:pr-28 @min-[520px]:pr-44 ${inputTextStyle}`}
+                  /* The `text-sm` is gone: it was the fixed size that made the
+                     outline un-scalable, since a class cannot be overridden by
+                     the --row-scale the rest of the row reads. The font now
+                     comes from the container's calc(1rem * --row-scale), and
+                     the root row keeps its extra weight and step up from there.
+                     The right gutter also scales, or a larger line would run
+                     under the control cluster. */
+                  className={`w-full bg-transparent border-0 outline-none transition-colors ${isRootItem ? 'font-extrabold' : 'font-bold'} ${inputTextStyle}`}
+                  style={
+                    {
+                      paddingLeft: 0,
+                      paddingTop: 'calc(0.125rem * var(--row-scale, 1))',
+                      paddingBottom: 'calc(0.125rem * var(--row-scale, 1))',
+                      paddingRight: 'calc(2rem * var(--row-scale, 1))',
+                      fontSize: isRootItem
+                        ? 'calc(1rem * var(--row-scale, 1))'
+                        : 'calc(0.875rem * var(--row-scale, 1))',
+                    } as React.CSSProperties
+                  }
                 />
 
-                {/* Right controls: Mover, + Filho, counters */}
-                <div className="absolute right-1 flex items-center gap-1.5">
+                {/* Right controls: Mover, + Filho, counters.
+                    Positioned and sized off the same scale, so at a larger font
+                    the cluster grows with the row instead of overlapping the
+                    text. */}
+                <div
+                  className="absolute flex items-center"
+                  style={{
+                    right: 'calc(0.25rem * var(--row-scale, 1))',
+                    gap: 'calc(0.375rem * var(--row-scale, 1))',
+                  }}
+                >
                   {/* Mover. The chord is the fast path, but a chord is not
                       always available: macOS claims several single-modifier
                       combinations for the window manager before the page ever

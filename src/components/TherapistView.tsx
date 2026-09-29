@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Maximize2,
   Minimize2,
+  PanelLeft,
   Users,
   Target,
   CheckCircle2,
@@ -77,6 +78,17 @@ export const TherapistView: React.FC = () => {
   // Split view ratio
   const [outlineWidthPercent, setOutlineWidthPercent] = useState<number>(38);
   const [isMaximizedMap, setIsMaximizedMap] = useState<boolean>(false);
+  /**
+   * Dismisses the map so the outline takes the full width.
+   *
+   * Mirrors isMaximizedMap and the two are never both on: a window with neither
+   * surface would be blank, which is the one outcome a layout toggle must not
+   * produce. Persisted, because a therapist who always works this way should
+   * not have to press it every session.
+   */
+  const [maximizeOutline, setMaximizeOutline] = useState<boolean>(
+    () => getSettings().maximizeOutline
+  );
 
   // Cross-window client status
   const [isClientConnected, setIsClientConnected] = useState<boolean>(false);
@@ -492,6 +504,12 @@ export const TherapistView: React.FC = () => {
   const handleUpdateSettings = (newSettings: Settings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
+    // The layout choice travels with the settings, so it survives a reload for
+    // the same reason the rest of them do.
+    if (newSettings.maximizeOutline !== settings.maximizeOutline) {
+      setMaximizeOutline(newSettings.maximizeOutline);
+      setIsMaximizedMap(false);
+    }
     syncService.send({ type: 'client_font_scale', scale: newSettings.clientFontScale });
     // The client window renders the same map, so it follows the focus-zoom
     // setting live rather than needing a reload.
@@ -713,6 +731,46 @@ export const TherapistView: React.FC = () => {
               <Download className="w-4 h-4" aria-hidden="true" />
             </button>
 
+            {/* Layout toggle. It lives in the app header, not on a pane,
+                because whichever pane is currently maximized is the one whose
+                control would be needed to come back — and it is the pane that
+                is gone. A control attached to a surface that can dismiss itself
+                has no way to undo the dismissal. This button is always present,
+                and it is the single control for one boolean: three buttons
+                toggling the same layout is what the design audit called out as
+                "three competing controls for one boolean". */}
+            {activeMap && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !(isMaximizedMap || maximizeOutline);
+                  // Routed through the settings, not set directly, so the
+                  // choice is persisted with everything else. Setting local
+                  // state alone would reset on reload and the user would
+                  // re-press it every session.
+                  handleUpdateSettings({ ...settings, maximizeOutline: next });
+                  setIsMaximizedMap(false);
+                }}
+                title={
+                  isMaximizedMap || maximizeOutline
+                    ? 'Restaurar a divisão com o mapa'
+                    : 'Expandir os tópicos para a tela inteira'
+                }
+                aria-label={
+                  isMaximizedMap || maximizeOutline
+                    ? 'Restaurar a divisão com o mapa'
+                    : 'Expandir os tópicos para a tela inteira, ocultando o mapa'
+                }
+                className="ctl w-9 h-9 !min-h-0 px-0"
+              >
+                {isMaximizedMap || maximizeOutline ? (
+                  <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <PanelLeft className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
@@ -743,12 +801,18 @@ export const TherapistView: React.FC = () => {
 
       {/* 2. MAIN SPLIT VIEW */}
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Left Pane: Outline Editor */}
+        {/* Left Pane: Outline Editor.
+
+            Full width when the map is dismissed. The pane is WIDTH-controlled,
+            so the two maximisations are mutually exclusive: a maximized map
+            leaves no outline and a maximized outline leaves no map. Guarding on
+            both here means neither toggle can produce a window with neither
+            surface — which would be an empty screen mid-session. */}
         {!isMaximizedMap && activeMap && (
           <section
             aria-label="Tópicos da sessão"
             className="border-r border-line flex flex-col h-full"
-            style={{ width: `${outlineWidthPercent}%` }}
+            style={{ width: maximizeOutline ? '100%' : `${outlineWidthPercent}%` }}
           >
             {/* Hidden, not unmounted, while the notes are expanded: unmounting
                 would drop the outline's row focus and, with it, whatever the
@@ -762,6 +826,7 @@ export const TherapistView: React.FC = () => {
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
               enableNodeMove={settings.enableNodeMove}
+              outlineFontScale={settings.outlineFontScale}
               hidden={notesExpanded}
             />
 
@@ -779,7 +844,12 @@ export const TherapistView: React.FC = () => {
           </section>
         )}
 
-        {/* Right Pane: Mindmap Preview */}
+        {/* Right Pane: Mindmap Preview.
+            Dismissed entirely when the outline takes the screen: some sessions
+            the therapist never looks at the map — the client has it on the
+            second screen — and a 62% pane of canvas is a large piece of the
+            display doing nothing. */}
+        {!maximizeOutline && (
         <section aria-label="Prévia do mapa" className="flex-1 flex flex-col h-full relative overflow-hidden">
           {/* Header Tag / Preview info */}
           <div className="absolute top-3 right-4 z-10 flex items-center gap-2 pointer-events-auto">
@@ -788,12 +858,17 @@ export const TherapistView: React.FC = () => {
             </span>
             <button
               type="button"
-              onClick={() => setIsMaximizedMap(!isMaximizedMap)}
-              title={isMaximizedMap ? 'Restaurar divisão' : 'Maximizar prévia'}
-              aria-label={isMaximizedMap ? 'Restaurar divisão' : 'Maximizar prévia'}
+              onClick={() => {
+                // Expanding the map dismisses the outline and vice versa, so the
+                // two controls cannot both be pressed and leave an empty window.
+                setIsMaximizedMap(true);
+                handleUpdateSettings({ ...settings, maximizeOutline: false });
+              }}
+              title="Maximizar prévia do mapa"
+              aria-label="Maximizar prévia do mapa, ocultando os tópicos"
               className="ctl w-9 h-9 !min-h-0 px-0"
             >
-              {isMaximizedMap ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
+              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
 
@@ -911,6 +986,7 @@ export const TherapistView: React.FC = () => {
             </div>
           )}
         </section>
+        )}
       </main>
 
       {/* 3. FOOTER */}

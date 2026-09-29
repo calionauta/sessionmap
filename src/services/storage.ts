@@ -30,6 +30,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // Re-parenting is opt-in. See the field comment in types/index.ts for why a
   // finished feature still ships off.
   enableNodeMove: false,
+  outlineFontScale: 1,
+  // The map stays visible by default: hiding it is a per-session choice, and a
+  // therapist who wants it gone every time can turn it on once.
+  maximizeOutline: false,
 };
 
 const DEFAULT_SAMPLE_CLIENT: Client = {
