@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { MindMapNode } from '../../types';
+import { findNodeById } from '../../utils/tree';
 
 export interface LayoutNode {
   id: string;
@@ -155,6 +156,31 @@ export function useMindMapLayout(
       return { nodes, links, ghostNode, ghostLink, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
     }
 
+    /**
+     * Does the draft's target already exist as a real node?
+     *
+     * The ghost balloon is an OPTIMISTIC placeholder: it exists for the case
+     * where the therapist's keystroke has been broadcast but the node is not in
+     * this tree yet. That case is real — the client window receives `draft`
+     * immediately while `snapshot` only follows the autosave, so without the
+     * ghost the shared screen would show nothing until the save landed.
+     *
+     * In the therapist's own window it is not real, and it was producing two
+     * balloons for one item: the node had already been created by Enter, so it
+     * rendered on its own showing "Sem titulo", AND the ghost rendered a second
+     * one after the siblings showing "novo ponto". The ghost was drawn as an
+     * ADDITIONAL balloon, not a stand-in for the target.
+     *
+     * So it is only drawn when the target is genuinely absent from the tree.
+     * When the node is there, the real node already renders the live text: the
+     * outline pushes every keystroke through onUpdateRoot synchronously, so the
+     * autosave debounce never delayed what the therapist sees. The ghost was
+     * not buying latency in this view, it was buying a duplicate.
+     */
+    const draftTargetExists =
+      Boolean(draft?.active && draft.targetId) &&
+      findNodeById(root, draft!.targetId!) !== null;
+
     // 1. Root dimensions
     const rootDims = approximateTextDimensions(root.text, true, fontScale);
     const rootLayoutNode: LayoutNode = {
@@ -177,7 +203,7 @@ export function useMindMapLayout(
 
     if (root.collapsed || !root.children || root.children.length === 0) {
       // Check if draft points to root
-      if (draft && draft.active && draft.mode === 'add' && draft.parentId === root.id) {
+      if (draft && draft.active && draft.mode === 'add' && draft.parentId === root.id && !draftTargetExists) {
         const ghostDims = approximateTextDimensions(draft.text || 'novo ponto…', false, fontScale);
         ghostNode = {
           id: 'ghost_node',
@@ -392,7 +418,7 @@ export function useMindMapLayout(
     }
 
     // Check if there is an active draft ghost balloon to show!
-    if (draft && draft.active && draft.mode === 'add' && draft.parentId) {
+    if (draft && draft.active && draft.mode === 'add' && draft.parentId && !draftTargetExists) {
       const parentLayout = nodes.find((n) => n.id === draft.parentId);
       if (parentLayout) {
         const isRight = parentLayout.side === 'left' ? false : true;

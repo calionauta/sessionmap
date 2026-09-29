@@ -218,7 +218,15 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
       </div>
 
       {mode !== 'collapsed' && (
-        <div className={`px-3 pb-3 ${expanded ? 'flex-1 min-h-0 flex' : 'shrink-0'}`}>
+        /* flex-COL, not bare flex. As a row the textarea and the footnote sat
+           side by side, so the textarea took whatever width was left after the
+           note and came out squeezed. This was the bug reported on the first
+           try at the expanded state. */
+        <div
+          className={`px-3 pb-3 ${
+            expanded ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'
+          }`}
+        >
           <label htmlFor="client-notes-textarea" className="sr-only">
             Anotações livres sobre {clientName}. Não aparecem para o cliente.
           </label>
