@@ -530,6 +530,29 @@ export function setActiveClientId(id: string): void {
   localStorage.setItem(ACTIVE_CLIENT_KEY, id);
 }
 
+// =================== CLIENT NOTES ===================
+//
+// A free-text scratchpad that belongs to the CLIENT, not to any session. It
+// survives starting, switching and deleting sessions, and it is deliberately
+// never broadcast: the client window receives the MindMap over the sync
+// channel and nothing else, so these notes cannot reach the shared screen even
+// by accident. That is the whole point of them — the therapist's own working
+// notes about the person, which must never be projected to the person.
+
+export async function getClientNotes(clientId: string): Promise<string> {
+  const client = (await getAllClients()).find((c) => c.id === clientId);
+  return client?.notes ?? '';
+}
+
+export async function saveClientNotes(clientId: string, notes: string): Promise<void> {
+  const client = (await getAllClients()).find((c) => c.id === clientId);
+  if (!client) return;
+  // A no-op write would still stamp updatedAt and re-broadcast nothing, so it
+  // is skipped: autosave fires on every keystroke's debounce.
+  if ((client.notes ?? '') === notes) return;
+  await saveClient({ ...client, notes });
+}
+
 // =================== ARCHIVE ===================
 //
 // Archiving is never destructive: it stamps archivedAt and the record stays in

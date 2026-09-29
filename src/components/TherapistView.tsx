@@ -29,6 +29,7 @@ import { ExportModal } from './modals/ExportModal';
 import { SettingsModal } from './modals/SettingsModal';
 import { MapListDrawer } from './modals/MapListDrawer';
 import { AdminClientManager } from './admin/AdminClientManager';
+import { ClientNotesPanel } from './ui/ClientNotesPanel';
 import {
   getAllMaps,
   getAllClients,
@@ -733,6 +734,15 @@ export const TherapistView: React.FC = () => {
               selectedNodeId={selectedNodeId}
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
+            />
+
+            {/* Free-text notes, scoped to the CLIENT so they survive session
+                switches. Sits under the outline rather than in a modal: the
+                use is reading them while still typing in the outline, and a
+                modal would take the keyboard away from the rows. */}
+            <ClientNotesPanel
+              clientId={activeMap.clientId}
+              clientName={activeMap.clientName || 'Cliente'}
             />
           </section>
         )}
