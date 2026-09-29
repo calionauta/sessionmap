@@ -7,7 +7,7 @@ const { render, fireEvent, cleanup, screen, act } = await import(
   '@testing-library/react'
 );
 const React = await import('react');
-const { OutlineEditor } = await import('../outline/OutlineEditor');
+const { OutlineEditor, isLiftChord } = await import('../outline/OutlineEditor');
 import type { MindMapNode } from '../../types';
 
 const node = (
@@ -27,10 +27,23 @@ const fixture = (): MindMapNode =>
     node('fam', 'Família', [node('f1', 'mãe apoia')]),
   ]);
 
-/** Maps a visible row label to its input element. */
+/**
+ * The container the CURRENT render lives in.
+ *
+ * Scoped deliberately: render() without a container appends to document.body,
+ * and any earlier outline that was not unmounted leaves its rows and buttons
+ * in the document. A document-wide querySelector then finds the PREVIOUS
+ * test's element, whose handler is bound to an unmounted instance and updates
+ * nothing — which reads exactly like a broken feature. Scoping every lookup to
+ * the latest container makes that impossible.
+ */
+let currentContainer: HTMLElement | null = null;
+
+/** Maps a visible row label to its input element, in the current render. */
 function rowFor(text: string): HTMLInputElement {
+  const scope = currentContainer ?? document;
   const inputs = Array.from(
-    document.querySelectorAll<HTMLInputElement>('input[type="text"]')
+    scope.querySelectorAll<HTMLInputElement>('input[type="text"]')
   );
   const el = inputs.find((i) => i.value === text);
   if (!el) {
@@ -41,10 +54,16 @@ function rowFor(text: string): HTMLInputElement {
   return el;
 }
 
+/** The dashed drop-target row, if the current render has one. */
+function liftTargetRow(): Element | null {
+  return (currentContainer ?? document).querySelector('.border-dashed');
+}
+
 /** The order rows are painted in, top to bottom. */
 function rowOrder(): string[] {
-  return Array.from(document.querySelectorAll('input[type="text"]')).map(
-    (i) => (i as HTMLInputElement).value
+  const scope = currentContainer ?? document;
+  return Array.from(scope.querySelectorAll<HTMLInputElement>('input[type="text"]')).map(
+    (i) => i.value
   );
 }
 
@@ -55,6 +74,11 @@ function setup(enableNodeMove = true) {
   const root = fixture();
   lastRoot = root;
   updateCount = 0;
+  // A fresh container per render, tracked so every lookup below is scoped to
+  // the live outline. See the note on currentContainer.
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  currentContainer = container;
   render(
     React.createElement(OutlineEditor, {
       root,
@@ -68,7 +92,8 @@ function setup(enableNodeMove = true) {
       focusDwellSeconds: 0,
       theme: 'papel' as const,
       enableNodeMove,
-    })
+    }),
+    { container }
   );
 }
 
@@ -96,7 +121,14 @@ function focusRow(text: string): HTMLInputElement {
 }
 
 describe('the lift, end to end through the real component', () => {
-  afterEach(() => cleanup());
+  // cleanup() unmounts the React tree. The container is ours, so it is removed
+  // too: leaving it behind would keep the previous outline's rows in the
+  // document for any lookup that missed the scoping above.
+  afterEach(() => {
+    cleanup();
+    currentContainer?.remove();
+    currentContainer = null;
+  });
 
   test('renders every row, deep ones included', () => {
     setup();
@@ -111,14 +143,14 @@ describe('the lift, end to end through the real component', () => {
     ]);
   });
 
-  test('Alt+M lifts, the row visually relocates, Enter commits one change', () => {
+  test('Ctrl+Shift+M lifts, the row visually relocates, Enter commits one change', () => {
     setup();
     const row = rowFor('cansaço');
     act(() => {
       fireEvent.focus(row);
     });
 
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
 
     // The cursor starts on the row above — which for "cansaço" is "Trabalho",
     // its own parent, which is excluded, so the first legal target is the
@@ -128,7 +160,7 @@ describe('the lift, end to end through the real component', () => {
     press(row, 'ArrowDown'); // t2
     press(row, 'ArrowDown'); // t2a
     press(row, 'ArrowDown'); // fam
-    expect(document.querySelector('.border-dashed')?.querySelector('input'))
+    expect(liftTargetRow()?.querySelector('input'))
       ?.toHaveProperty('value', 'Família');
 
     // The preview is a second root: the subtree is drawn at its new depth, so
@@ -154,10 +186,10 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     // First legal target is the session row: "Trabalho" above it is its own
     // parent, so the cursor does not stop there at all.
-    expect(document.querySelector('.border-dashed')?.querySelector('input'))
+    expect(liftTargetRow()?.querySelector('input'))
       ?.toHaveProperty('value', '28/09/2026');
   });
 
@@ -165,7 +197,7 @@ describe('the lift, end to end through the real component', () => {
     setup();
     const row = focusRow('cansaço');
 
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     // Still the same element after the preview re-render, still focused.
     const active = document.activeElement as HTMLInputElement | null;
     expect(active?.value).toBe('cansaço');
@@ -186,7 +218,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     press(row, 'ArrowDown');
     press(row, 'Escape');
 
@@ -202,12 +234,12 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
 
     // Walking the whole list must never land on t2 itself or its child t2a.
     const seen = new Set<string>();
     for (let i = 0; i < 8; i++) {
-      const dashed = document.querySelector('.border-dashed');
+      const dashed = liftTargetRow();
       if (dashed) {
         const input = dashed.querySelector('input[type="text"]');
         if (input) seen.add((input as HTMLInputElement).value);
@@ -225,9 +257,9 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
 
-    const dashed = document.querySelector('.border-dashed');
+    const dashed = liftTargetRow();
     expect(dashed).toBeTruthy();
     // The caret is still on the lifted row, which is NOT the dashed one.
     expect(dashed?.contains(rowFor('cansaço'))).toBe(false);
@@ -239,7 +271,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
 
     // readOnly closes the paths that do not go through the key handler.
     expect(rowFor('cansaço').readOnly).toBe(true);
@@ -273,7 +305,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     press(row, 'ArrowDown');
     press(row, 'ArrowUp');
 
@@ -283,15 +315,12 @@ describe('the lift, end to end through the real component', () => {
 
   test('losing focus strands nothing — the lift is dropped', () => {
     setup();
-    const row = rowFor('cansaço');
-    act(() => {
-      fireEvent.focus(row);
-    });
-    press(row, 'm', { altKey: true });
-    expect(document.querySelector('.border-dashed')).toBeTruthy();
+    const row = focusRow('cansaço');
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
+    expect(liftTargetRow()).toBeTruthy();
 
-    // Tabbing out is the case a held modifier could not survive: the keyup
-    // never arrives, and the arrows stop being deliverable.
+    // Tabbing to a control outside the pane: the row can no longer be driven,
+    // so the arrows would do nothing and there would be no visible way out.
     const other = document.createElement('button');
     document.body.appendChild(other);
     act(() => {
@@ -299,7 +328,23 @@ describe('the lift, end to end through the real component', () => {
       fireEvent.focusOut(row, { relatedTarget: other });
     });
 
-    expect(document.querySelector('.border-dashed')).toBeFalsy();
+    expect(liftTargetRow()).toBeFalsy();
+    expect(updateCount).toBe(0);
+  });
+
+  test('alt-tab drops the lift, which is the case a held modifier cannot survive', () => {
+    setup();
+    const row = focusRow('cansaço');
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
+    expect(liftTargetRow()).toBeTruthy();
+
+    // Focus left the document entirely: relatedTarget is null, and the keyup
+    // that would end a hold never arrives.
+    act(() => {
+      fireEvent.blur(window);
+    });
+
+    expect(liftTargetRow()).toBeFalsy();
     expect(updateCount).toBe(0);
   });
 
@@ -309,20 +354,101 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(root);
     });
-    press(root, 'm', { altKey: true });
+    press(root, 'm', { ctrlKey: true, shiftKey: true });
     expect(updateCount).toBe(0);
     expect(document.body.textContent).toContain('não pode ser movida');
   });
 
-  test('with the feature off, Alt+M does nothing at all', () => {
+  /**
+   * macOS claims single-modifier chords for the window manager, and the
+   * interception happens before the page ever receives the keydown — so a
+   * binding like Option+M cannot be rescued with preventDefault, it just
+   * minimizes the window. Shift is therefore required, and both the Ctrl and
+   * the Cmd form are accepted so neither platform is left out.
+   */
+  test('the lift chord requires Shift, in the Ctrl, Cmd and Alt forms', () => {
+    const chord = (o: Record<string, unknown>) =>
+      isLiftChord({
+        key: 'm',
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        ...o,
+      });
+
+    expect(chord({ ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(chord({ metaKey: true, shiftKey: true })).toBe(true);
+    expect(chord({ altKey: true, shiftKey: true })).toBe(true);
+
+    // The chords macOS owns outright, and the bare letter.
+    expect(chord({ metaKey: true })).toBe(false);
+    expect(chord({ altKey: true })).toBe(false);
+    expect(chord({ ctrlKey: true })).toBe(false);
+    expect(chord({})).toBe(false);
+  });
+
+  test('a bare Option+M does not lift — the chord macOS swallows', () => {
+    setup();
+    const row = focusRow('cansaço');
+    press(row, 'm', { altKey: true });
+    expect(updateCount).toBe(0);
+    expect(liftTargetRow()).toBeFalsy();
+  });
+
+  test('Cmd+Shift+M lifts too, so Mac is not left out', () => {
+    setup();
+    const row = focusRow('cansaço');
+    press(row, 'm', { metaKey: true, shiftKey: true });
+    expect(liftTargetRow()).toBeTruthy();
+  });
+
+  test('the Mover button lifts without any chord at all', () => {
+    setup();
+    const button = currentContainer!.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Mover cansaço"]'
+    );
+    expect(button).toBeTruthy();
+    act(() => {
+      fireEvent.click(button!);
+    });
+    expect(liftTargetRow()).toBeTruthy();
+    expect(updateCount).toBe(0);
+  });
+
+  test('a lift started from the Mover button is not cancelled by the focus it moves', () => {
+    // The button's onMouseDown preventDefault is meant to keep the caret in
+    // the input, but the lift must not depend on that to work: if a browser
+    // moves focus anyway, the focusout guard used to cancel the lift the
+    // instant the button started it, which made the button do nothing at all —
+    // the exact failure the button exists to avoid. The guard now only fires
+    // when focus leaves the PANE, and the button is inside it.
+    setup();
+    const button = currentContainer!.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Mover cansaço"]'
+    )!;
+    act(() => {
+      button.focus();
+      fireEvent.focusOut(button, { relatedTarget: button });
+      fireEvent.click(button);
+    });
+    expect(liftTargetRow()).toBeTruthy();
+  });
+
+  test('the Mover button is absent while the feature is off', () => {
+    setup(false);
+    expect(currentContainer!.querySelector('button[aria-label^="Mover"]')).toBeFalsy();
+  });
+
+  test('with the feature off, the chord does nothing at all', () => {
     setup(false);
     const row = rowFor('cansaço');
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     expect(updateCount).toBe(0);
-    expect(document.querySelector('.border-dashed')).toBeFalsy();
+    expect(liftTargetRow()).toBeFalsy();
   });
 
   test('a move into a collapsed parent opens it, so the node cannot vanish', () => {
@@ -351,7 +477,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     press(row, 'ArrowUp'); // onto "Família"
     press(row, 'Enter');
 
@@ -367,7 +493,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     // Walk up to Trabalho: index 0 vs the current branch at 1, so the balloon
     // changes side on the client's screen.
     press(row, 'ArrowUp');
@@ -385,7 +511,7 @@ describe('the lift, end to end through the real component', () => {
     act(() => {
       fireEvent.focus(row);
     });
-    press(row, 'm', { altKey: true });
+    press(row, 'm', { ctrlKey: true, shiftKey: true });
     press(row, 'Enter');
     expect(updateCount).toBe(1);
     expect(document.body.textContent).toContain('movido');

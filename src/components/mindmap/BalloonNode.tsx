@@ -1,5 +1,6 @@
 import React from 'react';
 import { BRANCH_PALETTE, LayoutNode, themeColor } from './useMindMapLayout';
+import { displayTextFor, measureBalloon } from './balloonText';
 
 interface BalloonNodeProps {
   layoutNode: LayoutNode;
@@ -58,34 +59,36 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
   // in the other. See themeColor() for why this is not a data migration.
   const branchColor = color ? themeColor(color, theme) : null;
 
-  // Compute text lines (max 2 lines)
-  const displayText = isGhost
-    ? (liveTextMode === 'confirm_only' ? 'digitando…' : (ghostText || 'novo ponto…'))
-    : (text || 'Sem título');
+  /**
+   * The lines this balloon draws.
+   *
+   * Measured with the SAME function the layout used to size the pill, so the box
+   * and the text can no longer disagree. The previous code computed its own
+   * character width (9px) and its own wrap, then capped the second line with an
+   * ellipsis — so a long annotation lost words on the shared screen, silently,
+   * with no way for the therapist to know which ones. There is no character
+   * budget and no truncation: the balloon grows, in width up to the cap and in
+   * height without limit.
+   */
+  const measured = measureBalloon(
+    displayTextFor(text, { isGhost, ghostText, liveTextMode }),
+    isRoot,
+    fontScale
+  );
+  const lines = measured.lines;
+  const fontSize = measured.fontSize;
+  const lineHeight = measured.lineHeight;
 
-  // Split into lines if needed
-  const charsPerLine = Math.max(16, Math.floor(width / (9 * fontScale)));
-  let line1 = displayText;
-  let line2 = '';
+  /** The live caret rides the LAST line, so it follows the text as it grows. */
+  const caret = isGhost && liveTextMode === 'live';
 
-  if (displayText.length > charsPerLine) {
-    const spaceIdx = displayText.lastIndexOf(' ', charsPerLine);
-    if (spaceIdx > 6) {
-      line1 = displayText.substring(0, spaceIdx);
-      line2 = displayText.substring(spaceIdx + 1);
-    } else {
-      line1 = displayText.substring(0, charsPerLine);
-      line2 = displayText.substring(charsPerLine);
-    }
-    // Truncate line 2 if still too long
-    if (line2.length > charsPerLine + 6) {
-      line2 = line2.substring(0, charsPerLine + 3) + '…';
-    }
-  }
-
-  const hasTwoLines = Boolean(line2);
-  const fontSize = (isRoot ? 16 : 13.5) * fontScale;
-  const lineHeight = fontSize * 1.35;
+  /**
+   * The whole text, un-wrapped, for the accessible name. Built from the same
+   * source as the drawn lines so the name a screen reader reads and the words
+   * on the canvas are the same text — the accessible name is what carries the
+   * full annotation now that it is never abbreviated on screen.
+   */
+  const displayText = displayTextFor(text, { isGhost, ghostText, liveTextMode });
 
   // Background and border styling based on theme and role
   // Fills are literal on purpose: the balloons sit on the SVG canvas, not on
@@ -320,9 +323,11 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         </g>
       )}
 
-      {/* Node Text. The treeitem above carries the accessible name (the
-          untruncated text); this one is the visual rendering only, so a
-          screen reader does not read the two-line split as a run. */}
+      {/* Node Text. The treeitem above carries the accessible name (the full
+          text); this one is the visual rendering only, so a screen reader does
+          not read the line breaks as separate runs. Every line is drawn — the
+          tspans are stacked from the first, so a balloon with six lines is six
+          tspans and not a clipped two. */}
       <text
         textAnchor="middle"
         dominantBaseline="central"
@@ -332,14 +337,15 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         aria-hidden="true"
         className="font-sans pointer-events-none tracking-tight"
       >
-        {hasTwoLines ? (
-          <>
-            <tspan x="0" y={-lineHeight * 0.45}>
-              {line1}
-            </tspan>
-            <tspan x="0" y={lineHeight * 0.55}>
-              {line2}
-              {isGhost && liveTextMode === 'live' && (
+        {lines.map((line, i) => {
+          const isLast = i === lines.length - 1;
+          // Centred as a block, so a multi-line balloon stays optically
+          // balanced in its pill instead of drifting upward line by line.
+          const y = (i - (lines.length - 1) / 2) * lineHeight;
+          return (
+            <tspan key={i} x="0" y={y}>
+              {line}
+              {isLast && caret && (
                 /* The live caret inherits the balloon's own text colour, which
                    is 19.43:1 / 16.88:1 on the fill. The old literal #2563EB was
                    4.83:1 on white and 2.31:1 on the dark ghost fill. */
@@ -348,17 +354,8 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
                 </tspan>
               )}
             </tspan>
-          </>
-        ) : (
-          <tspan x="0" y="0">
-            {line1}
-            {isGhost && liveTextMode === 'live' && (
-              <tspan className="animate-ping font-mono">
-                ▌
-              </tspan>
-            )}
-          </tspan>
-        )}
+          );
+        })}
       </text>
 
       {/* Collapsed Children Badge (+N). Hidden from AT: the treeitem already

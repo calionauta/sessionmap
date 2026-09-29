@@ -187,10 +187,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           description={
             settings.enableNodeMove ? (
               <>
-                <strong>Alt+M</strong> levanta a linha, <strong>as setas</strong> escolhem o
-                destino e <strong>Enter</strong> confirma. <strong>Esc</strong> cancela sem
-                mudar nada. O tópico vai sempre como último filho, levando os subtópicos
-                junto — para reordenar dentro do mesmo pai, use Alt+↑ e Alt+↓.
+                O botão <strong>Mover</strong> na linha — ou{' '}
+                <strong>Ctrl+Shift+M</strong> (Cmd+Shift+M no Mac) — levanta o tópico,
+                <strong>as setas</strong> escolhem o destino e <strong>Enter</strong>{' '}
+                confirma. <strong>Esc</strong> cancela sem mudar nada. O tópico vai sempre
+                como último filho, levando os subtópicos junto — para reordenar dentro do
+                mesmo pai, use Alt+↑ e Alt+↓.
               </>
             ) : (
               'Desligado. Com ligado, um tópico pode ser movido para dentro de outro ramo, em vez de ser apagado e redigitado.'

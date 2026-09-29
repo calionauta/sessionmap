@@ -35,6 +35,34 @@ import {
   matchesQuery,
 } from '../../utils/tree';
 
+/**
+ * The chord that lifts a row for re-parenting.
+ *
+ * Shift is not optional here, and that is a macOS constraint rather than a
+ * style choice. Cmd+M minimizes the window and Option+M is a system chord;
+ * both are claimed by the window manager, which intercepts them BEFORE the
+ * page receives the keydown. No amount of preventDefault reaches that layer,
+ * so the original Alt+M binding did nothing in a browser on macOS while the
+ * window quietly minimized. A two-modifier chord is outside what macOS
+ * reserves, and all three common forms are accepted so neither Cmd nor Ctrl
+ * users are left out.
+ *
+ * The visible Mover button on each row calls the same startLift, so the
+ * gesture is reachable even where no chord survives the OS.
+ */
+export function isLiftChord(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): boolean {
+  if (!e.shiftKey) return false;
+  // Exactly one modifier, so a three-finger mash is not a lift.
+  const mods = [e.ctrlKey, e.metaKey, e.altKey].filter(Boolean).length;
+  return mods === 1;
+}
+
 interface OutlineEditorProps {
   root: MindMapNode;
   onUpdateRoot: (newRoot: MindMapNode, reason?: string) => void;
@@ -456,19 +484,23 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       return;
     }
 
-    /* 0. Alt+M: lift the row for re-parenting.
+    /* 0. Lift the row for re-parenting.
      *
-     * A LATCH, not a hold. A held modifier has three failure modes that all
-     * land mid-session, in front of a client: keyup is lost when the window
-     * loses focus (alt-tab, screensaver), so the app stays stuck in "lifted"
-     * with no way for the therapist to know; Alt+Arrow is browser history in
-     * some environments and Ctrl+Arrow is word-jump inside the input, neither
-     * reliably preventable; and there is no key to hold on a touchscreen. The
-     * latch has none of these, and it needs the same visible state indicator
-     * that a hold would.
+     * The binding is Cmd/Ctrl+Shift+M — or Alt+Shift+M where Alt is not an
+     * OS modifier — because a single-modifier M is unusable on macOS: Cmd+M
+     * minimizes and Option+M is a system shortcut, and those are handled by
+     * the window manager before the page ever sees the keydown. A browser
+     * cannot preventDefault its way out of an OS-owned chord, which is
+     * exactly the failure class a modifier shortcut is exposed to. Adding
+     * Shift clears the chords macOS claims, and Alt+Shift+M is accepted as
+     * well for people on a layout where that is the natural chord.
+     *
+     * There is also a visible button on the active row, so the gesture is
+     * reachable without remembering a chord at all.
      */
-    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'm') {
+    if (isLiftChord(e) && e.key.toLowerCase() === 'm') {
       e.preventDefault();
+      e.stopPropagation();
       startLift(item);
       return;
     }
@@ -653,17 +685,42 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   useEffect(() => {
     if (!isLifting) return;
+
+    /**
+     * Focus moved to a known element.
+     *
+     * Only a destination OUTSIDE the pane strands the lift: the search field,
+     * a modal, another pane. The Mover button lives inside the pane, so a lift
+     * started from it is a legitimate lift even when the browser moved focus
+     * anyway (its onMouseDown preventDefault is meant to stop that, but that is
+     * a behaviour the lift must not depend on to work at all).
+     */
     const onFocusOut = (e: FocusEvent) => {
       const next = e.relatedTarget as Node | null;
-      // relatedTarget is null when focus left the document entirely, which is
-      // the alt-tab case; both mean the row can no longer be driven.
-      if (!next || !outlinePaneRef.current?.contains(next)) {
+      if (!next) return; // handled by window blur below
+      if (!outlinePaneRef.current?.contains(next)) {
         setLiftedId(null);
         setLiftTargetId(null);
       }
     };
+
+    /**
+     * Focus left the document: alt-tab, the screensaver taking over, a system
+     * dialog. Here relatedTarget is null and the keyup that would end a held
+     * modifier never arrives, which is the reason a hold is unsafe at all. A
+     * latch needs the same net.
+     */
+    const onWindowBlur = () => {
+      setLiftedId(null);
+      setLiftTargetId(null);
+    };
+
     document.addEventListener('focusout', onFocusOut);
-    return () => document.removeEventListener('focusout', onFocusOut);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      document.removeEventListener('focusout', onFocusOut);
+      window.removeEventListener('blur', onWindowBlur);
+    };
   }, [isLifting]);
 
   /** Drops the lift without touching the tree. Esc is the usual way out. */
@@ -807,7 +864,11 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   // Input change handler
   const handleInputChange = (item: FlatOutlineItem, newText: string) => {
-    if (newText.length > 280) return;
+    // NO length cap. There used to be a hard 280-character limit that
+    // silently refused the keystroke, so a therapist writing a longer thought
+    // watched the last characters simply not appear — with no message, because
+    // a refused keystroke and a dropped one look identical. The balloon now
+    // grows to fit whatever is typed, so there is no reason to stop.
 
     // Typing during a lift would edit a node whose position is still being
     // decided, so the text would be written into the wrong branch.
@@ -902,6 +963,16 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           <strong className="font-bold text-content">Ctrl+Enter: Filho</strong>
           <span aria-hidden="true">·</span>
           <span>Tab: Indentar</span>
+          {/* Only advertised when it is live, so the line never names a
+              shortcut that does nothing. */}
+          {enableNodeMove && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>
+                <strong className="font-semibold text-content">Ctrl+Shift+M</strong>: Mover
+              </span>
+            </>
+          )}
         </div>
 
         {/* Search.
@@ -1089,7 +1160,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           const isLifted = isLifting && item.id === liftedId;
           const isLiftTarget = isLifting && item.id === liftTargetId;
           const charCount = item.text.length;
-          const isCharWarning = charCount > 90;
           // Search match state. The current match is called out more strongly
           // than the others, so stepping through them is legible in a long
           // outline instead of a wall of equally tinted rows.
@@ -1107,7 +1177,29 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           let inputTextStyle = '';
           let bulletStyle = '';
 
-          if (isRowActive) {
+          if (isLiftTarget && !isRowSelected) {
+            /* THIRD row state: the drop destination.
+             *
+             * Checked BEFORE isRowActive, and that ordering is load-bearing.
+             * The session row is the active row on a fresh session (the caret
+             * starts there), and it is also a legal drop target — the lift aims
+             * at it first. With isRowActive tested first, the destination wore
+             * the caret's inversion and the dashed target outline was never
+             * painted, so the very first thing a therapist saw after lifting
+             * was an unmarked row. The caret is still visible: it is on the
+             * LIFTED row, which is a different row, and the two states are
+             * rendered on separate elements.
+             *
+             * Deliberately not the amber wash either — that says "the client is
+             * looking here", which is a different thing entirely.
+             */
+            rowContainerStyle =
+              'border-2 border-dashed border-accent-text bg-transparent text-content';
+            inputTextStyle = isRootItem
+              ? 'font-extrabold text-base font-mono'
+              : 'font-bold placeholder:text-content-muted caret-content';
+            bulletStyle = 'bg-accent-text';
+          } else if (isRowActive) {
             rowContainerStyle = isDark
               ? 'bg-[#1e293b] border-2 border-accent text-white shadow-md ring-2 ring-accent/25'
               : 'bg-[#020617] border-2 border-accent text-white shadow-md ring-2 ring-[#020617]/15';
@@ -1129,28 +1221,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
               : 'bg-accent-soft border-2 border-accent-text text-black shadow-sm font-extrabold';
             inputTextStyle = '!text-black font-black placeholder:text-content-onaccent caret-black';
             bulletStyle = 'bg-black';
-          } else if (isLiftTarget) {
-            /* THIRD row state: the drop destination.
-             *
-             * Deliberately neither of the two above. Reusing the amber wash
-             * would say "the client is looking here", and reusing the row
-             * inversion would say "the caret is here"; both are lies during a
-             * lift, and the second one would hide the caret the therapist
-             * actually needs to see. So it is a dashed outline with no fill
-             * change — legible next to both, and it reads as a target rather
-             * than as a selection.
-             *
-             * The row ABOVE the target is the last child it currently has, so
-             * the target is marked on its own edge rather than by an insertion
-             * caret, which would imply a "before/after" position the move
-             * cannot express.
-             */
-            rowContainerStyle =
-              'border-2 border-dashed border-accent-text bg-transparent text-content';
-            inputTextStyle = isRootItem
-              ? 'font-extrabold text-base font-mono'
-              : 'font-bold placeholder:text-content-muted caret-content';
-            bulletStyle = 'bg-accent-text';
           } else {
             // Normal line. hover:bg-content/5 is a single token expression
             // that washes correctly in both themes (4% darker in papel,
@@ -1327,12 +1397,47 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                      cluster. It is 112px on a normal pane but only 32px on a
                      narrow one, where the + Filho button drops to icon-only —
                      otherwise 96px of reserved space left ~16px of a 142px
-                     pane for the actual text, and the field looked broken. */
-                  className={`w-full bg-transparent border-0 outline-none text-sm transition-colors py-0.5 pr-8 @min-[384px]:pr-28 ${inputTextStyle}`}
+                     pane for the actual text, and the field looked broken.
+                     Past 520px the Mover label joins in and the reserve grows
+                     to match, for the same reason. */
+                  className={`w-full bg-transparent border-0 outline-none text-sm transition-colors py-0.5 pr-8 @min-[384px]:pr-28 @min-[520px]:pr-44 ${inputTextStyle}`}
                 />
 
-                {/* Right controls: + Filho button & counters */}
+                {/* Right controls: Mover, + Filho, counters */}
                 <div className="absolute right-1 flex items-center gap-1.5">
+                  {/* Mover. The chord is the fast path, but a chord is not
+                      always available: macOS claims several single-modifier
+                      combinations for the window manager before the page ever
+                      sees the keydown, and there is no key to hold on a
+                      touchscreen. A visible control makes the gesture
+                      reachable either way, and it calls the same startLift the
+                      chord does — one implementation, nothing to drift. */}
+                  {enableNodeMove && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isLifting) return;
+                        startLift(item);
+                      }}
+                      /* Keep the caret in the input. Without this the button
+                         takes focus on mousedown, blur fires, and a blank row
+                         is cancelled by the blur BEFORE this handler runs —
+                         the same trap the + Filho button documents. */
+                      onMouseDown={(e) => e.preventDefault()}
+                      title="Levantar este tópico para mover de hierarquia (Ctrl+Shift+M)"
+                      aria-label={`Mover ${item.text || 'este tópico'} para outro ramo`}
+                      className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-accent-text text-accent-text transition-opacity before:content-[''] before:absolute before:-inset-3 ${
+                        isRowActive
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100'
+                      }`}
+                    >
+                      <MoveVertical className="w-3 h-3" aria-hidden="true" />
+                      <span className="hidden @min-[520px]:inline">Mover</span>
+                    </button>
+                  )}
+
                   {/* + Filho. Was tabIndex={-1} + opacity-0, so it was
                       unreachable by keyboard AND invisible to it: focusable
                       but fully transparent. group-focus-within reveals it as
@@ -1370,34 +1475,31 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     <span className="hidden @min-[384px]:inline">+ Filho</span>
                   </button>
 
-                  {/* Character Counter. Each state needs its own colour: the
-                      old single `text-accent-text` warning was 1.93:1 on the
-                      papel selected wash and exactly 1.00:1 on the noite one
-                      (both are --accent-text sitting on --accent-soft /
-                      --accent), and `text-accent` on the active row was
-                      9.10:1 / 9.03:1, which is fine. */}
+                  {/* Character counter.
+                      A plain count, not a budget. It used to read "87/90" in a
+                      warning colour with a "recommended: up to ~90 characters"
+                      tooltip, which was advice about a limit that no longer
+                      exists — the balloon grows to fit whatever is written, and
+                      the input no longer refuses a keystroke. A counter that
+                      implies a ceiling it does not enforce is worse than none.
+                      Each state keeps its own colour: the old single
+                      `text-accent-text` warning was 1.93:1 on the papel
+                      selected wash and exactly 1.00:1 on the noite one. */}
                   {charCount > 70 && (
                     <span
                       /* Below 384px of pane the counter competes with the field
                          for the only 32px of reserved gutter, so it stands down
-                         rather than overlapping the annotation. Input is still
-                         capped at 280 characters either way. */
+                         rather than overlapping the annotation. */
                       className={`hidden @min-[384px]:inline text-[10px] font-mono tabular-nums ${
                         isRowActive
                           ? 'text-accent font-bold'
                           : isRowSelected
                           ? 'text-content-onaccent font-bold'
-                          : isCharWarning
-                          ? 'text-accent-text font-bold'
                           : 'text-content-muted'
                       }`}
-                      title={
-                        isCharWarning
-                          ? 'Recomendação: até ~90 caracteres'
-                          : `${charCount} caracteres`
-                      }
+                      title={`${charCount} caracteres — o balão cresce para caber tudo`}
                     >
-                      {charCount}/90
+                      {charCount}
                     </span>
                   )}
 

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { MindMapNode } from '../../types';
 import { findNodeById } from '../../utils/tree';
+import { measureBalloon } from './balloonText';
 
 export interface LayoutNode {
   id: string;
@@ -101,26 +102,19 @@ export function themeColor(color: string, theme: 'papel' | 'noite'): string {
   return i === -1 ? color : BRANCH_PALETTE_NIGHT[i];
 }
 
+/**
+ * Balloon sizing.
+ *
+ * Delegates to measureBalloon, which the renderer (BalloonNode) calls too. That
+ * sharing is the whole fix: this used to be a second, independent estimate with
+ * a different character width and a hard-coded two-line ceiling, so a balloon
+ * could be sized for two lines while the text was drawn across three and
+ * truncated with an ellipsis. One function means the box and the words cannot
+ * disagree.
+ */
 function approximateTextDimensions(text: string, isRoot: boolean = false, fontScale: number = 1.0) {
-  const safeText = text || 'Novo ponto';
-  const baseFontSize = (isRoot ? 17 : 14.5) * fontScale;
-  const charWidth = baseFontSize * 0.58;
-  
-  // Max width constraint ~240px
-  const maxContentWidth = 240 * fontScale;
-  const paddingX = (isRoot ? 24 : 18) * fontScale * 2;
-  const paddingY = (isRoot ? 16 : 10) * fontScale * 2;
-  
-  const estimatedLineWidth = safeText.length * charWidth;
-  let finalWidth = Math.min(maxContentWidth, estimatedLineWidth + paddingX);
-  finalWidth = Math.max(isRoot ? 110 : 80, finalWidth);
-
-  // If text wraps to 2 lines
-  const lines = estimatedLineWidth > (maxContentWidth - paddingX) ? 2 : 1;
-  const lineHeight = baseFontSize * 1.35;
-  const finalHeight = paddingY + lines * lineHeight;
-
-  return { width: Math.round(finalWidth), height: Math.round(finalHeight), lines };
+  const m = measureBalloon(text, isRoot, fontScale);
+  return { width: m.width, height: m.height, lines: m.lines.length };
 }
 
 interface SubtreeLayout {
