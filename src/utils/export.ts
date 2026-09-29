@@ -1,27 +1,19 @@
 import { MindMap, MindMapNode } from '../types';
-import { generateNodeId } from './tree';
+import { generateNodeId, treeToMarkdown } from './tree';
 import JSZip from 'jszip';
 
 /**
- * Exports mindmap to standard Markdown format:
- * # Root
- * - Child
- *   - Subchild
+ * Exports a session as Markdown, in the same canonical form the outline
+ * buffer writes.
+ *
+ * The heading is the map's TITLE rather than the root node's text: a session
+ * is filed under a name the therapist gave it, which can differ from the date
+ * sitting in the outline. Everything below is byte-for-byte what
+ * treeToMarkdown produces, so an exported file re-imports to exactly the tree
+ * it came from — the round trip the export and the editor now share.
  */
 export function exportToMarkdown(map: MindMap): string {
-  const lines: string[] = [];
-  lines.push(`# ${map.title || map.root.text || 'Mapa'}\n`);
-
-  function traverse(node: MindMapNode, depth: number) {
-    for (const child of node.children || []) {
-      const indent = '  '.repeat(depth);
-      lines.push(`${indent}- ${child.text}`);
-      traverse(child, depth + 1);
-    }
-  }
-
-  traverse(map.root, 0);
-  return lines.join('\n');
+  return treeToMarkdown({ ...map.root, text: map.title || map.root.text || 'Mapa' });
 }
 
 /**
