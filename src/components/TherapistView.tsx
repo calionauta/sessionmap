@@ -121,9 +121,17 @@ export const TherapistView: React.FC = () => {
       getAllMaps(),
     ]);
     setClients(loadedClients);
-    // Archived sessions stay out of the working state entirely, so they never
+    // EVERY session, archived included, for the admin panel's archive view.
+    //
+    // This was never assigned, so `allMaps` stayed [] for the life of the
+    // session and the whole per-client history rendered as "no sessions" —
+    // the panel filters on clientId against a list that was always empty. The
+    // old comment claimed the archive UI "reads them from storage directly";
+    // it did not, it read this state. Assigning it is the entire fix.
+    setAllMaps(allLoadedMaps);
+    // Archived sessions stay out of the WORKING state entirely, so they never
     // show up in the header picker, the session list, or the active-map
-    // fallback below. The archive UI reads them from storage directly.
+    // fallback below.
     const loadedMaps = allLoadedMaps.filter((m) => !isArchived(m));
     setMaps(loadedMaps);
 
@@ -246,7 +254,13 @@ export const TherapistView: React.FC = () => {
     // per-key guards were not enough.
     newRoot = normalizeOutline(newRoot);
 
-    if (reason !== 'typing') {
+    // 'typing' is skipped so a sentence is one undo step rather than one per
+    // letter. 'undo' and 'redo' are skipped because they REPLAY a state that is
+    // already in the stack: the old code recorded them, so every undo pushed the
+    // state it had just stepped back to and the cursor ended up pointing at it
+    // again. The stack grew by one entry per undo, the redo branch was filled
+    // with duplicates, and the second undo stepped back further than the first.
+    if (reason !== 'typing' && reason !== 'undo' && reason !== 'redo') {
       const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
       nextHistory.push(newRoot);
       if (nextHistory.length > 50) nextHistory.shift();
@@ -747,6 +761,7 @@ export const TherapistView: React.FC = () => {
               selectedNodeId={selectedNodeId}
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
+              enableNodeMove={settings.enableNodeMove}
               hidden={notesExpanded}
             />
 
