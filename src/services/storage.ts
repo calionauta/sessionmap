@@ -689,9 +689,12 @@ export function createNewSession(clientId: string, clientName: string): MindMap 
     root: {
       id: generateNodeId(),
       text: timestamp,
-      children: [
-        { id: generateNodeId(), text: 'Ponto Inicial', children: [] },
-      ],
+      // No seeded first child. "Ponto Inicial" was a placeholder that had to
+      // be selected and replaced, and if it was not, it survived into the
+      // canvas as a balloon the therapist never wrote and every export
+      // contained. The root row is itself the first thing to type into, so an
+      // empty session now opens with exactly one editable line.
+      children: [],
     },
     view: { zoom: 1, x: 0, y: 0 },
   };

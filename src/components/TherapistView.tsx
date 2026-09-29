@@ -69,6 +69,8 @@ export const TherapistView: React.FC = () => {
    * when this is false.
    */
   const [editTargetVisible, setEditTargetVisible] = useState(true);
+  /** Lifted so the outline can be hidden while the notes take the pane. */
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const [activeMap, setActiveMap] = useState<MindMap | null>(null);
   const [settings, setSettings] = useState<Settings>(() => getSettings());
 
@@ -401,9 +403,11 @@ export const TherapistView: React.FC = () => {
       root: {
         id: generateNodeId(),
         text: formatSessionTimestamp(),
-        children: [
-          { id: generateNodeId(), text: 'Tópico Principal', children: [] },
-        ],
+        // Same as createNewSession: no seeded first child, so the two
+        // creation paths produce the same empty session. A placeholder node
+        // that has to be replaced is a node that sometimes is not, and then it
+        // reaches the canvas and every export as a balloon nobody wrote.
+        children: [],
       },
     };
 
@@ -732,6 +736,9 @@ export const TherapistView: React.FC = () => {
             className="border-r border-line flex flex-col h-full"
             style={{ width: `${outlineWidthPercent}%` }}
           >
+            {/* Hidden, not unmounted, while the notes are expanded: unmounting
+                would drop the outline's row focus and, with it, whatever the
+                therapist had selected on the canvas. */}
             <OutlineEditor
               root={activeMap.root}
               onUpdateRoot={handleUpdateRoot}
@@ -740,15 +747,19 @@ export const TherapistView: React.FC = () => {
               selectedNodeId={selectedNodeId}
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
+              hidden={notesExpanded}
             />
 
             {/* Free-text notes, scoped to the CLIENT so they survive session
                 switches. Sits under the outline rather than in a modal: the
                 use is reading them while still typing in the outline, and a
-                modal would take the keyboard away from the rows. */}
+                modal would take the keyboard away from the rows. Expanded, it
+                takes the whole pane instead. */}
             <ClientNotesPanel
               clientId={activeMap.clientId}
               clientName={activeMap.clientName || 'Cliente'}
+              expanded={notesExpanded}
+              onExpandedChange={setNotesExpanded}
             />
           </section>
         )}
