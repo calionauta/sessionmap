@@ -675,14 +675,105 @@ export function deleteNode(
 }
 
 /**
+ * The chord that lifts a topic for re-parenting.
+ *
+ * Shift is not optional here, and that is a macOS constraint rather than a
+ * style choice. Cmd+M minimizes the window and Option+M is a system chord;
+ * both are claimed by the window manager, which intercepts them BEFORE the
+ * page receives the keydown. No amount of preventDefault reaches that layer,
+ * so a single-modifier M did nothing in a browser on macOS while the window
+ * quietly minimized. A two-modifier chord is outside what macOS reserves, and
+ * all three common forms are accepted so neither Cmd nor Ctrl users are left
+ * out.
+ *
+ * Lives here rather than in either editor because both outline modes offer the
+ * same move gesture: a shortcut that behaves differently depending on which
+ * editor is open is worse than not having one.
+ */
+export function isLiftChord(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): boolean {
+  if (!e.shiftKey) return false;
+  // Exactly one modifier, so a three-finger mash is not a lift.
+  const mods = [e.ctrlKey, e.metaKey, e.altKey].filter(Boolean).length;
+  return mods === 1;
+}
+
+/**
+ * Serialises a topic and everything below it as markdown lines, WITHOUT the
+ * leading "# session" line.
+ *
+ * The half of treeToMarkdown that makes cut-and-paste of a whole branch work:
+ * the therapist selects a topic's text in the buffer, and that text is already
+ * a valid, pasteable block. Copying a branch out of the outline is therefore
+ * the browser's own clipboard rather than a bespoke format.
+ *
+ * The node ITSELF is emitted, not just its children — passing "t2" returns t2
+ * and everything under it, which is what "copy this branch" means.
+ */
+export function subtreeToMarkdown(node: MindMapNode, depth: number = 0): string {
+  const lines: string[] = [`${'  '.repeat(depth)}- ${node.text}`];
+  for (const child of node.children || []) {
+    lines.push(subtreeToMarkdown(child, depth + 1));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The outline as Markdown text.
+ *
+ * The inverse of parseMarkdownToTree, and deliberately boring: "# " for the
+ * session row, "- " for a topic, two spaces per level. Nothing in the format
+ * carries an id, a colour or a collapsed flag, because none of those survive a
+ * round trip through a text buffer — the re-parse rebuilds them, which is why
+ * parseMarkdownToTree takes the previous tree and reuses what it can.
+ *
+ * Chosen over headings (#, ##) deliberately: a heading is bound to its LEVEL,
+ * so promoting a topic two steps would silently change its text, and the only
+ * way to move it back would be to retype it. Indented bullets hold the depth in
+ * whitespace, so changing depth never touches the words.
+ */
+export function treeToMarkdown(root: MindMapNode): string {
+  const lines: string[] = [`# ${root.text || 'Sessão'}`];
+  const walk = (node: MindMapNode, depth: number) => {
+    for (const child of node.children || []) {
+      lines.push(`${'  '.repeat(depth)}- ${child.text}`);
+      walk(child, depth + 1);
+    }
+  };
+  walk(root, 0);
+  return lines.join('\n');
+}
+
+/**
  * Parse Markdown outline into a MindMapNode tree.
  * Supports:
  * # Title
  * - Item
  *   - Subitem
  * or indented lines.
+ *
+ * `previousRoot` is optional and only ever used to RECYCLE ids. A text buffer
+ * carries no ids, so a naive re-parse hands every node a fresh one — and since
+ * the outline keys its rows by id, that remounts the whole list, drops the
+ * caret, and leaves the highlight the client is following unable to resolve.
+ * Matching the previous tree in document order and reusing the id wherever the
+ * text is unchanged keeps the identity of everything the user is not currently
+ * editing, which is the overwhelmingly common case while typing.
+ *
+ * Matching is by document position, not by content, because content matching
+ * would silently reassign an id when two topics share the same text — and the
+ * caret would then jump from one to the other.
  */
-export function parseMarkdownToTree(text: string, defaultTitle: string = 'Novo Mapa'): MindMapNode {
+export function parseMarkdownToTree(
+  text: string,
+  defaultTitle: string = 'Novo Mapa',
+  previousRoot?: MindMapNode | null
+): MindMapNode {
   const lines = text.split('\n');
   let rootTitle = defaultTitle;
   const rawItems: { text: string; indent: number }[] = [];
@@ -707,8 +798,23 @@ export function parseMarkdownToTree(text: string, defaultTitle: string = 'Novo M
     rawItems.push({ text: content, indent });
   }
 
+  /**
+   * The previous tree in document order — the same order the markdown is
+   * written in, so index i on both sides is the same topic. Index 0 is the
+   * session row, which the "#" line replaces, so the items start at 1.
+   */
+  const previous: { id: string; text: string; collapsed: boolean }[] = [];
+  if (previousRoot) {
+    const walkPrevious = (n: MindMapNode) => {
+      previous.push({ id: n.id, text: n.text, collapsed: Boolean(n.collapsed) });
+      for (const child of n.children || []) walkPrevious(child);
+    };
+    walkPrevious(previousRoot);
+  }
+
   const root: MindMapNode = {
-    id: generateNodeId(),
+    // The session row keeps its id, so switching editors does not remount it.
+    id: previousRoot?.id ?? generateNodeId(),
     text: rootTitle,
     children: [],
   };
@@ -717,11 +823,19 @@ export function parseMarkdownToTree(text: string, defaultTitle: string = 'Novo M
 
   // Stack of parent nodes at each indent level
   const stack: { node: MindMapNode; indent: number }[] = [{ node: root, indent: -1 }];
+  let position = 0;
 
   for (const item of rawItems) {
+    position += 1;
+    const prior = previous[position];
+    // Same slot and same words: this topic was not edited, so keep its identity
+    // AND its collapsed state, which the markdown cannot express.
+    const unchanged = prior !== undefined && prior.text === item.text;
+
     const newNode: MindMapNode = {
-      id: generateNodeId(),
+      id: unchanged ? prior.id : generateNodeId(),
       text: item.text,
+      collapsed: unchanged ? prior.collapsed : false,
       children: [],
     };
 

@@ -7,7 +7,8 @@ const { render, fireEvent, cleanup, screen, act } = await import(
   '@testing-library/react'
 );
 const React = await import('react');
-const { OutlineEditor, isLiftChord } = await import('../outline/OutlineEditor');
+const { OutlineEditor } = await import('../outline/OutlineEditor');
+const { isLiftChord } = await import('../../utils/tree');
 import type { MindMapNode } from '../../types';
 
 const node = (

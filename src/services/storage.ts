@@ -34,6 +34,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // The map stays visible by default: hiding it is a per-session choice, and a
   // therapist who wants it gone every time can turn it on once.
   maximizeOutline: false,
+  // The row editor is the default because it is the one that was in use, and
+  // changing the editing surface without being asked is not a call to make for
+  // someone. The markdown buffer is a real alternative, not a preview.
+  outlineEditor: 'rows',
 };
 
 const DEFAULT_SAMPLE_CLIENT: Client = {

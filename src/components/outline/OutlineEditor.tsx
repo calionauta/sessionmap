@@ -24,6 +24,7 @@ import {
   moveSibling,
   moveNode,
   moveCandidates,
+  isLiftChord,
   initialLiftTarget,
   stepLiftTarget,
   branchIndexOf,
@@ -36,34 +37,6 @@ import {
   searchNormalize,
   matchesQuery,
 } from '../../utils/tree';
-
-/**
- * The chord that lifts a row for re-parenting.
- *
- * Shift is not optional here, and that is a macOS constraint rather than a
- * style choice. Cmd+M minimizes the window and Option+M is a system chord;
- * both are claimed by the window manager, which intercepts them BEFORE the
- * page receives the keydown. No amount of preventDefault reaches that layer,
- * so the original Alt+M binding did nothing in a browser on macOS while the
- * window quietly minimized. A two-modifier chord is outside what macOS
- * reserves, and all three common forms are accepted so neither Cmd nor Ctrl
- * users are left out.
- *
- * The visible Mover button on each row calls the same startLift, so the
- * gesture is reachable even where no chord survives the OS.
- */
-export function isLiftChord(e: {
-  key: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-}): boolean {
-  if (!e.shiftKey) return false;
-  // Exactly one modifier, so a three-finger mash is not a lift.
-  const mods = [e.ctrlKey, e.metaKey, e.altKey].filter(Boolean).length;
-  return mods === 1;
-}
 
 interface OutlineEditorProps {
   root: MindMapNode;

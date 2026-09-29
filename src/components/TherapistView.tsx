@@ -30,6 +30,7 @@ import { ExportModal } from './modals/ExportModal';
 import { SettingsModal } from './modals/SettingsModal';
 import { MapListDrawer } from './modals/MapListDrawer';
 import { AdminClientManager } from './admin/AdminClientManager';
+import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
 import {
   getAllMaps,
@@ -792,28 +793,52 @@ export const TherapistView: React.FC = () => {
             className="border-r border-line flex flex-col h-full"
             style={{ width: maximizeOutline ? '100%' : `${outlineWidthPercent}%` }}
           >
-            {/* Hidden, not unmounted, while the notes are expanded: unmounting
-                would drop the outline's row focus and, with it, whatever the
-                therapist had selected on the canvas. */}
-            <OutlineEditor
-              root={activeMap.root}
-              onUpdateRoot={handleUpdateRoot}
-              onDraftChange={handleDraftChange}
-              onSelectNode={handleSelectNode}
-              selectedNodeId={selectedNodeId}
-              focusDwellSeconds={settings.focusDwellSeconds}
-              theme={settings.theme}
-              enableNodeMove={settings.enableNodeMove}
-              outlineFontScale={settings.outlineFontScale}
-              maximizeOutline={maximizeOutline}
-              onToggleMaximize={() => {
-                const next = !maximizeOutline;
-                // Routed through the settings so the choice is persisted: a
-                // therapist who always works this way should not re-press it.
-                handleUpdateSettings({ ...settings, maximizeOutline: next });
-              }}
-              hidden={notesExpanded}
-            />
+            {/* Two editors, one tree. Which one is mounted is a setting, and
+                both drive the same handlers, so the mind map, the client
+                window, the autosave and the undo stack are identical either
+                way. They are not interchangeable at runtime: the row editor
+                holds a focused input the markdown buffer has no equivalent of,
+                so switching unmounts one and mounts the other. The tree itself
+                is untouched by the switch — it lives in activeMap, not in
+                either editor. */}
+            {settings.outlineEditor === 'markdown' ? (
+              <MarkdownOutline
+                root={activeMap.root}
+                onUpdateRoot={handleUpdateRoot}
+                onDraftChange={handleDraftChange}
+                onSelectNode={handleSelectNode}
+                selectedNodeId={selectedNodeId}
+                theme={settings.theme}
+                enableNodeMove={settings.enableNodeMove}
+                outlineFontScale={settings.outlineFontScale}
+                maximizeOutline={maximizeOutline}
+                onToggleMaximize={() => {
+                  const next = !maximizeOutline;
+                  handleUpdateSettings({ ...settings, maximizeOutline: next });
+                }}
+                hidden={notesExpanded}
+              />
+            ) : (
+              <OutlineEditor
+                root={activeMap.root}
+                onUpdateRoot={handleUpdateRoot}
+                onDraftChange={handleDraftChange}
+                onSelectNode={handleSelectNode}
+                selectedNodeId={selectedNodeId}
+                focusDwellSeconds={settings.focusDwellSeconds}
+                theme={settings.theme}
+                enableNodeMove={settings.enableNodeMove}
+                outlineFontScale={settings.outlineFontScale}
+                maximizeOutline={maximizeOutline}
+                onToggleMaximize={() => {
+                  const next = !maximizeOutline;
+                  // Routed through the settings so the choice is persisted: a
+                  // therapist who always works this way should not re-press it.
+                  handleUpdateSettings({ ...settings, maximizeOutline: next });
+                }}
+                hidden={notesExpanded}
+              />
+            )}
 
             {/* Free-text notes, scoped to the CLIENT so they survive session
                 switches. Sits under the outline rather than in a modal: the

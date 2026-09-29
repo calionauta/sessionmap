@@ -82,6 +82,28 @@ export interface Settings {
    * of screen doing nothing.
    */
   maximizeOutline: boolean;
+  /**
+   * Which outline editor is in use.
+   *
+   * 'rows' is one focusable field per topic; 'markdown' is a single text
+   * buffer whose indentation carries the hierarchy.
+   *
+   * This is a real trade, not a preference, and that is why it is a setting
+   * rather than a decision made for the user:
+   *
+   *   rows     — every topic is its own field. Tab walks them natively, a
+   *              screen reader announces one target per topic, and a keystroke
+   *              can never change the shape of the tree by accident. Costs an
+   *              input per node, and the focus bookkeeping that goes with it.
+   *   markdown — cut, copy, paste and select across levels are the browser's
+   *              own, so moving a whole branch needs no code at all. Costs the
+   *              per-topic focus targets, and Tab has to be captured to indent,
+   *              which takes it out of the browser's focus order.
+   *
+   * Both are complete. The mode in use is chosen per therapist, and both
+   * projects the same tree to the same mind map.
+   */
+  outlineEditor: 'rows' | 'markdown';
 }
 
 export type SyncMessage =
