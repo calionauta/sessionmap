@@ -95,7 +95,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     if (matchIds.length === 0) return;
     const next = (matchCursor + delta + matchIds.length) % matchIds.length;
     setMatchCursor(next);
-    focusInput(matchIds[next], true);
+    // Jumping to a search hit is deliberate, so it highlights now. Making the
+    // therapist wait out the dwell after already saying "take me here" would
+    // be a second, invisible wait.
+    focusInput(matchIds[next], true, 'explicit');
   };
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -125,46 +128,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const dwellTimerRef = useRef<number | null>(null);
   const dwellAnimRef = useRef<number | null>(null);
   const dwellStartTimeRef = useRef<number>(0);
-
-  // Synchronous, zero-latency focus & selection!
-  const focusInput = useCallback(
-    (nodeId: string, selectAll: boolean = false) => {
-      setActiveNodeId(nodeId);
-      // Immediately notify parent to position mindmap with 0ms delay!
-      onSelectNode(nodeId, 'navigate');
-
-      // Update draft synchronously so parent/mirror updates instantly
-      const pInfo = findParentAndIndex(root, nodeId);
-      const parentNode = pInfo?.parent || root;
-      const targetNode = findNodeById(root, nodeId);
-      if (targetNode) {
-        onDraftChange({
-          mode: targetNode.text ? 'edit' : 'add',
-          parentId: parentNode.id,
-          parentText: parentNode.text,
-          targetId: targetNode.id,
-          text: targetNode.text,
-          active: true,
-        });
-      }
-
-      // The target input may not exist yet. Creating a sibling/child calls
-      // onUpdateRoot, which only SCHEDULES a re-render; React has not
-      // committed the new <input> by the time this runs, so
-      // inputRefs.current has no entry for it. Previously that case fell
-      // through silently, the new row mounted with the caret still in the
-      // previous row, and typing edited the wrong node.
-      //
-      // Record the intent and let the ref callback apply it on mount.
-      const el = inputRefs.current.get(nodeId);
-      if (el) {
-        applyFocusRef.current(el, nodeId, selectAll);
-      } else {
-        pendingFocusRef.current = { nodeId, selectAll };
-      }
-    },
-    [onSelectNode, root, onDraftChange]
-  );
 
   // Reset 3s dwell timer
   const resetDwellTimer = useCallback(() => {
@@ -208,6 +171,73 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     [focusDwellSeconds, onSelectNode, resetDwellTimer]
   );
 
+  // Declared after startDwellTimer on purpose: focusInput arms the dwell,
+  // so startDwellTimer must already exist when this dependency array is
+  // evaluated.
+  /**
+   * Why the focus is moving.
+   *
+   * 'navigate' — traversal (arrows, Enter, Tab, undo, cancel, creating a row).
+   *   The map and the client screen do NOT follow, because that is what the
+   *   dwell setting exists to control. The dwell timer is armed instead, so
+   *   parking on a row for the configured time highlights it.
+   *
+   * 'explicit' — a deliberate act on one node: a pointer click on a row, or
+   *   jumping to a search match. Highlights immediately, no dwell wait.
+   */
+  type FocusIntent = 'navigate' | 'explicit';
+
+  // Synchronous, zero-latency focus & selection!
+  const focusInput = useCallback(
+    (
+      nodeId: string,
+      selectAll: boolean = false,
+      intent: FocusIntent = 'navigate'
+    ) => {
+      setActiveNodeId(nodeId);
+
+      if (intent === 'explicit') {
+        onSelectNode(nodeId, 'click');
+      } else {
+        // Respect the setting: traversal only ARMS the dwell. With
+        // focusDwellSeconds at 0 startDwellTimer returns early, so traversal
+        // never auto-highlights and only a click does.
+        startDwellTimer(nodeId);
+      }
+
+      // Update draft synchronously so parent/mirror updates instantly
+      const pInfo = findParentAndIndex(root, nodeId);
+      const parentNode = pInfo?.parent || root;
+      const targetNode = findNodeById(root, nodeId);
+      if (targetNode) {
+        onDraftChange({
+          mode: targetNode.text ? 'edit' : 'add',
+          parentId: parentNode.id,
+          parentText: parentNode.text,
+          targetId: targetNode.id,
+          text: targetNode.text,
+          active: true,
+        });
+      }
+
+      // The target input may not exist yet. Creating a sibling/child calls
+      // onUpdateRoot, which only SCHEDULES a re-render; React has not
+      // committed the new <input> by the time this runs, so
+      // inputRefs.current has no entry for it. Previously that case fell
+      // through silently, the new row mounted with the caret still in the
+      // previous row, and typing edited the wrong node.
+      //
+      // Record the intent and let the ref callback apply it on mount.
+      const el = inputRefs.current.get(nodeId);
+      if (el) {
+        applyFocusRef.current(el, nodeId, selectAll);
+      } else {
+        pendingFocusRef.current = { nodeId, selectAll };
+      }
+    },
+    [onSelectNode, root, onDraftChange, startDwellTimer]
+  );
+
   useEffect(() => {
     return () => {
       resetDwellTimer();
@@ -234,19 +264,20 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   // The dwell timer is armed from a deliberate POINTER click on a row (see
   // the row onClick below), never from activeNodeId.
   //
-  // It used to run off `activeNodeId`, which meant every ArrowUp/ArrowDown
-  // step re-armed it — a keyboard user scanning the outline lit up the
-  // client's screen on every row they passed, with focusDwellSeconds: 0 in
-  // Settings as the only escape. Arming on click keeps the feature intact
-  // for the mouse flow it was designed for and removes it from traversal.
+  // The timer is the ONLY thing that auto-highlights during traversal now.
+  // It used to be decoration: focusInput() broadcast onSelectNode(id,
+  // 'navigate') synchronously on every step and ClientView treats every
+  // `reason` identically, so the dwell was re-sending a node that had already
+  // been sent, and focusDwellSeconds controlled nothing at all.
   //
-  // Note: the client-facing highlight on traversal does NOT actually come
-  // from this timer. focusInput() already broadcasts onSelectNode(id,
-  // 'navigate') synchronously, and ClientView treats every `reason`
-  // identically (ClientView.tsx:114), so the dwell only re-sent the node it
-  // had already sent. See the report: if traversal should stop moving the
-  // client's highlight at all, focusInput's 'navigate' call is the line to
-  // change, not this one.
+  // There were two broadcasters, not one. handleKeyDown was the obvious one,
+  // but the input's onFocus was the back door: arrowing the caret moves DOM
+  // focus, onFocus fired, and the map followed regardless of the key handler.
+  // Fixing only the key handler would have left traversal broadcasting.
+  //
+  // Traversal arms the timer; parking for the configured time fires it; a
+  // pointer click bypasses it entirely. With focusDwellSeconds at 0 the timer
+  // never arms, so only a click highlights.
 
   /**
    * Refuses to create a child under a row with no text, and says why.
@@ -738,11 +769,12 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             <div
               key={item.id}
               onClick={() => {
-                focusInput(item.id);
-                // Deliberate pointer activation arms the dwell auto-highlight.
-                // Keyboard traversal deliberately does not (see the note
-                // above the dwell timer).
-                startDwellTimer(item.id);
+                // A click on a row names one node on purpose, so it highlights
+                // immediately and does not wait out the dwell. Making the
+                // deliberate path wait while the accidental one did not was
+                // backwards: the dwell exists to stop the map jumping around
+                // while you scan, not to delay a decision you already made.
+                focusInput(item.id, false, 'explicit');
               }}
               /* py-2.5, not py-2. At py-2 the row was 40px tall inside a 44px
                  pitch: two controls shared one 44px band, and a ::before
@@ -849,7 +881,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   value={item.text}
                   placeholder={isRootItem ? 'Data/Hora ou Tema da Sessão' : 'Digite a anotação…'}
                   onFocus={() => {
-                    focusInput(item.id);
+                    // Mirrors DOM focus to the row highlight ONLY.
+                    //
+                    // This used to call focusInput(), which was the second
+                    // reason the dwell setting was ignored: moving the caret
+                    // with the arrows moves DOM focus, onFocus fires, and the
+                    // map followed whether or not the key handler wanted it
+                    // to. Fixing only handleKeyDown would have left traversal
+                    // broadcasting through the back door.
+                    setActiveNodeId(item.id);
                   }}
                   /* Leaving a row that was created but never typed into cancels
                      it, so "make a row and move on" leaves no empty balloon

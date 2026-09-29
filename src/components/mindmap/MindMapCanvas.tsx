@@ -32,6 +32,14 @@ interface MindMapCanvasProps {
   onToggleFocusZoomMode?: () => void;
   onNodeClick?: (nodeId: string) => void;
   onToggleCollapse?: (nodeId: string) => void;
+  /**
+   * Reports whether the node currently being edited is inside the visible
+   * canvas. The floating "what am I editing" mirror uses it to stay out of the
+   * way: the canvas already shows the target by highlighting and (with focus
+   * zoom) centring it, so the mirror only earns its space when the target is
+   * off-screen. See TherapistView for the collision this removes.
+   */
+  onEditTargetVisibleChange?: (visible: boolean) => void;
   svgRef?: React.RefObject<SVGSVGElement | null>;
 }
 
@@ -50,6 +58,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   onToggleFocusZoomMode,
   onNodeClick,
   onToggleCollapse,
+  onEditTargetVisibleChange,
   svgRef: externalSvgRef,
 }) => {
   const localSvgRef = useRef<SVGSVGElement | null>(null);
@@ -228,8 +237,6 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
 
       const clusterW = Math.max(300, maxX - minX);
       const clusterH = Math.max(220, maxY - minY);
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
 
       const padding = 140;
       const scaleX = (containerW - padding * 2) / clusterW;
@@ -237,9 +244,24 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       // Generous zoom-in for family focus
       const targetK = Math.min(1.65, Math.max(0.75, Math.min(scaleX, scaleY)));
 
+      // Centre the SELECTED NODE, not the cluster's bounding box.
+      //
+      // Centring the box was the bug: a node with many children reaching
+      // right and few ancestors reaching left is the common shape, and the
+      // box centre then sits well to the right of the node the therapist is
+      // actually on. "Focus" that puts the subject off-centre is not focus.
+      //
+      // The scale still comes from the cluster, so the zoom level keeps
+      // adapting to how much context this node carries — a leaf stays
+      // readable instead of being magnified for context it does not have.
+      // Trade-off, stated plainly: if the context is far wider than the
+      // viewport even at the minimum scale, some of it goes off-screen. That
+      // is the correct trade, because the node you are on stays in the same
+      // place every time, and the context that spills is what you pan to
+      // deliberately.
       setTransform({
-        x: containerW / 2 - centerX * targetK,
-        y: containerH / 2 - centerY * targetK,
+        x: containerW / 2 - selectedLayout.x * targetK,
+        y: containerH / 2 - selectedLayout.y * targetK,
         k: targetK,
       });
     } else {
@@ -251,6 +273,45 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       }));
     }
   }, [selectedNodeId, focusZoomMode, nodes, root]);
+
+  /**
+   * Is the node being edited actually on screen?
+   *
+   * Screen position of a node is world position through the current
+   * transform: sx = x * k + translateX. The node counts as visible when its
+   * whole box lands inside the container, so a balloon half off the edge does
+   * not count as "you can see it".
+   *
+   * Reported rather than rendered here so the decision lives with the
+   * component that owns the floating mirror.
+   */
+  const editTargetId = draft?.active ? (draft.targetId ?? null) : null;
+  useEffect(() => {
+    if (!onEditTargetVisibleChange) return;
+    const el = containerRef.current;
+    if (!editTargetId || !el) {
+      onEditTargetVisibleChange(true);
+      return;
+    }
+    const layout = nodes.find((n) => n.id === editTargetId);
+    if (!layout) {
+      onEditTargetVisibleChange(true);
+      return;
+    }
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w === 0 || h === 0) {
+      onEditTargetVisibleChange(true);
+      return;
+    }
+    const halfW = (layout.width / 2) * transform.k;
+    const halfH = (layout.height / 2) * transform.k;
+    const sx = layout.x * transform.k + transform.x;
+    const sy = layout.y * transform.k + transform.y;
+    const visible =
+      sx - halfW >= 0 && sx + halfW <= w && sy - halfH >= 0 && sy + halfH <= h;
+    onEditTargetVisibleChange(visible);
+  }, [editTargetId, nodes, transform, onEditTargetVisibleChange]);
 
   // Mouse Wheel Zoom
   const handleWheel = (e: React.WheelEvent) => {
