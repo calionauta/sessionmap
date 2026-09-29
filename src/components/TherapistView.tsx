@@ -63,6 +63,12 @@ export const TherapistView: React.FC = () => {
   const [maps, setMaps] = useState<MindMap[]>([]);
   /** Every session, archived included. Only the archive views read this. */
   const [allMaps, setAllMaps] = useState<MindMap[]>([]);
+  /**
+   * Whether the node being edited is on-screen. The canvas already highlights
+   * and centres it, so the floating "what am I editing" mirror only appears
+   * when this is false.
+   */
+  const [editTargetVisible, setEditTargetVisible] = useState(true);
   const [activeMap, setActiveMap] = useState<MindMap | null>(null);
   const [settings, setSettings] = useState<Settings>(() => getSettings());
 
@@ -793,6 +799,7 @@ export const TherapistView: React.FC = () => {
                 );
               }}
               svgRef={svgCanvasRef}
+              onEditTargetVisibleChange={setEditTargetVisible}
             />
           ) : (
             /* Empty is a real state now that deleting the last session sticks:
@@ -821,12 +828,32 @@ export const TherapistView: React.FC = () => {
               location and the live text are separated vertically. The whole
               region is one live region so a screen reader hears the location
               and the text as a single announcement rather than two unrelated
-              strings. */}
-          {draft && draft.active && (
+              strings.
+
+              Shown ONLY while the node being edited is off-screen, and docked
+              bottom-LEFT. Two rules, both about not covering things:
+
+              1. It used to be centred at the bottom, where it sat on top of
+                 the canvas control cluster (zoom, fit, reset) in the
+                 bottom-right — a transient badge permanently hiding the tools
+                 you need mid-session. Overlays are not supposed to cover
+                 controls; the layout should reserve a zone for them and keep
+                 transient UI out of it. Bottom-right is that reserved zone, so
+                 the mirror goes to bottom-left, which is free.
+
+              2. More importantly, the canvas ALREADY shows the target: it
+                 highlights the node and, with focus zoom on, centres it. So
+                 the mirror mostly restated what was on screen, at the cost of
+                 a permanent floating card in the middle of the canvas. It now
+                 appears only when the target is off-screen — panned away,
+                 zoomed out, or on a collapsed branch — which is the only case
+                 where the information is not already visible. That removes
+                 the noise instead of relocating it. */}
+          {draft && draft.active && !editTargetVisible && (
             <div
               role="status"
               aria-live="polite"
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 w-[min(38rem,calc(100%-2rem))]"
+              className="absolute bottom-4 left-4 z-30 pointer-events-none transition-all duration-300 w-[min(26rem,calc(100%-2rem))]"
             >
               <div className="px-4 py-2 rounded-panel shadow-lg border border-line bg-surface-raised text-content">
                 {/* Line 1 — where. One short fragment: the direct parent,

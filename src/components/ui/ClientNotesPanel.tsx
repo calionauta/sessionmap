@@ -112,7 +112,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls="client-notes-textarea"
-          className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-[11px] font-semibold text-content-muted hover:text-content transition-colors"
+          className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-[11px] font-semibold text-content-muted hover:text-content transition-colors cursor-pointer"
         >
           {open ? (
             <ChevronDown className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
