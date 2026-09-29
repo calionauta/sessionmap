@@ -18,6 +18,15 @@ interface MarkdownOutlineProps {
     active: boolean;
   }) => void;
   selectedNodeId: string | null;
+  /**
+   * Seconds the caret must rest on a topic before its balloon lights up.
+   *
+   * The setting is global and the row editor has always honoured it, so a
+   * therapist who set it to 3 seconds and then switched to this mode was told
+   * nothing and simply got no auto-focus. 0 means "never", which is honoured
+   * here too rather than treated as "use the default".
+   */
+  focusDwellSeconds: number;
   theme: 'papel' | 'noite';
   enableNodeMove: boolean;
   outlineFontScale: number;
@@ -37,6 +46,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   onSelectNode,
   onDraftChange,
   selectedNodeId,
+  focusDwellSeconds,
   theme,
   enableNodeMove,
   outlineFontScale = 1,
@@ -133,6 +143,70 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       active: Boolean(node),
     });
   }, [caretNode, onDraftChange]);
+
+  /* ==================== DWELL (auto-focus) ==================== */
+
+  const dwellRef = useRef<{ nodeId: string; timer: number } | null>(null);
+
+  const cancelDwell = useCallback(() => {
+    if (dwellRef.current) {
+      window.clearTimeout(dwellRef.current.timer);
+      dwellRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Resting the caret on a topic lights its balloon up, after the configured
+   * delay.
+   *
+   * A plain setTimeout rather than the row editor's requestAnimationFrame loop,
+   * and the difference is the whole reason: that loop exists to animate the
+   * progress ring on the active row. There is no row here, so there is nothing
+   * to draw, and a timer that fires once is less code than a loop that redraws
+   * sixty times a second to report the same thing.
+   *
+   * Armed on every caret move and on typing. Typing counts as resting: a
+   * therapist working through a session writes a thought, pauses to think, and
+   * that pause is exactly the moment the map should catch up with them.
+   */
+  const armDwell = useCallback(
+    (nodeId: string | null) => {
+      cancelDwell();
+      if (!nodeId || focusDwellSeconds <= 0) return;
+      dwellRef.current = {
+        nodeId,
+        timer: window.setTimeout(() => {
+          dwellRef.current = null;
+          onSelectNode(nodeId, 'focus3s');
+        }, focusDwellSeconds * 1000),
+      };
+    },
+    [cancelDwell, focusDwellSeconds, onSelectNode]
+  );
+
+  useEffect(() => cancelDwell, [cancelDwell]);
+
+  /**
+   * Where the caret went, and what that should mean for the highlight.
+   *
+   * Same two intents the row editor uses, for the same reason. Navigation
+   * ARMS the dwell rather than highlighting, or the setting would control
+   * nothing; a pointer click is a deliberate act on one topic and highlights
+   * at once.
+   */
+  const followCaret = useCallback(
+    (intent: 'navigate' | 'explicit') => {
+      const { node } = caretNode();
+      broadcastCaret();
+      if (intent === 'explicit') {
+        cancelDwell();
+        onSelectNode(node?.id ?? null, 'click');
+      } else {
+        armDwell(node?.id ?? null);
+      }
+    },
+    [armDwell, broadcastCaret, cancelDwell, caretNode, onSelectNode]
+  );
 
   /**
    * Parses the buffer into the tree once typing settles.
@@ -448,10 +522,22 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             setHint('');
             setText(e.target.value);
             scheduleParse();
-            broadcastCaret();
+            followCaret('navigate');
           }}
           onKeyDown={handleKeyDown}
-          onSelect={broadcastCaret}
+          /* onSelect, not onKeyUp: a click, a drag-selection and every arrow
+           * key all move the caret and all fire it, so the dwell follows the
+           * caret rather than a list of keys that would still miss the mouse. */
+          onSelect={() => followCaret('navigate')}
+          onClick={() => {
+            /* Resolves the dwell the select above armed. Whichever order the
+             * browser fires them in, the outcome is the same node: select
+             * arms, click cancels and highlights. Relying on that is safe here
+             * because a re-armed dwell on the node just highlighted would only
+             * re-broadcast an id that is already selected — there is no ring in
+             * this mode for it to look wrong against. */
+            followCaret('explicit');
+          }}
           onBlur={() => {
             /* Commit immediately on blur rather than waiting out the debounce:
              * switching session or opening a modal must not carry a
@@ -465,6 +551,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
              * textarea is the source of truth while it has focus. */
             if (pendingRef.current) window.clearTimeout(pendingRef.current);
             pendingRef.current = null;
+            // Otherwise the dwell would fire into a field nobody is in and
+            // light a balloon up on the way out.
+            cancelDwell();
             const value = textareaRef.current?.value ?? text;
             if (!isUnchanged(value)) {
               onUpdateRoot(parseMarkdownToTree(value, root.text, root), 'markdown');

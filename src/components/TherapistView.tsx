@@ -53,6 +53,7 @@ import {
 import { syncService } from '../services/sync';
 import { findPathToNode, findNodeById, generateNodeId, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
 import { formatSessionTimestamp } from '../utils/text';
+import { isBrowserUndoTarget } from '../utils/keyboard';
 
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -339,6 +340,8 @@ export const TherapistView: React.FC = () => {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        // The browser owns undo inside a text buffer. See isBrowserUndoTarget.
+        if (isBrowserUndoTarget(e.target)) return;
         if (e.shiftKey) {
           e.preventDefault();
           handleRedo();
@@ -802,6 +805,7 @@ export const TherapistView: React.FC = () => {
                 onDraftChange={handleDraftChange}
                 onSelectNode={handleSelectNode}
                 selectedNodeId={selectedNodeId}
+                focusDwellSeconds={settings.focusDwellSeconds}
                 theme={settings.theme}
                 enableNodeMove={settings.enableNodeMove}
                 outlineFontScale={settings.outlineFontScale}

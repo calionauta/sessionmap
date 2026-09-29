@@ -30,10 +30,17 @@ let lastRoot: MindMapNode | null = null;
 let updateCount = 0;
 let reasons: string[] = [];
 
-function setup(root: MindMapNode = fixture(), enableNodeMove = true) {
+let selections: Array<{ nodeId: string | null; reason: string }> = [];
+
+function setup(
+  root: MindMapNode = fixture(),
+  enableNodeMove = true,
+  focusDwellSeconds = 0
+) {
   lastRoot = root;
   updateCount = 0;
   reasons = [];
+  selections = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   render(
@@ -44,9 +51,12 @@ function setup(root: MindMapNode = fixture(), enableNodeMove = true) {
         updateCount++;
         reasons.push(reason);
       },
-      onSelectNode: () => {},
+      onSelectNode: (nodeId: string | null, reason: string) => {
+        selections.push({ nodeId, reason });
+      },
       onDraftChange: () => {},
       selectedNodeId: null,
+      focusDwellSeconds,
       theme: 'papel' as const,
       enableNodeMove,
       outlineFontScale: 1,
@@ -85,6 +95,22 @@ function press(key: string, init: Record<string, unknown> = {}) {
   });
 }
 
+/** Puts the caret at the start of the buffer line containing `fragment`. */
+function caretOnLine(fragment: string) {
+  const el = textarea();
+  const offset = el.value.indexOf(fragment);
+  if (offset === -1) throw new Error(`no line "${fragment}" in:\n${el.value}`);
+  caretAt(offset);
+  return offset;
+}
+
+/** Waits past a dwell of `seconds`, in real time. */
+async function waitPastDwell(seconds: number) {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, seconds * 1000 + 400));
+  });
+}
+
 describe('the markdown buffer', () => {
   afterEach(() => {
     cleanup();
@@ -106,6 +132,20 @@ describe('the markdown buffer', () => {
     // buys native selection across levels.
     expect(container!.querySelectorAll('textarea')).toHaveLength(1);
     expect(container!.querySelectorAll('input')).toHaveLength(0);
+  });
+
+  test('Ctrl+Z is left to the browser', () => {
+    // The bug: the window handler used to preventDefault this and apply a TREE
+    // undo, which has no entry for the text that was typed. Deleting the whole
+    // buffer and pressing Ctrl+Z did nothing at all, and the buffer is the only
+    // copy of the session until it parses back into a tree.
+    //
+    // fireEvent returns false when the event was cancelled, so true here means
+    // the browser still owns the key.
+    setup();
+    expect(
+      fireEvent.keyDown(textarea(), { key: 'z', ctrlKey: true, cancelable: true })
+    ).toBe(true);
   });
 
   test('Tab indents the current line', () => {
@@ -247,6 +287,63 @@ describe('the markdown buffer', () => {
     const other = node('root2', '01/01/2026', [node('solo', 'Outro cliente')]);
     setup(other);
     expect(textarea().value).toBe('# 01/01/2026\n- Outro cliente');
+  });
+});
+
+describe('dwell in the markdown buffer', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  test('resting the caret on a topic lights its balloon up', async () => {
+    // The bug: this mode simply had no dwell at all, so the setting did
+    // nothing here and the balloons never followed the caret.
+    setup(fixture(), true, 1);
+    caretOnLine('- cansaço');
+
+    // Navigation arms the dwell, it does not fire it.
+    expect(selections).toEqual([]);
+
+    await waitPastDwell(1);
+    expect(selections).toEqual([{ nodeId: 't1', reason: 'focus3s' }]);
+  });
+
+  test('at 0 the dwell never arms', async () => {
+    // 0 means "desligado", and it has to mean it here too rather than falling
+    // back to a default the therapist never chose.
+    setup(fixture(), true, 0);
+    caretOnLine('- cansaço');
+    await waitPastDwell(1);
+    expect(selections).toEqual([]);
+  });
+
+  test('the session heading is not a topic, so nothing lights up', async () => {
+    setup(fixture(), true, 1);
+    caretOnLine('# 28/09/2026');
+    await waitPastDwell(1);
+    expect(selections).toEqual([]);
+  });
+
+  test('a click highlights at once instead of waiting', () => {
+    // A pointer click is a deliberate act on one topic; making it wait three
+    // seconds is what makes an app feel broken.
+    setup(fixture(), true, 5);
+    caretOnLine('- cansaço');
+    act(() => {
+      fireEvent.click(textarea());
+    });
+    // The caret move above armed a dwell; the click is what resolves it now.
+    expect(selections).toEqual([{ nodeId: 't1', reason: 'click' }]);
+  });
+
+  test('moving the caret re-arms on the new topic', async () => {
+    setup(fixture(), true, 1);
+    caretOnLine('- cansaço');
+    caretOnLine('- mãe apoia');
+    await waitPastDwell(1);
+    expect(selections).toEqual([{ nodeId: 'f1', reason: 'focus3s' }]);
   });
 });
 
