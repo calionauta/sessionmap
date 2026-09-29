@@ -10,6 +10,8 @@ import {
   ChevronUp,
   MoveVertical,
   Check,
+  PanelLeft,
+  Minimize2,
 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import {
@@ -95,6 +97,16 @@ interface OutlineEditorProps {
    */
   outlineFontScale?: number;
   /**
+   * Whether the outline currently owns the whole window, and the toggle for it.
+   *
+   * Supplied by the host so the button sits on the sidebar header — the surface
+   * it acts on — while the persisted state stays in one place. The control is
+   * optional so a caller that does not offer the layout change simply does not
+   * render it.
+   */
+  maximizeOutline?: boolean;
+  onToggleMaximize?: () => void;
+  /**
    * Hides the pane without unmounting it, while the client-notes panel takes
    * the full height. Kept mounted on purpose: unmounting would drop the row
    * focus and whatever the therapist had selected on the canvas.
@@ -112,6 +124,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   theme,
   enableNodeMove = false,
   outlineFontScale = 1,
+  maximizeOutline = false,
+  onToggleMaximize,
   hidden = false,
 }) => {
   const isDark = theme === 'noite';
@@ -141,6 +155,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
    */
   const [liftedId, setLiftedId] = useState<string | null>(null);
   const [liftTargetId, setLiftTargetId] = useState<string | null>(null);
+  /**
+   * True only while a POINTER is down on the Mover handle.
+   *
+   * Separate from isLifting because the cursor has to change to "grabbing" and
+   * the lifted row has to look picked up. A keyboard lift is in the same state
+   * but the pointer is not involved, so showing a grabbing cursor for it would
+   * be a lie about what the user is doing.
+   */
+  const [isDragging, setIsDragging] = useState(false);
 
   const isLifting = liftedId !== null;
 
@@ -153,17 +176,25 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   /**
    * The tree the outline actually renders.
    *
-   * While lifting this is the preview: the same list of rows, recomputed from
-   * the moved tree, so the lifted subtree genuinely appears at its destination
-   * depth. The rows are keyed by node id (see the key= below), so React MOVES
-   * the input's DOM node instead of remounting it — focus, the caret and the
-   * registration in inputRefs all survive the whole lift, which is why there is
-   * no focus bookkeeping to write here.
+   * While lifting with the KEYBOARD this is the preview: the same list of rows,
+   * recomputed from the moved tree, so the lifted subtree genuinely appears at
+   * its destination depth. The rows are keyed by node id (see the key= below),
+   * so React MOVES the input's DOM node instead of remounting it — focus, the
+   * caret and the registration in inputRefs all survive the whole lift, which
+   * is why there is no focus bookkeeping to write here.
+   *
+   * While a POINTER is dragging, it is deliberately NOT shown. Reordering the
+   * list under a pointer is a feedback loop: the destination outline moves the
+   * row the pointer is over, the next hit-test reads the row that took its
+   * place, and the drop lands one row off what the user is looking at. The
+   * dashed outline is enough — it names the destination without moving the
+   * thing the pointer is tracking.
    */
   const previewRoot = useMemo(() => {
     if (!liftedId || !liftTargetId) return null;
+    if (isDragging) return null;
     return moveNode(root, liftedId, liftTargetId).root;
-  }, [root, liftedId, liftTargetId]);
+  }, [root, liftedId, liftTargetId, isDragging]);
 
   const flatItems = flattenTree(
     previewRoot ?? root,
@@ -219,6 +250,35 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   };
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  /**
+   * Row elements, for drag hit-testing by real geometry.
+   *
+   * Measuring beats guessing: a drop is decided by where the pointer actually
+   * is over a row's box, which is what the eye is tracking, not by an index
+   * count that drifts as rows resize with the font scale.
+   */
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  /** The scrolling list, for edge auto-scroll during a drag. */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** Detaches the window-level listeners a drag installs. */
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  /**
+   * Mirrors of the lift state, so the window-level pointerup handler reads the
+   * CURRENT destination rather than the one captured when the drag started.
+   * Without these a drag that ends over a different row than it began on would
+   * commit the original target — the pointer moved, and the row followed the
+   * eye, but the commit ignored both.
+   */
+  const liftTargetIdRef = useRef<string | null>(null);
+  liftTargetIdRef.current = liftTargetId;
+  const commitLiftRef = useRef<((destination?: string) => void) | null>(null);
+  /**
+   * Set by the end of a drag, consumed by the handle's onClick.
+   *
+   * The browser fires a click after every pointerup, including a drag's. That
+   * click is not a second gesture, it is the tail of the first one.
+   */
+  const suppressClickRef = useRef(false);
   /**
    * Focus that could not be applied synchronously because the target input
    * had not mounted yet. Applied by the input's ref callback, and flushed as a
@@ -675,6 +735,14 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   useEffect(() => {
     return () => {
       if (liftNoticeTimerRef.current) window.clearTimeout(liftNoticeTimerRef.current);
+      /* A drag's listeners are on the window, not on this component, so
+       * unmounting does not remove them. A drag interrupted by a session
+       * switch, a route change or a reload would leave them behind, and the
+       * NEXT pointerup anywhere in the app would be delivered to a handler
+       * holding a dead component's state — committing a move the therapist
+       * never made. */
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
     };
   }, []);
 
@@ -732,9 +800,179 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   }, [isLifting]);
 
   /** Drops the lift without touching the tree. Esc is the usual way out. */
+  /**
+   * The candidate whose row is nearest a pointer Y position.
+   *
+   * Takes the candidate list as an argument rather than closing over
+   * `liftCandidates`. The window listeners a drag installs are created during
+   * the pointerdown, which is BEFORE setLiftedId has re-rendered — so a closure
+   * over the memo would have captured the empty list from the previous render
+   * and every hit-test would return null. Passing it in means the same
+   * computation works from the event handler and from the render.
+   *
+   * Nearest rather than "the row the pointer is inside", because the rows the
+   * move cannot use — the dragged node's own subtree, its current parent — must
+   * be skipped rather than refused. Nearest-valid keeps the drag moving
+   * smoothly over them: the destination stays where it last was, which is what
+   * a hand carrying something does when it passes over a wall.
+   */
+  const nearestCandidate = (
+    clientY: number,
+    candidates: string[]
+  ): string | null => {
+    let best: string | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const id of candidates) {
+      const el = rowRefs.current.get(id);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      // happy-dom and a hidden pane both report 0x0; a row with no box cannot
+      // be aimed at, and treating it as "at distance 0" would make it win every
+      // hit-test.
+      if (rect.height === 0 && rect.width === 0) continue;
+      // 0 when the pointer is over the row, otherwise the distance to its edge.
+      const distance =
+        clientY < rect.top
+          ? rect.top - clientY
+          : clientY > rect.bottom
+            ? clientY - rect.bottom
+            : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = id;
+      }
+    }
+    return best;
+  };
+
+  /**
+   * Starts a pointer drag from the Mover handle.
+   *
+   * Listeners live on the window rather than on the handle, because once the
+   * pointer leaves the handle the element stops receiving events unless it
+   * captures them, and a capture would swallow the click on rows underneath
+   * that the user may be aiming at.
+   *
+   * Auto-scroll is not optional: the pane can be three rows tall on a phone,
+   * so a destination 20 rows away is unreachable without it.
+   */
+  const startDrag = (e: React.PointerEvent, item: FlatOutlineItem) => {
+    if (!enableNodeMove) return;
+    if (item.id === root.id) {
+      setHint(MOVE_REFUSAL_TEXT.root);
+      return;
+    }
+    if (isLifting) return;
+    // Primary button only. A right-click opens a context menu; treating it as a
+    // drag start means the menu appears with a half-finished move behind it.
+    if (e.button !== 0) return;
+
+    const candidates = moveCandidates(root, item.id);
+    if (candidates.length === 0) {
+      setHint('Não há outro tópico para receber este aqui.');
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setLiftedId(item.id);
+
+    // Aim at nothing until the pointer actually moves.
+    //
+    // Aiming on pointer-down would make a plain click a move to whatever row
+    // happened to be nearest the handle — so a click on the button silently
+    // relocated a topic, which is the worst thing this control could do. A
+    // press-and-release with no movement is a click, and the click handler
+    // already deals with that (it starts the keyboard lift). Movement is what
+    // makes it a drag, so the destination appears only once there is one.
+    setLiftTargetId(null);
+
+    const originY = e.clientY;
+    let moved = false;
+    /**
+     * The destination, tracked OUTSIDE React state.
+     *
+     * setState is asynchronous, so a pointerup arriving in the same tick as the
+     * last pointermove would read a stale ref and commit the previous
+     * destination — or none. A hand moves and releases in the same few
+     * milliseconds, so this is the normal case, not an edge one. The ref is the
+     * pointer's own record of where it is; React state is only for painting.
+     */
+    let targetRef: string | null = null;
+
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientY - originY) < 4) return; // not yet a drag
+      moved = true;
+      const next = nearestCandidate(ev.clientY, candidates);
+      if (next) {
+        targetRef = next;
+        setLiftTargetId(next);
+      }
+
+      // Edge auto-scroll: 48px of margin at each end of the visible list. The
+      // pane can be three rows tall on a phone, so a destination 20 rows away is
+      // otherwise unreachable without scrolling by hand mid-drag.
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      const box = scroller.getBoundingClientRect();
+      const EDGE = 48;
+      if (ev.clientY < box.top + EDGE) {
+        scroller.scrollTop -= Math.max(6, (box.top + EDGE - ev.clientY) / 3);
+      } else if (ev.clientY > box.bottom - EDGE) {
+        scroller.scrollTop += Math.max(6, (ev.clientY - (box.bottom - EDGE)) / 3);
+      }
+    };
+
+    const onUp = () => {
+      cleanup();
+      // Suppress the click that the browser will synthesise after this
+      // release. Without it the button's onClick runs a moment later, sees no
+      // lift in flight, and starts a SECOND one — so a single drag committed
+      // the move and then reopened the lift on the moved row, which showed as
+      // two updates and left the outline stuck in "moving".
+      suppressClickRef.current = true;
+      // A release that never moved is a click, and the click handler owns it.
+      // A release that moved commits only if it landed on a destination:
+      // letting go over empty space below the list is a cancel, which is what
+      // letting go of something means.
+      if (!moved || !targetRef) {
+        cancelLift();
+        return;
+      }
+      setLiftTargetId(targetRef);
+      commitLiftRef.current?.(targetRef);
+    };
+
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      cleanup();
+      cancelLift();
+    };
+
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('keydown', onKey, true);
+      dragCleanupRef.current = null;
+    }
+
+    dragCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('keydown', onKey, true);
+  };
+
   const cancelLift = useCallback(() => {
     setLiftedId(null);
     setLiftTargetId(null);
+    setIsDragging(false);
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
   }, []);
 
   /* A hidden pane is still mounted on purpose (see the `hidden` prop), so it
@@ -790,43 +1028,57 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
    * made. The highlight path is recomputed from the committed tree, so the
    * client's screen shows the new ancestry rather than a stale one.
    */
-  const commitLift = useCallback(() => {
-    if (!liftedId || !liftTargetId) return;
-    const source = findNodeById(root, liftedId);
-    const target = findNodeById(root, liftTargetId);
-    if (!source || !target) {
+  const commitLift = useCallback(
+    /**
+     * The destination. A drag passes the one its pointer actually reached
+     * rather than the last one React painted, because the pointer and the
+     * release can be closer together than a re-render.
+     */
+    (destination?: string) => {
+      const targetId = destination ?? liftTargetId;
+      if (!liftedId || !targetId) return;
+      const source = findNodeById(root, liftedId);
+      const target = findNodeById(root, targetId);
+      if (!source || !target) {
+        cancelLift();
+        return;
+      }
+
+      const result = moveNode(root, liftedId, targetId);
+      if (!result.success) {
+        cancelLift();
+        setHint(MOVE_REFUSAL_TEXT[result.refusal ?? 'no-change']);
+        return;
+      }
+
+      // Whether the balloon changes side in the map, which the outline cannot
+      // show: the map alternates top-level branches by index parity.
+      const before = branchIndexOf(root, liftedId);
+      const after = branchIndexOf(result.root, liftedId);
+      const flipsSide = before !== -1 && after !== -1 && before % 2 !== after % 2;
+
+      const label = target.text.trim() || 'a linha da sessão';
       cancelLift();
-      return;
-    }
 
-    const result = moveNode(root, liftedId, liftTargetId);
-    if (!result.success) {
-      cancelLift();
-      setHint(MOVE_REFUSAL_TEXT[result.refusal ?? 'no-change']);
-      return;
-    }
+      onUpdateRoot(result.root, 'move');
+      onSelectNode(liftedId, 'click');
+      // The row keeps its id, so its input is the same element: the caret returns
+      // to the end of the text it was already in, with no focus bookkeeping.
+      focusInput(liftedId, false, 'explicit');
 
-    // Whether the balloon changes side in the map, which the outline cannot
-    // show: the map alternates top-level branches by index parity.
-    const before = branchIndexOf(root, liftedId);
-    const after = branchIndexOf(result.root, liftedId);
-    const flipsSide = before !== -1 && after !== -1 && before % 2 !== after % 2;
+      sayLiftNotice(
+        flipsSide
+          ? `“${source.text.trim() || 'Tópico'}” movido para “${label}”. Ele muda de lado no mapa para o cliente.`
+          : `“${source.text.trim() || 'Tópico'}” movido para “${label}”.`
+      );
+    },
+    [liftedId, liftTargetId, root, cancelLift, onUpdateRoot, onSelectNode, focusInput, sayLiftNotice]
+  );
 
-    const label = target.text.trim() || 'a linha da sessão';
-    cancelLift();
-
-    onUpdateRoot(result.root, 'move');
-    onSelectNode(liftedId, 'click');
-    // The row keeps its id, so its input is the same element: the caret returns
-    // to the end of the text it was already in, with no focus bookkeeping.
-    focusInput(liftedId, false, 'explicit');
-
-    sayLiftNotice(
-      flipsSide
-        ? `“${source.text.trim() || 'Tópico'}” movido para “${label}”. Ele muda de lado no mapa para o cliente.`
-        : `“${source.text.trim() || 'Tópico'}” movido para “${label}”.`
-    );
-  }, [liftedId, liftTargetId, root, cancelLift, onUpdateRoot, onSelectNode, focusInput, sayLiftNotice]);
+  // The drag's pointerup handler is registered once at drag start, before
+  // commitLift would have been re-created. A ref keeps it calling the current
+  // closure rather than a stale one.
+  commitLiftRef.current = commitLift;
 
   /**
    * Keyboard control while a lift is in flight.
@@ -974,9 +1226,45 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           <span className="uppercase text-[11px] tracking-wider text-content-muted">
             Tópicos da Sessão
           </span>
-          <span className="font-mono text-[11px] font-bold text-content-muted">
-            {flatItems.length} balões
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] font-bold text-content-muted">
+              {flatItems.length} balões
+            </span>
+            {/* The full-screen toggle lives HERE, on the surface it acts on,
+                rather than behind a settings dialog. It is a per-session way of
+                working — "I want to read and write, the client has the map" —
+                and a thing you toggle many times a day should be one click on
+                the thing itself, not a trip through a modal.
+
+                It is safe here only because this header is visible in BOTH
+                layouts: when the outline is expanded it is still the only pane
+                on screen, so the control that shrinks it is never the control
+                that was hidden. */}
+            {onToggleMaximize && (
+              <button
+                type="button"
+                onClick={onToggleMaximize}
+                title={
+                  maximizeOutline
+                    ? 'Mostrar a prévia do mapa ao lado'
+                    : 'Expandir os tópicos para a tela inteira'
+                }
+                aria-label={
+                  maximizeOutline
+                    ? 'Mostrar a prévia do mapa ao lado dos tópicos'
+                    : 'Expandir os tópicos para a tela inteira, ocultando o mapa'
+                }
+                aria-pressed={maximizeOutline}
+                className="ctl w-7 h-7 !min-h-0 px-0"
+              >
+                {maximizeOutline ? (
+                  <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <PanelLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
         {/* Hierarchy is carried by weight, not colour: text-accent-text on
             bg-surface-inset is 4.40:1 in the papel theme, just under AA. */}
@@ -1125,10 +1413,20 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         >
           <MoveVertical className="w-3.5 h-3.5 shrink-0 mt-px text-accent-text" aria-hidden="true" />
           <span className="min-w-0">
-            Movendo “{findNodeById(root, liftedId ?? '')?.text.trim() || 'tópico'}” —{' '}
-            <strong className="font-bold">setas</strong> escolhem o destino,{' '}
-            <strong className="font-bold">Enter</strong> confirma,{' '}
-            <strong className="font-bold">Esc</strong> cancela.
+            {isDragging ? (
+              <>
+                <strong className="font-bold">Solte</strong> sobre o tópico de destino, ou{' '}
+                <strong className="font-bold">Esc</strong> para cancelar. O tópico vai como
+                último filho de onde você soltar.
+              </>
+            ) : (
+              <>
+                Movendo “{findNodeById(root, liftedId ?? '')?.text.trim() || 'tópico'}” —{' '}
+                <strong className="font-bold">setas</strong> escolhem o destino,{' '}
+                <strong className="font-bold">Enter</strong> confirma,{' '}
+                <strong className="font-bold">Esc</strong> cancela.
+              </>
+            )}
           </span>
         </div>
       )}
@@ -1173,7 +1471,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           calc(), so shrinking it here re-spaces every level at once.
           overflow-x-hidden (which overflow-y:auto already implies) keeps the
           44px hit expanders from ever producing a sideways scrollbar. */}
-      <div className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto p-3 space-y-1 outline-none [--indent-step:22px] @max-[520px]:[--indent-step:14px] @max-[320px]:[--indent-step:8px]">
+      <div
+        ref={scrollRef}
+        className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto p-3 space-y-1 outline-none [--indent-step:22px] @max-[520px]:[--indent-step:14px] @max-[320px]:[--indent-step:8px]"
+      >
         {flatItems.map((item, index) => {
           const isRootItem = item.id === root.id;
           const isRowActive = activeNodeId === item.id;
@@ -1274,6 +1575,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           return (
             <div
               key={item.id}
+              ref={(el) => {
+                if (el) rowRefs.current.set(item.id, el);
+                else rowRefs.current.delete(item.id);
+              }}
               onClick={() => {
                 // A click during a lift aims the drop at that row, rather than
                 // jumping the caret there. Moving the caret mid-lift would
@@ -1312,6 +1617,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   paddingLeft: 'var(--pad-left)',
                   paddingTop: 'calc(0.625rem * var(--row-scale, 1))',
                   paddingBottom: 'calc(0.625rem * var(--row-scale, 1))',
+                  // "Picked up" while the pointer is carrying it, merged into
+                  // the same style object the row already needed. Without a
+                  // visible change to the lifted row a drag looks like nothing
+                  // is happening until the destination outline appears — and on
+                  // a touchscreen the row under the finger is hidden by the
+                  // hand, so the drop target was the only feedback there was.
+                  ...(isDragging && isLifted
+                    ? { opacity: 0.45, transform: 'scale(0.99)' }
+                    : {}),
                 } as React.CSSProperties
               }
             >
@@ -1490,20 +1804,51 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   {enableNodeMove && (
                     <button
                       type="button"
+                      onPointerDown={(e) => startDrag(e, item)}
                       onClick={(e) => {
+                        /* The click the browser synthesises at the end of a
+                           drag is the tail of that gesture, not a new one.
+                           Swallowing it is what stops a single drag from
+                           committing the move and then immediately reopening
+                           the lift on the row it just moved. */
+                        if (suppressClickRef.current) {
+                          suppressClickRef.current = false;
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return;
+                        }
+                        /* Otherwise it is a genuine click. A keyboard
+                           activation (Enter/Space) lands here too, which is how
+                           the control stays reachable without a pointer. */
                         e.stopPropagation();
+                        e.preventDefault();
                         if (isLifting) return;
                         startLift(item);
                       }}
-                      /* Keep the caret in the input. Without this the button
-                         takes focus on mousedown, blur fires, and a blank row
-                         is cancelled by the blur BEFORE this handler runs —
-                         the same trap the + Filho button documents. */
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          startLift(item);
+                        }
+                      }}
+                      /* Keep focus in the input. Without this the button takes
+                         focus on pointerdown, the row blurs, and a blank row is
+                         cancelled by the blur BEFORE this handler runs — the
+                         same trap the + Filho button documents. It also stops
+                         the focusout guard from cancelling the lift the drag
+                         just started. */
                       onMouseDown={(e) => e.preventDefault()}
-                      title="Levantar este tópico para mover de hierarquia (Ctrl+Shift+M)"
-                      aria-label={`Mover ${item.text || 'este tópico'} para outro ramo`}
-                      className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-accent-text text-accent-text transition-opacity before:content-[''] before:absolute before:-inset-3 ${
-                        isRowActive
+                      title={
+                        isDragging
+                          ? 'Solte sobre o tópico de destino'
+                          : 'Arraste para mover para outro ramo (ou Ctrl+Shift+M)'
+                      }
+                      aria-label={`Mover ${item.text || 'este tópico'}: arraste até o destino, ou use Ctrl+Shift+M`}
+                      className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-accent-text text-accent-text transition-opacity select-none touch-none before:content-[''] before:absolute before:-inset-3 ${
+                        isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                      } ${
+                        isRowActive || isDragging
                           ? 'opacity-100'
                           : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100'
                       }`}

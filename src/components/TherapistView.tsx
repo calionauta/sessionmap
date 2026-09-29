@@ -731,43 +731,21 @@ export const TherapistView: React.FC = () => {
               <Download className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            {/* Layout toggle. It lives in the app header, not on a pane,
-                because whichever pane is currently maximized is the one whose
-                control would be needed to come back — and it is the pane that
-                is gone. A control attached to a surface that can dismiss itself
-                has no way to undo the dismissal. This button is always present,
-                and it is the single control for one boolean: three buttons
-                toggling the same layout is what the design audit called out as
-                "three competing controls for one boolean". */}
-            {activeMap && (
+            {/* The outline-expand toggle lives on the sidebar itself (see
+                OutlineEditor's header), so it is not duplicated here. This one
+                exists ONLY for the case where the sidebar is not on screen:
+                with the map maximized the outline is gone, and a control that
+                lives on the outline could not bring it back. One condition, one
+                button, rather than a third control for the same boolean. */}
+            {isMaximizedMap && activeMap && (
               <button
                 type="button"
-                onClick={() => {
-                  const next = !(isMaximizedMap || maximizeOutline);
-                  // Routed through the settings, not set directly, so the
-                  // choice is persisted with everything else. Setting local
-                  // state alone would reset on reload and the user would
-                  // re-press it every session.
-                  handleUpdateSettings({ ...settings, maximizeOutline: next });
-                  setIsMaximizedMap(false);
-                }}
-                title={
-                  isMaximizedMap || maximizeOutline
-                    ? 'Restaurar a divisão com o mapa'
-                    : 'Expandir os tópicos para a tela inteira'
-                }
-                aria-label={
-                  isMaximizedMap || maximizeOutline
-                    ? 'Restaurar a divisão com o mapa'
-                    : 'Expandir os tópicos para a tela inteira, ocultando o mapa'
-                }
+                onClick={() => setIsMaximizedMap(false)}
+                title="Restaurar a divisão com os tópicos"
+                aria-label="Restaurar a divisão com os tópicos ao lado do mapa"
                 className="ctl w-9 h-9 !min-h-0 px-0"
               >
-                {isMaximizedMap || maximizeOutline ? (
-                  <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
-                ) : (
-                  <PanelLeft className="w-4 h-4" aria-hidden="true" />
-                )}
+                <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
 
@@ -827,6 +805,13 @@ export const TherapistView: React.FC = () => {
               theme={settings.theme}
               enableNodeMove={settings.enableNodeMove}
               outlineFontScale={settings.outlineFontScale}
+              maximizeOutline={maximizeOutline}
+              onToggleMaximize={() => {
+                const next = !maximizeOutline;
+                // Routed through the settings so the choice is persisted: a
+                // therapist who always works this way should not re-press it.
+                handleUpdateSettings({ ...settings, maximizeOutline: next });
+              }}
               hidden={notesExpanded}
             />
 
@@ -859,10 +844,14 @@ export const TherapistView: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                // Expanding the map dismisses the outline and vice versa, so the
-                // two controls cannot both be pressed and leave an empty window.
+                // Maximizing the map dismisses the outline, so the persisted
+                // "outline full screen" preference is switched off too. The two
+                // maximisations are mutually exclusive: a window showing
+                // neither surface would be blank.
                 setIsMaximizedMap(true);
-                handleUpdateSettings({ ...settings, maximizeOutline: false });
+                if (maximizeOutline) {
+                  handleUpdateSettings({ ...settings, maximizeOutline: false });
+                }
               }}
               title="Maximizar prévia do mapa"
               aria-label="Maximizar prévia do mapa, ocultando os tópicos"

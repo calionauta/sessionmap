@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical, PanelLeft } from 'lucide-react';
+import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
 import {
@@ -234,44 +234,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <Divider />
 
         <SettingRow
-          id="maximize-outline"
-          label={
-            <>
-              <PanelLeft className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Tópicos em Tela Inteira</span>
-            </>
-          }
-          description={
-            settings.maximizeOutline
-              ? 'A prévia do mapa fica oculta e os tópicos ocupam toda a janela. Útil quando o cliente já tem o mapa na segunda tela e você só quer ler e escrever.'
-              : 'Deixa a prévia do mapa visível ao lado dos tópicos.'
-          }
-          control={
-            <Switch
-              label="Expandir os tópicos para a tela inteira"
-              checked={settings.maximizeOutline}
-              onChange={(v) => update('maximizeOutline', v)}
-            />
-          }
-        />
-
-        <Divider />
-
-        <SettingRow
-          id="font-scale"
+          id="client-font-scale"
+          align="start"
           label={
             <>
               <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Tamanho do Texto na Janela do Cliente</span>
+              <span>Fonte das Anotações do Cliente</span>
             </>
           }
-          description="Ajuste para legibilidade ideal no vídeo compartilhado"
+          description={
+            <>
+              O tamanho dos balões que o <strong>cliente</strong> lê na segunda tela —
+              ajuste para a distância da sala: quanto maior a sala, maior a fonte.
+              <br />
+              A prévia ao lado é o espelho dessa tela e acompanha o mesmo valor.
+            </>
+          }
           control={
             <Segmented
-              label="Escala da fonte na janela do cliente"
+              label="Escala da fonte das anotações do cliente"
               value={settings.clientFontScale}
               onChange={(v) => update('clientFontScale', v)}
-              options={[0.85, 1.0, 1.15, 1.3].map((s) => ({
+              options={[0.85, 1.0, 1.15, 1.3, 1.5, 1.75].map((s) => ({
                 value: s,
                 label: `${Math.round(s * 100)}%`,
               }))}
