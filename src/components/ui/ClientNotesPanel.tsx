@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { NotebookPen, ChevronUp, ChevronDown, Check, Loader2 } from 'lucide-react';
+import {
+  NotebookPen,
+  ChevronUp,
+  ChevronDown,
+  Check,
+  Loader2,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 import { getClientNotes, saveClientNotes } from '../../services/storage';
 
 /**
@@ -25,6 +33,9 @@ interface ClientNotesPanelProps {
   /** null when no session is open, so there is no client to scope notes to. */
   clientId: string | null;
   clientName: string;
+  /** Lifted to the parent, which hides the outline while this fills the pane. */
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -32,8 +43,44 @@ type SaveState = 'idle' | 'saving' | 'saved';
 export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
   clientId,
   clientName,
+  expanded,
+  onExpandedChange,
 }) => {
-  const [open, setOpen] = useState(false);
+  /**
+   * Three states, because one boolean could not express what the notes are
+   * for.
+   *
+   * 'collapsed' — just the title strip, outline keeps full height.
+   * 'panel'     — textarea docked at the bottom, outline still usable above.
+   *              This is the reading-while-typing mode.
+   * 'expanded'  — takes the whole outline pane.
+   *
+   * The expanded state exists because these notes get read at length: a
+   * therapist referring back to context has to re-read it while the session is
+   * running, and five rows at the bottom is not enough for that. Resizing the
+   * outline pane was the tempting answer and the wrong one — that handle is
+   * sized for the tree, and dragging it to read a note is a side effect on
+   * something unrelated.
+   */
+  const [modeState, setModeState] = useState<'collapsed' | 'panel' | 'expanded'>(
+    'collapsed'
+  );
+  const mode = modeState;
+
+  // The expanded flag is owned by the parent, which is what hides the outline,
+  // so every mode change has to go through it. Accepts a value or an updater
+  // so the toggles can read as "flip it" rather than restating the logic.
+  const setMode = (
+    next:
+      | 'collapsed'
+      | 'panel'
+      | 'expanded'
+      | ((prev: 'collapsed' | 'panel' | 'expanded') => 'collapsed' | 'panel' | 'expanded')
+  ) => {
+    const resolved = typeof next === 'function' ? next(modeState) : next;
+    setModeState(resolved);
+    onExpandedChange(resolved === 'expanded');
+  };
   const [notes, setNotes] = useState('');
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [state, setState] = useState<SaveState>('idle');
@@ -105,16 +152,20 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
   const loading = clientId !== null && loadedFor !== clientId;
 
   return (
-    <div className="shrink-0 border-t border-line bg-surface-raised flex flex-col">
-      <div className="flex items-center gap-1.5 px-3 py-1.5">
+    <div
+      className={`border-line bg-surface-raised flex flex-col ${
+        expanded ? 'flex-1 min-h-0 border-t' : 'shrink-0 border-t'
+      }`}
+    >
+      <div className="flex items-center gap-1.5 px-3 py-1.5 shrink-0">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
+          onClick={() => setMode((m) => (m === 'collapsed' ? 'panel' : 'collapsed'))}
+          aria-expanded={mode !== 'collapsed'}
           aria-controls="client-notes-textarea"
           className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-[11px] font-semibold text-content-muted hover:text-content transition-colors cursor-pointer"
         >
-          {open ? (
+          {mode !== 'collapsed' ? (
             <ChevronDown className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           ) : (
             <ChevronUp className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -145,10 +196,29 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             </>
           ) : null}
         </span>
+
+        {/* Expand / reduce. Present in both open states: the notes are often
+            read at length mid-session, and resizing the outline pane is the
+            wrong tool for that — it is a drag handle sized for the tree. */}
+        {mode !== 'collapsed' && (
+          <button
+            type="button"
+            onClick={() => setMode((m) => (m === 'expanded' ? 'panel' : 'expanded'))}
+            aria-label={expanded ? 'Reduzir anotações' : 'Expandir anotações para todo o espaço'}
+            title={expanded ? 'Reduzir' : 'Expandir para todo o espaço'}
+            className="ctl w-7 h-7 !min-h-0 px-0 shrink-0"
+          >
+            {expanded ? (
+              <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+          </button>
+        )}
       </div>
 
-      {open && (
-        <div className="px-3 pb-3">
+      {mode !== 'collapsed' && (
+        <div className={`px-3 pb-3 ${expanded ? 'flex-1 min-h-0 flex' : 'shrink-0'}`}>
           <label htmlFor="client-notes-textarea" className="sr-only">
             Anotações livres sobre {clientName}. Não aparecem para o cliente.
           </label>
@@ -172,9 +242,14 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
                 ? 'Observações sobre este cliente: contexto, histórico, pontos de atenção. Salvo por cliente, some com as sessões. Não aparece para o cliente.'
                 : 'Abra uma sessão para ter um cliente associado.'
             }
-            className="w-full resize-y rounded-control border border-line bg-surface px-2.5 py-2 text-xs leading-relaxed text-content placeholder:text-content-subtle"
+            /* Expanded it fills the pane, so resize-none: a manual drag on top
+               of a flex-fill box fights the layout and leaves a second,
+               conflicting way to size the same thing. */
+            className={`w-full rounded-control border border-line bg-surface px-2.5 py-2 text-xs leading-relaxed text-content placeholder:text-content-subtle ${
+              expanded ? 'flex-1 min-h-0 resize-none' : 'resize-y'
+            }`}
           />
-          <p className="mt-1 text-[10px] text-content-subtle">
+          <p className="mt-1 shrink-0 text-[10px] text-content-subtle">
             Visível só para você. Não é compartilhado com a janela do cliente.
           </p>
         </div>

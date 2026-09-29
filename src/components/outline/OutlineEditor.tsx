@@ -42,6 +42,12 @@ interface OutlineEditorProps {
   selectedNodeId: string | null;
   focusDwellSeconds: number;
   theme: 'papel' | 'noite';
+  /**
+   * Hides the pane without unmounting it, while the client-notes panel takes
+   * the full height. Kept mounted on purpose: unmounting would drop the row
+   * focus and whatever the therapist had selected on the canvas.
+   */
+  hidden?: boolean;
 }
 
 export const OutlineEditor: React.FC<OutlineEditorProps> = ({
@@ -52,6 +58,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   selectedNodeId,
   focusDwellSeconds = 3,
   theme,
+  hidden = false,
 }) => {
   const isDark = theme === 'noite';
   const flatItems = flattenTree(root, 0, null, 0, true);
@@ -555,7 +562,16 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
        moves it again. A viewport breakpoint (sm:/md:) would therefore be the
        wrong axis twice over. This component declares itself a query CONTAINER
        and every rule below is written against the pane's own inline size. */
-    <div className="@container flex flex-col h-full min-w-0 overflow-hidden select-text bg-surface-raised text-content">
+    /* flex-1 min-h-0, not h-full. The pane is a flex COLUMN that now has a
+       sibling below it (the client-notes panel). h-full resolves against the
+       pane's own height, so outline + panel together exceeded it and the
+       section overflowed instead of the outline yielding space. As a flex
+       child it should claim the remaining space and be allowed to shrink. */
+    <div
+      className={`@container flex flex-1 min-h-0 flex-col min-w-0 overflow-hidden select-text bg-surface-raised text-content ${
+        hidden ? 'hidden' : ''
+      }`}
+    >
       {/* Refined Sidebar Header */}
       <div className="px-4 py-3 border-b border-line-muted shrink-0 bg-surface-inset text-content">
         {/* Both header rows wrap instead of crushing: at 200% zoom inside a
@@ -663,14 +679,20 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             </button>
           </div>
         ) : (
+          /* Drawn as a search FIELD, because that is what it is: a collapsed
+             field you click to open. It used to be bare 11px text with a small
+             icon and no border, which reads as a caption or a label — nothing
+             about it said "press me". Same visual language as the input it
+             becomes, so the transition is one the eye can predict, and the
+             whole row is the target rather than a word inside it. */
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
             aria-label="Buscar nos tópicos da sessão"
-            className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-content-muted hover:text-content transition-colors"
+            className="mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-control border border-line bg-surface text-content-subtle hover:text-content hover:border-accent-text hover:bg-surface-raised transition-colors cursor-pointer"
           >
-            <Search className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Buscar tópicos</span>
+            <Search className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-left text-xs">Buscar tópicos…</span>
           </button>
         )}
       </div>
