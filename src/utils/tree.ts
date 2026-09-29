@@ -88,6 +88,28 @@ export function addChild(
   return { root: appendChild(root), newNode };
 }
 
+/**
+ * Accent- and case-insensitive plain-text form, for searching.
+ *
+ * Portuguese is written with diacritics that speakers routinely omit when
+ * typing fast, and this app's users are typing mid-session while a client
+ * waits. Stripping combining marks means "saude" finds "saúde" and "familia"
+ * finds "família", which a plain toLowerCase() would miss.
+ */
+export function searchNormalize(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/** True when `haystack` contains `needle`, ignoring case and accents. */
+export function matchesQuery(haystack: string, needle: string): boolean {
+  if (!needle) return true;
+  return searchNormalize(haystack).includes(needle);
+}
+
 export function countTotalNodes(node: MindMapNode): number {
   let count = 1;
   for (const child of node.children || []) {

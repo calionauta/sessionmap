@@ -5,6 +5,9 @@ import {
   Plus,
   CornerDownRight,
   Info,
+  Search,
+  X,
+  ChevronUp,
 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import {
@@ -20,6 +23,8 @@ import {
   findParentAndIndex,
   findNodeById,
   parseMarkdownToTree,
+  searchNormalize,
+  matchesQuery,
 } from '../../utils/tree';
 
 interface OutlineEditorProps {
@@ -56,6 +61,42 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [dwellActive, setDwellActive] = useState<boolean>(false);
   /** Transient explanation for a refused action, in a live region. */
   const [hint, setHint] = useState<string>('');
+  /**
+   * Outline search.
+   *
+   * It MARKS matches rather than filtering rows out. Hiding a row would hide
+   * its ancestors, so a filtered outline is no longer a tree — a child whose
+   * parents vanished reads as a root. The tree stays intact and the matching
+   * rows are tinted, which is also what makes the whole-path context visible
+   * while jumping around.
+   */
+  const [query, setQuery] = useState<string>('');
+  const [matchCursor, setMatchCursor] = useState<number>(0);
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+
+  const normalizedQuery = searchNormalize(query);
+  /** Rows whose text contains the query, in visual order. */
+  const matchIds = normalizedQuery
+    ? flatItems
+        .filter((i) => matchesQuery(i.text, normalizedQuery))
+        .map((i) => i.id)
+    : [];
+  const isSearching = normalizedQuery.length > 0;
+
+  /**
+   * Moves to the next/previous match and focuses that row.
+   *
+   * Focusing a row is what makes the search worth having: focusInput also
+   * drives the map highlight and the client's live highlight, so jumping to a
+   * match shows the therapist WHERE that thought sits in the shared screen,
+   * not merely that the word exists somewhere in the list.
+   */
+  const stepMatch = (delta: number) => {
+    if (matchIds.length === 0) return;
+    const next = (matchCursor + delta + matchIds.length) % matchIds.length;
+    setMatchCursor(next);
+    focusInput(matchIds[next], true);
+  };
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   /**
@@ -507,6 +548,100 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           <span aria-hidden="true">·</span>
           <span>Tab: Indentar</span>
         </div>
+
+        {/* Search.
+            Collapsed to a button by default so the pane keeps its height for
+            the rows; it takes over the shortcut line while open, because that
+            line is the least valuable thing on screen at that moment. */}
+        {isSearching || searchOpen ? (
+          <div className="mt-2 flex items-center gap-1.5">
+            <div className="relative flex-1 min-w-0 flex items-center">
+              <Search
+                className="w-3.5 h-3.5 absolute left-2.5 text-content-subtle pointer-events-none"
+                aria-hidden="true"
+              />
+              <label htmlFor="outline-search" className="sr-only">
+                Buscar nos tópicos da sessão
+              </label>
+              <input
+                id="outline-search"
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setMatchCursor(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    stepMatch(e.shiftKey ? -1 : 1);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setQuery('');
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="Buscar tópico…"
+                aria-describedby="outline-search-count"
+                className="w-full pl-8 pr-2 py-1.5 text-xs rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
+              />
+            </div>
+            {/* Live count: reading "3 de 12" is how the therapist knows
+                whether the word is absent or just off-screen. */}
+            <span
+              id="outline-search-count"
+              role="status"
+              aria-live="polite"
+              className="shrink-0 font-mono text-[11px] text-content-muted whitespace-nowrap tabular-nums"
+            >
+              {matchIds.length > 0
+                ? `${matchCursor + 1}/${matchIds.length}`
+                : isSearching
+                  ? '0'
+                  : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => stepMatch(-1)}
+              disabled={matchIds.length === 0}
+              aria-label="Ocorrência anterior"
+              className="ctl w-8 h-8 !min-h-0 px-0 shrink-0"
+            >
+              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => stepMatch(1)}
+              disabled={matchIds.length === 0}
+              aria-label="Próxima ocorrência"
+              className="ctl w-8 h-8 !min-h-0 px-0 shrink-0"
+            >
+              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setSearchOpen(false);
+              }}
+              aria-label="Fechar busca"
+              className="ctl w-8 h-8 !min-h-0 px-0 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Buscar nos tópicos da sessão"
+            className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-content-muted hover:text-content transition-colors"
+          >
+            <Search className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Buscar tópicos</span>
+          </button>
+        )}
       </div>
 
       {/* Refused-action feedback.
@@ -541,6 +676,12 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
           const isRowSelected = selectedNodeId === item.id;
           const charCount = item.text.length;
           const isCharWarning = charCount > 90;
+          // Search match state. The current match is called out more strongly
+          // than the others, so stepping through them is legible in a long
+          // outline instead of a wall of equally tinted rows.
+          const isMatch = isSearching && matchesQuery(item.text, normalizedQuery);
+          const isCurrentMatch =
+            isMatch && matchIds[matchCursor % Math.max(matchIds.length, 1)] === item.id;
 
           // The active row is a full row INVERSION, not a 1px ring — 20.17:1
           // in papel. That is the strongest focus indicator in the app and
@@ -608,7 +749,13 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                  expander lost the 2px it poked past its own row to the NEXT
                  row, which paints later. 46px rows give each expander a band
                  of its own with room to spare. */
-              className={`group flex items-center py-2.5 px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}`}
+              className={`group flex items-center py-2.5 px-2.5 rounded-lg transition-all relative cursor-text ${rowContainerStyle}${
+                isCurrentMatch
+                  ? ' ring-2 ring-accent ring-offset-1 ring-offset-surface-raised'
+                  : isMatch
+                    ? ' ring-1 ring-accent/50'
+                    : ''
+              }`}
               style={
                 {
                   '--pad-left': padLeft,
