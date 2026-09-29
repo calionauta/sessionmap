@@ -51,14 +51,8 @@ import {
   tidyOutline,
 } from '../services/storage';
 import { syncService } from '../services/sync';
-import {
-  findPathToNode,
-  findNodeById,
-  generateNodeId,
-  toggleNodeCollapse,
-  formatSessionTimestamp,
-  normalizeOutline,
-} from '../utils/tree';
+import { findPathToNode, findNodeById, generateNodeId, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
+import { formatSessionTimestamp } from '../utils/text';
 
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);

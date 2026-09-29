@@ -30,7 +30,8 @@ import {
   deleteClientAndSessions,
   isArchived,
 } from '../../services/storage';
-import { countTotalNodes, formatSessionTimestamp, parseMarkdownToTree } from '../../utils/tree';
+import { countTotalNodes, parseMarkdownToTree } from '../../utils/tree';
+import { formatSessionTimestamp } from '../../utils/text';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
 import { Modal, ConfirmDialog } from '../ui/Modal';
 

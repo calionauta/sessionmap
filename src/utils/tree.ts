@@ -70,16 +70,6 @@ export function findPathToNode(root: MindMapNode, targetId: string): string[] | 
   return null;
 }
 
-export function formatSessionTimestamp(date: Date = new Date()): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const d = pad(date.getDate());
-  const m = pad(date.getMonth() + 1);
-  const y = date.getFullYear();
-  const hr = pad(date.getHours());
-  const min = pad(date.getMinutes());
-  const sec = pad(date.getSeconds());
-  return `${d}/${m}/${y} ${hr}:${min}:${sec}`;
-}
 
 export function addChild(
   root: MindMapNode,
@@ -109,27 +99,6 @@ export function addChild(
   return { root: appendChild(root), newNode };
 }
 
-/**
- * Accent- and case-insensitive plain-text form, for searching.
- *
- * Portuguese is written with diacritics that speakers routinely omit when
- * typing fast, and this app's users are typing mid-session while a client
- * waits. Stripping combining marks means "saude" finds "saúde" and "familia"
- * finds "família", which a plain toLowerCase() would miss.
- */
-export function searchNormalize(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-}
-
-/** True when `haystack` contains `needle`, ignoring case and accents. */
-export function matchesQuery(haystack: string, needle: string): boolean {
-  if (!needle) return true;
-  return searchNormalize(haystack).includes(needle);
-}
 
 export function countTotalNodes(node: MindMapNode): number {
   let count = 1;
@@ -380,72 +349,17 @@ export function branchIndexOf(root: MindMapNode, nodeId: string): number {
   return -1;
 }
 
-/**
- * The rows that could become a node's parent, in visual order.
- *
- * Deliberately excludes the node's own subtree (cycle), its current parent
- * (reordering inside a parent is Alt+Up/ArrowDown, and mixing the two gives one
- * action two meanings) and blank rows (see moveNode on why those are refused).
- *
- * The set is what the lift cursor walks, so it is a plain list of ids rather
- * than a flag on each row: the cursor is a position in a list, and the rows
- * that are not in the list are not places the cursor can be.
- */
-export function moveCandidates(root: MindMapNode, sourceId: string): string[] {
-  const source = findNodeById(root, sourceId);
-  if (!source || source.id === root.id) return [];
 
-  const path = findPathToNode(root, sourceId) ?? [];
-  const currentParentId = path.length > 1 ? path[path.length - 2] : null;
-  const banned = subtreeIds(source);
-
-  return flattenTree(root, 0, null, 0, true)
-    .filter(
-      (item) =>
-        !banned.has(item.id) &&
-        item.id !== currentParentId &&
-        (item.id === root.id || item.text.trim() !== '')
-    )
-    .map((item) => item.id);
-}
 
 /**
- * Where the lift cursor should sit when a row is lifted.
+ * Why a move was refused.
  *
- * The row ABOVE the lifted one, not the top of the outline. The mis-filed
- * topic that motivates a move is nearly always a sibling or a cousin, so
- * starting the cursor in the visual neighbourhood of where the row already
- * sits means Enter — which lands on the current candidate — does the obvious
- * thing instead of teleporting the subtree to the top of the session.
+ * The reason lives with the operation because the operation is what refuses;
+ * the sentence shown to the therapist for each one is UI policy and lives in
+ * ./lift. Splitting them is not pedantry — the type is the operation's return
+ * contract, and a test asserting on refusals should not have to import a
+ * keyboard chord to read it.
  */
-export function initialLiftTarget(root: MindMapNode, sourceId: string): string | null {
-  const candidates = moveCandidates(root, sourceId);
-  if (candidates.length === 0) return null;
-
-  const order = flattenTree(root, 0, null, 0, true).map((i) => i.id);
-  const myIndex = order.indexOf(sourceId);
-  const before = candidates.filter((id) => order.indexOf(id) < myIndex);
-  return before.length > 0 ? before[before.length - 1] : candidates[0];
-}
-
-/**
- * Moves the lift cursor by `delta`, clamped to the ends.
- *
- * The candidate list is a list, not a set of flags on the rows, so the cursor
- * is a position in a list: it cannot stop anywhere the move would refuse, and
- * the skip over an invalid row is visible as the highlight jumping rather than
- * as a keystroke that appeared to do nothing.
- */
-export function stepLiftTarget(
-  candidates: string[],
-  current: string | null,
-  delta: number
-): string | null {
-  if (candidates.length === 0) return null;
-  const from = Math.max(0, candidates.indexOf(current ?? ''));
-  return candidates[Math.min(candidates.length - 1, Math.max(0, from + delta))];
-}
-
 export type MoveRefusal =
   | 'root'
   | 'self'
@@ -554,20 +468,6 @@ export function moveNode(
 
   return { root: reattach(detachEverywhere(root)), success: true, refusal: null };
 }
-
-/**
- * Human-readable reason a move was refused, for the live region.
- *
- * A refused action that says nothing reads as a dropped key, which is the
- * failure rejectEmptyParent already documents for the create-child path.
- */
-export const MOVE_REFUSAL_TEXT: Record<MoveRefusal, string> = {
-  root: 'A linha da sessão não pode ser movida.',
-  self: 'Um tópico não pode ficar dentro de si mesmo.',
-  cycle: 'Um tópico não pode ficar dentro do que já está abaixo dele.',
-  'blank-parent': 'Escreva a anotação antes de mover um tópico para dentro dela.',
-  'no-change': 'Esse tópico já é o último filho deste.',
-};
 
 /**
  * Move node up or down among its siblings (Alt+Up / Alt+Down).
@@ -693,33 +593,4 @@ export function deleteNode(
   }
 
   return { root: remove(root), nextFocusId };
-}
-
-/**
- * The chord that lifts a topic for re-parenting.
- *
- * Shift is not optional here, and that is a macOS constraint rather than a
- * style choice. Cmd+M minimizes the window and Option+M is a system chord;
- * both are claimed by the window manager, which intercepts them BEFORE the
- * page receives the keydown. No amount of preventDefault reaches that layer,
- * so a single-modifier M did nothing in a browser on macOS while the window
- * quietly minimized. A two-modifier chord is outside what macOS reserves, and
- * all three common forms are accepted so neither Cmd nor Ctrl users are left
- * out.
- *
- * Lives here rather than in either editor because both outline modes offer the
- * same move gesture: a shortcut that behaves differently depending on which
- * editor is open is worse than not having one.
- */
-export function isLiftChord(e: {
-  key: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-}): boolean {
-  if (!e.shiftKey) return false;
-  // Exactly one modifier, so a three-finger mash is not a lift.
-  const mods = [e.ctrlKey, e.metaKey, e.altKey].filter(Boolean).length;
-  return mods === 1;
 }

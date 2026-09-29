@@ -28,7 +28,8 @@ import {
   exportClientSessionsZip,
   exportAllClientsZip,
 } from '../../utils/export';
-import { parseMarkdownToTree, formatSessionTimestamp } from '../../utils/tree';
+import { parseMarkdownToTree } from '../../utils/tree';
+import { formatSessionTimestamp } from '../../utils/text';
 import { getAllClients, getAllMaps } from '../../services/storage';
 
 interface ExportModalProps {

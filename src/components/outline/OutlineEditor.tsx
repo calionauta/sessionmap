@@ -14,29 +14,9 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
-import {
-  flattenTree,
-  updateNodeText,
-  addSibling,
-  addChild,
-  indentNode,
-  unindentNode,
-  moveSibling,
-  moveNode,
-  moveCandidates,
-  isLiftChord,
-  initialLiftTarget,
-  stepLiftTarget,
-  branchIndexOf,
-  MOVE_REFUSAL_TEXT,
-  deleteNode,
-  toggleNodeCollapse,
-  findParentAndIndex,
-  findNodeById,
-  parseMarkdownToTree,
-  searchNormalize,
-  matchesQuery,
-} from '../../utils/tree';
+import { flattenTree, updateNodeText, addSibling, addChild, indentNode, unindentNode, moveSibling, moveNode, branchIndexOf, deleteNode, toggleNodeCollapse, findParentAndIndex, findNodeById, parseMarkdownToTree } from '../../utils/tree';
+import { moveCandidates, isLiftChord, initialLiftTarget, stepLiftTarget, MOVE_REFUSAL_TEXT } from '../../utils/lift';
+import { searchNormalize, matchesQuery } from '../../utils/text';
 
 interface OutlineEditorProps {
   root: MindMapNode;

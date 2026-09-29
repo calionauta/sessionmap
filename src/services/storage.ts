@@ -1,9 +1,6 @@
 import { Client, MindMap, MindMapNode, Settings } from '../types';
-import {
-  formatSessionTimestamp,
-  generateNodeId,
-  normalizeOutline,
-} from '../utils/tree';
+import { generateNodeId, normalizeOutline } from '../utils/tree';
+import { formatSessionTimestamp } from '../utils/text';
 
 const DB_NAME = 'sessionmap_db';
 // 3 = renamed database: every record is copied out of narratips_db on upgrade.

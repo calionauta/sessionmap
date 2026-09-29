@@ -1,17 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Info, Keyboard, ListTree, MoveVertical, PanelLeft, Minimize2 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
-import {
-  findNodeById,
-  isLiftChord,
-  moveCandidates,
-  moveNode,
-  branchIndexOf,
-  MOVE_REFUSAL_TEXT,
-  flattenTree,
-  parseMarkdownToTree,
-  treeToMarkdown,
-} from '../../utils/tree';
+import { findNodeById, moveNode, branchIndexOf, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
+import { isLiftChord, moveCandidates, MOVE_REFUSAL_TEXT } from '../../utils/lift';
 
 interface MarkdownOutlineProps {
   root: MindMapNode;

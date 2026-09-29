@@ -8,7 +8,7 @@ const { render, fireEvent, cleanup, screen, act } = await import(
 );
 const React = await import('react');
 const { OutlineEditor } = await import('../outline/OutlineEditor');
-const { isLiftChord } = await import('../../utils/tree');
+const { isLiftChord } = await import('../../utils/lift');
 import type { MindMapNode } from '../../types';
 
 const node = (
