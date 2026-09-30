@@ -137,13 +137,16 @@ export function lineIndexAt(value: string, offset: number): number {
  */
 export function topicLines(value: string): number[] {
   const found: number[] = [];
+  // One pass over the text rather than readLine() per line, which would be
+  // quadratic: readLine re-walks from the start every time. This runs on every
+  // caret move, so a long session pays for it keystroke by keystroke.
+  const BULLET_START = /^\s*[-*+]\s+\S/;
   let index = 0;
   let at = 0;
   while (at <= value.length) {
     const nl = value.indexOf('\n', at);
     const end = nl === -1 ? value.length : nl;
-    const line = readLine(value, index);
-    if (line.start === at && line.isBullet && !line.isEmptyBullet) found.push(index);
+    if (BULLET_START.test(value.slice(at, end))) found.push(index);
     at = end + 1;
     index++;
     if (nl === -1) break;

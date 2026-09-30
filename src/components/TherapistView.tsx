@@ -1,26 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Lock,
-  Pause,
-  Play,
-  Share2,
-  Download,
-  Sliders,
-  Sun,
-  Moon,
-  ExternalLink,
-  ChevronDown,
   Maximize2,
   Minimize2,
-  PanelLeft,
-  Users,
-  Target,
   CheckCircle2,
+  CornerDownRight,
   Undo2,
   Redo2,
-  Layers,
   Plus,
-  CornerDownRight,
 } from 'lucide-react';
 import { Client, MindMap, MindMapNode, Settings } from '../types';
 import { OutlineEditor } from './outline/OutlineEditor';
@@ -32,6 +18,7 @@ import { MapListDrawer } from './modals/MapListDrawer';
 import { AdminClientManager } from './admin/AdminClientManager';
 import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
+import { TopBar } from './TopBar';
 import {
   getAllMaps,
   getAllClients,
@@ -632,222 +619,50 @@ export const TherapistView: React.FC = () => {
     <div
       className="flex flex-col w-screen h-screen overflow-hidden bg-surface text-content"
     >
-      {/* 1. TOP BAR */}
-      <header className="h-14 px-5 flex items-center justify-between border-b border-line bg-surface-raised z-20 shrink-0">
-        {/* Zone 1: Context (Brand, Privacy, Client & Session) */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base font-black tracking-tight text-content">
-              SessionMap
-            </span>
-            {/* Decorative brand ornament next to the wordmark — no state, so
-                it is exempt from SC 1.4.11 and hidden from AT. */}
-            <div className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden="true" />
-          </div>
+      {/* 1. TOP BAR
 
-          <div className="h-4 w-px bg-line mx-0.5" aria-hidden="true" />
+          Extracted into its own component. It was 215 lines of JSX inline here,
+          which is the component-architecture problem before the design one: a
+          view that cannot be read on its own cannot be reviewed on its own, and
+          every piece of state it needed was a prop of a thousand-line parent.
 
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-inset border border-line text-[10px] font-bold tracking-wider text-content-muted uppercase">
-            <Lock className="w-3 h-3" aria-hidden="true" />
-            <span>PRIVADO</span>
-          </div>
-
-          <div className="h-4 w-px bg-line mx-0.5" aria-hidden="true" />
-
-          {/* Client & Session Switcher Button */}
-          <button
-            type="button"
-            onClick={() => setIsAdminOpen(true)}
-            className="ctl !min-h-0 h-9 px-3 !gap-2 text-xs font-semibold"
-            title="Gerenciar Clientes e Sessões"
-            aria-label="Gerenciar clientes e sessões"
-          >
-            <Users className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
-            <span className="font-bold text-content">{activeMap?.clientName || 'Cliente'}</span>
-            <span aria-hidden="true" className="text-content-subtle">·</span>
-            <span className="font-mono text-[11px] font-medium text-content-muted">
-              {activeMap?.sessionDate || activeMap?.title || 'Sessão'}
-            </span>
-            <ChevronDown className="w-3.5 h-3.5 text-content-muted ml-0.5 shrink-0" aria-hidden="true" />
-          </button>
-        </div>
-
-        {/* Zone 2: Stream & Broadcast Status.
-            The three pills are identical apart from their state colour and
-            their words: the label carries the state for anyone who cannot
-            separate amber from red, and the dot is ringed in forced-colors. */}
-        <div className="hidden lg:flex items-center gap-2.5">
-          {/* Status Badge */}
-          {isPaused ? (
-            <div
-              role="status"
-              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-bold text-content animate-pulse"
-            >
-              <span data-state-dot="" className="w-2 h-2 rounded-full bg-negative" />
-              <span>Cliente em Pausa</span>
-            </div>
-          ) : isClientConnected ? (
-            <div
-              role="status"
-              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-bold text-content"
-            >
-              <span data-state-dot="" className="w-2 h-2 rounded-full bg-positive animate-pulse" />
-              <span>Cliente Conectado</span>
-            </div>
-          ) : (
-            /* The label stays --text in all three states (12.4:1 / 15.6:1) and
-               the state colour lives in the dot. --caution as 12px text was
-               4.40:1 on --surface-inset, a hair under AA, and the words
-               already say what the colour was saying. */
-            <div
-              role="status"
-              className="h-9 px-3 flex items-center gap-2 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content"
-            >
-              <span data-state-dot="" className="w-2 h-2 rounded-full bg-caution" />
-              <span>Cliente Desconectado</span>
-              <button
-                type="button"
-                onClick={openClientWindow}
-                className="underline hover:text-content font-bold ml-1 cursor-pointer"
-              >
-                [Abrir]
-              </button>
-            </div>
-          )}
-
-          {/* Quick Pause / Resume Button. Resuming is the primary action, so
-              the pressed state gets the accent fill rather than a second
-              bespoke red one. */}
-          <button
-            type="button"
-            onClick={togglePause}
-            title="Pausar ou retomar a tela do cliente (Ctrl+.)"
-            className={`ctl !min-h-0 h-9 px-3 text-xs font-bold ${
-              isPaused ? 'ctl-primary' : ''
-            }`}
-          >
-            {isPaused ? <Play className="w-3.5 h-3.5 fill-current" aria-hidden="true" /> : <Pause className="w-3.5 h-3.5" aria-hidden="true" />}
-            <span>{isPaused ? 'Retomar Tela' : 'Pausar (Ctrl+.)'}</span>
-          </button>
-        </div>
-
-        {/* Zone 3: Actions & Tools */}
-        <div className="flex items-center gap-2">
-          {/* Opens MapListDrawer: the session library, and the only
-              surface with per-map rename / duplicate / delete + undo. */}
-          <button
-            type="button"
-            onClick={() => setIsMapListOpen(true)}
-            title="Mapas e sessões salvos"
-            aria-label="Abrir mapas e sessões salvos"
-            className="ctl w-9 h-9 !min-h-0 px-0"
-          >
-            <Layers className="w-4 h-4" aria-hidden="true" />
-          </button>
-
-          {/* Focus Zoom Mode Toggle. aria-pressed carries the state, so the
-              amber fill is a redundant cue rather than the only one. */}
-          <button
-            type="button"
-            onClick={() =>
-              handleUpdateSettings({
-                ...settings,
-                focusZoomMode: !settings.focusZoomMode,
-              })
-            }
-            aria-pressed={settings.focusZoomMode}
-            title={
-              settings.focusZoomMode
-                ? 'Foco com Zoom ATIVADO (clique para alternar)'
-                : 'Foco com Zoom DESATIVADO (clique para ativar)'
-            }
-            className={`ctl !min-h-0 h-9 px-3 text-xs font-bold ${
-              settings.focusZoomMode ? 'ctl-primary' : ''
-            }`}
-          >
-            <Target className="w-3.5 h-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">Zoom no Foco</span>
-          </button>
-
-          {/* Primary Action Button: Open Client Window */}
-          <button
-            type="button"
-            onClick={openClientWindow}
-            className="ctl ctl-primary !min-h-0 h-9 px-3.5 text-xs font-bold"
-          >
-            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Janela do Cliente</span>
-          </button>
-
-          <div className="h-5 w-px bg-line mx-0.5" aria-hidden="true" />
-
-          {/* Tools Group */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setIsShareGuideOpen(true)}
-              title="Guia de compartilhamento seguro para Zoom/Meet/Teams"
-              aria-label="Guia de compartilhamento seguro para Zoom, Meet e Teams"
-              className="ctl w-9 h-9 !min-h-0 px-0"
-            >
-              <Share2 className="w-4 h-4" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsExportOpen(true)}
-              title="Exportar mapa (Ctrl+E)"
-              aria-label="Exportar mapa"
-              className="ctl w-9 h-9 !min-h-0 px-0"
-            >
-              <Download className="w-4 h-4" aria-hidden="true" />
-            </button>
-
-            {/* The outline-expand toggle lives on the sidebar itself (see
-                OutlineEditor's header), so it is not duplicated here. This one
-                exists ONLY for the case where the sidebar is not on screen:
-                with the map maximized the outline is gone, and a control that
-                lives on the outline could not bring it back. One condition, one
-                button, rather than a third control for the same boolean. */}
-            {isMaximizedMap && activeMap && (
-              <button
-                type="button"
-                onClick={() => setIsMaximizedMap(false)}
-                title="Restaurar a divisão com os tópicos"
-                aria-label="Restaurar a divisão com os tópicos ao lado do mapa"
-                className="ctl w-9 h-9 !min-h-0 px-0"
-              >
-                <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              title="Configurações"
-              aria-label="Configurações"
-              className="ctl w-9 h-9 !min-h-0 px-0"
-            >
-              <Sliders className="w-4 h-4" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                handleUpdateSettings({
-                  ...settings,
-                  theme: isDark ? 'papel' : 'noite',
-                })
-              }
-              title={isDark ? 'Tema Papel (claro)' : 'Tema Noite (escuro)'}
-              aria-label={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
-              className="ctl w-9 h-9 !min-h-0 px-0"
-            >
-              {isDark ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
-            </button>
-          </div>
-        </div>
-      </header>
+          The bar also went from fourteen permanent controls to four plus a
+          menu, and the one primary action is now unambiguous — see TopBar for
+          why "Janela do Cliente" and "[Abrir]" could not both be it. */}
+      <TopBar
+        clientName={activeMap?.clientName || 'Cliente'}
+        sessionLabel={activeMap?.sessionDate || activeMap?.title || 'Sessão'}
+        isClientConnected={isClientConnected}
+        isPaused={isPaused}
+        focusZoomOn={settings.focusZoomMode}
+        isDark={isDark}
+        canRestoreSplit={isMaximizedMap && Boolean(activeMap)}
+        onOpenClients={() => setIsAdminOpen(true)}
+        onOpenClientWindow={openClientWindow}
+        /* Focusing the existing window when there is one, and opening when
+           there is not. The ref is null after a reload even if the client
+           window is still up, and openClientWindow reuses the named target
+           rather than making a second window, so it is a safe fallback. */
+        onFocusClientWindow={() => {
+          if (clientWindowRef.current && !clientWindowRef.current.closed) {
+            clientWindowRef.current.focus();
+            return;
+          }
+          openClientWindow();
+        }}
+        onTogglePause={togglePause}
+        onOpenMapList={() => setIsMapListOpen(true)}
+        onToggleFocusZoom={() =>
+          handleUpdateSettings({ ...settings, focusZoomMode: !settings.focusZoomMode })
+        }
+        onOpenShareGuide={() => setIsShareGuideOpen(true)}
+        onOpenExport={() => setIsExportOpen(true)}
+        onToggleTheme={() =>
+          handleUpdateSettings({ ...settings, theme: isDark ? 'papel' : 'noite' })
+        }
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onRestoreSplit={() => setIsMaximizedMap(false)}
+      />
 
       {/* 2. MAIN SPLIT VIEW */}
       <main ref={mainRef} className="flex-1 flex overflow-hidden relative">
@@ -959,7 +774,13 @@ export const TherapistView: React.FC = () => {
                     setOutlineWidthPercent(OUTLINE_MIN_PERCENT);
                   }
                 }}
-                className="group absolute right-0 top-0 bottom-0 z-20 w-0 -mr-[22px] cursor-col-resize touch-none select-none focus:outline-none"
+                /* w-11 with -mr-11px, NOT w-0. For an absolutely positioned box
+                   `right: 0` pins the right MARGIN edge, so a negative
+                   margin-right pushes the whole element outward: w-0 left a
+                   zero-width band sitting entirely OUTSIDE the pane, which is
+                   a handle nobody can hit. 44px wide and pulled 22px out puts
+                   the band across the border, 22px inside and 22px outside. */
+                className="group absolute right-0 top-0 bottom-0 z-20 w-11 -mr-[22px] cursor-col-resize touch-none select-none focus:outline-none"
               >
                 {/* The rule, and the grip, are on inner elements so the 44px hit
                     area can stay invisible. The grip is what says "this is

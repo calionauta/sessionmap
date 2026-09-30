@@ -65,11 +65,14 @@ function parentAbove(
   lineIndex: number,
   indent: string,
   topics: FlatOutlineItem[],
-  rootId: string
+  starts: number[]
 ): FlatOutlineItem | null {
   const parentLine = parentTopicLine(value, lineIndex, indent);
   if (parentLine === -1) return null;
-  const ordinal = topicLines(value).indexOf(parentLine);
+  // `starts` is passed in rather than recomputed: the caller already walked the
+  // buffer for the caret's own line, and doing it twice on every caret move is
+  // the kind of redundancy that turns into a stall once a session is long.
+  const ordinal = starts.indexOf(parentLine);
   if (ordinal === -1) return null;
   return topics[ordinal] ?? null;
 }
@@ -198,7 +201,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     // from the buffer's own indentation, because the tree cannot help for a node
     // that does not exist.
     if (line.isEmptyBullet) {
-      const parentItem = parentAbove(value, lineIndex, line.indent, topics, parsedRoot.id);
+      const parentItem = parentAbove(value, lineIndex, line.indent, topics, starts);
       return {
         node: null,
         parentId: parentItem?.id ?? parsedRoot.id,
