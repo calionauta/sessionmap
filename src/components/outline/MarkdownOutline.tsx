@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HelpCircle, Info, PanelLeft, Minimize2 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode, SelectReason } from '../../types';
 import { findNodeById, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
-import { readLine, lineIndexAt, topicLines, parentTopicLine } from '../../utils/bufferLine';
+import { readLine, lineIndexAt, topicLines, parentTopicLine, BufferLine } from '../../utils/bufferLine';
 
 interface MarkdownOutlineProps {
   root: MindMapNode;
@@ -43,24 +43,38 @@ interface Caret {
 }
 
 /**
- * The topic an empty bullet at `indent` would become a child of.
+ * Everything one question about one position needs.
+ *
+ * Five positional parameters was five ways to call this wrong, and two of them
+ * — the value and the line index — are not independent: neither means anything
+ * without the other. Bundling them says what the function actually asks, which
+ * is "given where the caret is, what does a new bullet there attach to".
+ */
+interface CaretPlace {
+  /** The buffer as typed. */
+  value: string;
+  /** The line the caret is on, already taken apart. */
+  line: BufferLine;
+  /** The topics, root excluded, in document order. */
+  topics: FlatOutlineItem[];
+  /** The line index of every topic, parallel to `topics`. */
+  starts: number[];
+}
+
+/**
+ * The topic an empty bullet at the caret's indent would become a child of.
  *
  * Walks the lines above and takes the first one that is a topic at a SHALLOWER
  * indent, which is exactly how the parser nests. A bullet at column zero finds
  * nothing and returns null, and the caller reads that as the session root.
  */
-function parentAbove(
-  value: string,
-  lineIndex: number,
-  indent: string,
-  topics: FlatOutlineItem[],
-  starts: number[]
-): FlatOutlineItem | null {
-  const parentLine = parentTopicLine(value, lineIndex, indent);
+function parentAbove({ value, line, topics, starts }: CaretPlace): FlatOutlineItem | null {
+  const parentLine = parentTopicLine(value, line.index, line.indent);
   if (parentLine === -1) return null;
-  // `starts` is passed in rather than recomputed: the caller already walked the
-  // buffer for the caret's own line, and doing it twice on every caret move is
-  // the kind of redundancy that turns into a stall once a session is long.
+  // `starts` is carried in rather than recomputed: the caller already walked
+  // the buffer for the caret's own line, and doing it twice on every caret
+  // move is the kind of redundancy that turns into a stall once a session is
+  // long.
   const ordinal = starts.indexOf(parentLine);
   if (ordinal === -1) return null;
   return topics[ordinal] ?? null;
@@ -225,7 +239,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     // from the buffer's own indentation, because the tree cannot help for a node
     // that does not exist.
     if (line.isEmptyBullet) {
-      const parentItem = parentAbove(value, lineIndex, line.indent, topics, starts);
+      const parentItem = parentAbove({ value, line, topics, starts });
       return {
         node: null,
         parentId: parentItem?.id ?? live.root.id,
