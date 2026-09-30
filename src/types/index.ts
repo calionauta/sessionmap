@@ -48,7 +48,6 @@ export interface Settings {
   theme: 'papel' | 'noite';
   liveTextMode: 'live' | 'confirm_only';
   thinBarAlwaysVisible: boolean;
-  focusDwellSeconds: number;
   autoFitOnAdd: boolean;
   clientFontScale: number;
   focusZoomMode: boolean; // Zoom in on active node + parents + children when navigating
@@ -85,11 +84,13 @@ export interface Settings {
 /**
  * Why a selection changed.
  *
- * 'caret' is the therapist's OWN view following the cursor and is never sent to
- * the client window — see handleSelectNode. The rest travel, because the
- * client's highlight is what the dwell setting is about.
+ * 'caret' is the cursor moving to a different topic, and it travels like the
+ * rest: the client window should show where the therapist IS, not where they
+ * were three seconds ago. It is a separate reason because it is a different
+ * KIND of change — a deliberate click, a clear — and the code that sends it
+ * treats a null differently (see handleSelectNode).
  */
-export type SelectReason = 'caret' | 'focus3s' | 'click' | 'clear' | 'navigate';
+export type SelectReason = 'caret' | 'click' | 'clear' | 'navigate';
 
 export type SyncMessage =
   | { type: 'snapshot'; map: MindMap }
@@ -109,7 +110,7 @@ export type SyncMessage =
       selection: {
         nodeId: string | null;
         /** 'caret' never reaches here: it is local-only by design. */
-        reason: Exclude<SelectReason, 'caret'>;
+        reason: SelectReason;
       };
     }
   | { type: 'pause'; paused: boolean }

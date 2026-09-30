@@ -50,11 +50,7 @@ let drafts: Array<{
   active: boolean;
 }> = [];
 
-function setup(
-  root: MindMapNode = fixture(),
-  focusDwellSeconds = 0,
-  outlineFontScale = 1
-) {
+function setup(root: MindMapNode = fixture(), outlineFontScale = 1) {
   lastRoot = root;
   updateCount = 0;
   reasons = [];
@@ -77,7 +73,6 @@ function setup(
         drafts.push(d);
       },
       selectedNodeId: null,
-      focusDwellSeconds,
       theme: 'papel' as const,
       outlineFontScale,
     }),
@@ -122,6 +117,19 @@ function caretOnLine(fragment: string) {
   if (offset === -1) throw new Error(`no line "${fragment}" in:\n${el.value}`);
   caretAt(offset);
   return offset;
+}
+
+/**
+ * Lets a pending requestAnimationFrame run.
+ *
+ * Enter rewrites the buffer and puts the caret back in a rAF, so anything that
+ * asks "where is the caret now" straight after a keypress is reading the line
+ * the caret just left.
+ */
+async function flush() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
 }
 
 /** Waits past a dwell of `seconds`, in real time. */
@@ -317,121 +325,6 @@ describe('the markdown buffer', () => {
     const other = node('root2', '01/01/2026', [node('solo', 'Outro cliente')]);
     setup(other);
     expect(textarea().value).toBe('# 01/01/2026\n- Outro cliente');
-  });
-});
-
-describe('dwell in the markdown buffer', () => {
-  afterEach(() => {
-    cleanup();
-    container?.remove();
-    container = null;
-  });
-
-  test('resting the caret on a topic lights its balloon up', async () => {
-    // The bug: this mode simply had no dwell at all, so the setting did
-    // nothing here and the balloons never followed the caret.
-    setup(fixture(), 1);
-    caretOnLine('- cansaço');
-
-    // Navigation arms the dwell, it does not fire it.
-    expect(dwells()).toEqual([]);
-
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([{ nodeId: 't1', reason: 'focus3s' }]);
-  });
-
-  test('at 0 the dwell never arms', async () => {
-    // 0 means "desligado", and it has to mean it here too rather than falling
-    // back to a default the therapist never chose.
-    setup(fixture(), 0);
-    caretOnLine('- cansaço');
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([]);
-  });
-
-  test('the session heading lights up the root balloon', async () => {
-    // The heading IS the root: the session's own name. Reading it as "not a
-    // topic" left the dwell dead on the one line a therapist lands on first,
-    // and dead on the client's screen with it.
-    setup(fixture(), 1);
-    caretOnLine('# 28/09/2026');
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([{ nodeId: 'root', reason: 'focus3s' }]);
-  });
-
-  test('a click highlights at once instead of waiting', () => {
-    // A pointer click is a deliberate act on one topic; making it wait three
-    // seconds is what makes an app feel broken.
-    setup(fixture(), 5);
-    caretOnLine('- cansaço');
-    act(() => {
-      fireEvent.click(textarea());
-    });
-    // The caret move above armed a dwell; the click is what resolves it now.
-    expect(selections.filter((s) => s.reason === 'click')).toEqual([
-      { nodeId: 't1', reason: 'click' },
-    ]);
-  });
-
-  test('moving the caret re-arms on the new topic', async () => {
-    setup(fixture(), 1);
-    caretOnLine('- cansaço');
-    caretOnLine('- mãe apoia');
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([{ nodeId: 'f1', reason: 'focus3s' }]);
-  });
-
-  test('moving WITHIN one line does not re-arm', async () => {
-    // The dwell is about a topic, and a topic is a line. Left and right inside
-    // one line cannot change the answer, so restarting the timer on every arrow
-    // press was churn — and a therapist arrowing to read a long thought would
-    // keep pushing the highlight away.
-    setup(fixture(), 1);
-    caretOnLine('- cansaço');
-    const el = textarea();
-    const start = el.value.indexOf('- cansaço');
-    act(() => {
-      el.setSelectionRange(start + 2, start + 2);
-      fireEvent.select(el);
-    });
-    act(() => {
-      el.setSelectionRange(start + 4, start + 4);
-      fireEvent.select(el);
-    });
-    await waitPastDwell(1);
-    // Still fires — once, for the line it was armed on.
-    expect(dwells()).toEqual([{ nodeId: 't1', reason: 'focus3s' }]);
-  });
-
-  test('two topics with the same text each light up their own balloon', async () => {
-    // The bug: the caret line was matched to a topic BY TEXT, so the second
-    // "ansiedade" resolved to the first one and the dwell lit a balloon two
-    // rows away. Matching by position fixes it, and duplicated wording is
-    // ordinary rather than exotic in notes about sleep or family.
-    const root = node('root', '28/09/2026', [
-      node('a1', 'ansiedade', [node('a2', 'ansiedade')]),
-      node('b', 'sono'),
-    ]);
-    setup(root, 1);
-
-    caretOnLine('- ansiedade');
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([{ nodeId: 'a1', reason: 'focus3s' }]);
-
-    cleanup();
-    container?.remove();
-    selections = [];
-    drafts = [];
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    setup(root, 1);
-    const nested = textarea().value.indexOf('\n  - ansiedade');
-    act(() => {
-      textarea().setSelectionRange(nested + 3, nested + 3);
-      fireEvent.select(textarea());
-    });
-    await waitPastDwell(1);
-    expect(dwells()).toEqual([{ nodeId: 'a2', reason: 'focus3s' }]);
   });
 });
 
@@ -675,7 +568,7 @@ describe('the buffer and the font scale', () => {
     // container, and the textarea reads the same variable. What matters is that
     // the setting still does something at all, rather than becoming a dead knob
     // along with the editor it was sized for.
-    setup(fixture(), 0, 1.4);
+    setup(fixture(), 1.4);
     const wrapper = container!.querySelector<HTMLElement>('[style*="--row-scale"]');
     expect(wrapper).not.toBeNull();
     expect(wrapper!.getAttribute('style')).toContain('1.4');
@@ -801,17 +694,6 @@ describe("the therapist's own map follows the caret", () => {
     ]);
   });
 
-  test('it is never sent to the client', async () => {
-    // The client is on a second screen mid-session, and a map that slides on
-    // every arrow key is a distraction. That is what the dwell setting is for,
-    // and 'caret' exists precisely so the two can differ.
-    setup(fixture(), 1);
-    caretOnLine('- cansaço');
-    // Whatever the dwell decides, the local reason is the one that must not
-    // travel — and it is not one the sync channel's type admits at all.
-    expect(follows().every((s) => s.reason === 'caret')).toBe(true);
-  });
-
   test('typing a new topic picks it up as soon as it is a topic', () => {
     // The follow is a change, and null IS a change: leaving a topic for a blank
     // bullet has to release the map, or it keeps centring whatever was last
@@ -869,3 +751,72 @@ describe('the caret resolves against what is on screen, not the committed tree',
     expect(drafts.at(-1)?.text).toBe('cansaço');
   });
 });
+
+describe("the client's map follows the caret", () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  const caret = () => selections.filter((s) => s.reason === 'caret');
+
+  test('navigating to a topic moves the client, with no wait', () => {
+    // The report: writing a list of topics never contains a three-second pause.
+    // Every Enter cancelled the old timer and every keystroke restarted it, so
+    // the client's map only caught up once the therapist stopped — and stopping
+    // somewhere ELSE was the only way to make it happen.
+    setup();
+    caretOnLine('- cansaço');
+    expect(caret()).toEqual([{ nodeId: 't1', reason: 'caret' }]);
+  });
+
+  test('a fresh bullet does NOT clear the client', async () => {
+    // The one asymmetry. "No topic under the caret" is true locally — the
+    // therapist's own map stops centring the topic they just finished — but
+    // handleSelectNode drops a null from the wire, because sending it would
+    // blank the client's view on every single Enter, mid-sentence. There is
+    // nothing to follow TO, so the client stays where it is.
+    setup();
+    // Enter at the END leaves a bullet with nothing in it. In the middle it
+    // splits the text across two bullets, the way every outliner does, and the
+    // text after the caret becomes the new bullet's.
+    caretAtEndOfLine('- cansaço');
+    act(() => {
+      fireEvent.keyDown(textarea(), { key: 'Enter' });
+    });
+    await flush();
+    expect(caret().at(-1)).toEqual({ nodeId: null, reason: 'caret' });
+  });
+
+  test('each topic created with Enter reaches the client, with no wait', async () => {
+    // The report in one assertion: making a list of topics never contains a
+    // three-second pause, so the client's map has to move on the keystroke that
+    // names the topic. Each new item is a different node, so each is a
+    // different id, and the last one is where the map ended up.
+    setup();
+    const where = () => caret().filter((s) => s.nodeId !== null).at(-1)?.nodeId;
+
+    caretAtEndOfLine('- cansaço');
+    act(() => {
+      fireEvent.keyDown(textarea(), { key: 'Enter' });
+    });
+    await flush();
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - sono');
+    caretOnLine('- sono');
+    const afterFirst = where();
+
+    act(() => {
+      fireEvent.keyDown(textarea(), { key: 'Enter' });
+    });
+    await flush();
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - sono\n  - chefe cobra');
+    caretOnLine('- chefe cobra');
+    const afterSecond = where();
+
+    expect(afterFirst).toBeTruthy();
+    expect(afterFirst).not.toBe('t1');
+    expect(afterSecond).toBeTruthy();
+    expect(afterSecond).not.toBe(afterFirst);
+  });
+  });

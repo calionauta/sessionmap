@@ -272,19 +272,21 @@ export const TherapistView: React.FC = () => {
   // Broadcast selection
   const handleSelectNode = useCallback(
     (nodeId: string | null, reason: SelectReason) => {
-      /* 'caret' is LOCAL ONLY, and the distinction is the point.
+      /* The client follows the caret too, and 'caret' is the reason that says so.
 
-         The therapist is looking at their own screen and wants the balloon they
-         are typing into in the middle of it, now — not after the dwell. The
-         client is looking at a second screen mid-session, and a map that
-         slides on every arrow key is a distraction rather than a help; that is
-         what the dwell setting governs, and what 'focus3s' is for.
+         It used not to: only the dwell was broadcast, and a dwell is a pause
+         the therapist has to take. Writing a list of topics does not contain
+         one — every Enter cancels the dwell and every keystroke restarts it —
+         so the client's map simply did not move until they stopped, and
+         stopping somewhere else was the only way to make it catch up.
 
-         So the caret moves the therapist's own view and is never sent. One
-         channel and two audiences, told apart by the reason, rather than a
-         second callback that would have to be kept in step with this one. */
+         A null is NOT broadcast, and that is the one asymmetry. "No topic under
+         the caret" is a real fact locally — the therapist's own map stops
+         centring whatever was last written — but sending it would clear the
+         client's view on every single Enter, mid-sentence. There is nothing to
+         follow TO, so the client stays where it is. */
       setSelectedNodeId(nodeId);
-      if (reason === 'caret') return;
+      if (reason === 'caret' && !nodeId) return;
       syncService.send({ type: 'select', selection: { nodeId, reason } });
     },
     []
@@ -761,7 +763,6 @@ export const TherapistView: React.FC = () => {
               onDraftChange={handleDraftChange}
               onSelectNode={handleSelectNode}
               selectedNodeId={selectedNodeId}
-              focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
               outlineFontScale={settings.outlineFontScale}
               maximizeOutline={maximizeOutline}

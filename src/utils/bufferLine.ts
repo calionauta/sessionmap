@@ -3,7 +3,7 @@
  *
  * A plain textarea has no notion of a topic, so every decision the editor makes
  * about the caret — which topic it is in, what Enter should type, whether the
- * dwell should re-arm — starts by asking what the line under the caret actually
+ * map should follow — starts by asking what the line under the caret actually
  * says. That question is pure text, so it lives here with no React and no DOM,
  * and the tests for it are tests of text rather than of a rendered component.
  */

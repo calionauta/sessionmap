@@ -18,13 +18,6 @@ interface MarkdownOutlineProps {
     active: boolean;
   }) => void;
   selectedNodeId: string | null;
-  /**
-   * Seconds the caret must rest on a topic before its balloon lights up.
-   *
-   * 0 means "never" and is honoured as such rather than treated as "use the
-   * default".
-   */
-  focusDwellSeconds: number;
   theme: 'papel' | 'noite';
   outlineFontScale: number;
   maximizeOutline?: boolean;
@@ -79,7 +72,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   onSelectNode,
   onDraftChange,
   selectedNodeId,
-  focusDwellSeconds,
   theme,
   outlineFontScale = 1,
   maximizeOutline = false,
@@ -171,7 +163,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * that starts a topic is the Nth topic. Matching by text was the obvious
    * thing, and it is wrong the moment a session says the same word twice — for
    * notes about sleep, family or anxiety that is not an edge case but a
-   * Tuesday. Two "ansiedade" lines, and the dwell lit the first one whichever
+   * Tuesday. Two "ansiedade" lines, and the map lit the first one whichever
    * line the caret was on.
    *
    * Position is trusted only when the counts agree, one topic-starting line per
@@ -206,8 +198,8 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     const ordinal = starts.indexOf(lineIndex);
 
     /* THE SESSION HEADING IS THE ROOT NODE, which is what it is: the session's
-     * own name. Reading it as "not a topic" left the dwell dead on the one line
-     * a therapist lands on first, and dead on the client's screen with it. The
+     * own name. Reading it as "not a topic" left the map dead on the one line a
+     * therapist lands on first, and dead on the client's screen with it. The
      * lift already refuses to move the root, so resolving it costs nothing. */
     if (line.isHeading) {
       return {
@@ -288,64 +280,10 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     [onDraftChange, parsedRoot.id]
   );
 
-  /* ==================== DWELL (auto-focus) ==================== */
-
-  const dwellRef = useRef<{ nodeId: string; timer: number } | null>(null);
-
-  const cancelDwell = useCallback(() => {
-    if (dwellRef.current) {
-      window.clearTimeout(dwellRef.current.timer);
-      dwellRef.current = null;
-    }
-  }, []);
+  /* ==================== WHERE THE CARET IS ==================== */
 
   /**
-   * Resting the caret on a topic lights its balloon up, after the configured
-   * delay.
-   *
-   * A plain setTimeout, and the reason is that there is nothing to draw. A
-   * progress ring needs a requestAnimationFrame loop to animate; a buffer has no
-   * rows and no ring, so a timer that fires once is the whole thing.
-   *
-   * Armed on every caret move and on typing. Typing counts as resting: a
-   * therapist working through a session writes a thought, pauses to think, and
-   * that pause is exactly the moment the map should catch up with them.
-   */
-  const armDwell = useCallback(
-    (nodeId: string | null) => {
-      cancelDwell();
-      if (!nodeId || focusDwellSeconds <= 0) return;
-      dwellRef.current = {
-        nodeId,
-        timer: window.setTimeout(() => {
-          dwellRef.current = null;
-          onSelectNode(nodeId, 'focus3s');
-        }, focusDwellSeconds * 1000),
-      };
-    },
-    [cancelDwell, focusDwellSeconds, onSelectNode]
-  );
-
-  useEffect(() => cancelDwell, [cancelDwell]);
-
-  /**
-   * The line the dwell was last armed for.
-   *
-   * A dwell is about a TOPIC, and a topic is a line. Moving the caret left and
-   * right inside one line changes nothing the map can show, so re-arming on
-   * every arrow press was churn: a timer torn down and rebuilt for a balloon
-   * that was never going to be a different balloon. Only a change of line
-   * re-arms, which is also the only change that can change the answer.
-   *
-   * Typing is the exception and does re-arm, because it changes the text of the
-   * balloon. A therapist writing a thought and pausing to think should see the
-   * map catch up with what they have written so far, not with what they wrote
-   * before the pause.
-   */
-  const armedLineRef = useRef<number>(-1);
-
-  /**
-   * The topic the therapist's own map is already following.
+   * The topic the map is already following — in both windows.
    *
    * Held so the follow is a CHANGE, not a position: arrowing across a line
    * character by character would otherwise re-centre the map on every
@@ -357,11 +295,10 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   /**
    * Moves the therapist's OWN map to the topic under the cursor.
    *
-   * Local only, and immediately — the dwell is the client's business. A
-   * therapist writing in the left pane wants the balloon they are writing into
-   * in the middle of their own window; making them wait three seconds, or
-   * navigate a different topic first, is the map not answering a question that
-   * was asked.
+   * Both windows, immediately. A therapist writing in the left pane wants the
+   * balloon they are writing into in the middle of their own window AND in the
+   * client's; making either of them wait, or navigate somewhere else first, is
+   * the map not answering a question that was asked.
    */
   const announceCaret = useCallback(
     (caret: Caret) => {
@@ -380,26 +317,25 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * control nothing; a pointer click is a deliberate act on one topic and
    * highlights at once.
    */
+  /**
+   * A click is a deliberate act on one topic and says so. Everything else —
+   * an arrow, a keystroke, a fresh bullet — is the caret being somewhere, and
+   * the map follows the TOPIC it is on. Which is a change, not a position:
+   * announced once per topic, so typing inside one does not re-centre the map
+   * on every character.
+   */
   const followCaret = useCallback(
     (intent: 'navigate' | 'typing' | 'explicit') => {
       const caret = caretNode();
       broadcastCaret(caret);
-
       if (intent === 'explicit') {
-        cancelDwell();
-        armedLineRef.current = caret.lineIndex;
         followedRef.current = caret.node?.id ?? null;
         onSelectNode(caret.node?.id ?? null, 'click');
         return;
       }
-      if (intent === 'navigate' && caret.lineIndex === armedLineRef.current) {
-        return;
-      }
-      armedLineRef.current = caret.lineIndex;
-      armDwell(caret.node?.id ?? null);
       announceCaret(caret);
     },
-    [announceCaret, armDwell, broadcastCaret, cancelDwell, caretNode, onSelectNode]
+    [announceCaret, broadcastCaret, caretNode, onSelectNode]
   );
 
   /**
@@ -743,21 +679,14 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
           }}
           onKeyDown={handleKeyDown}
           /* onSelect, not onKeyUp: a click, a drag-selection and every arrow
-           * key all move the caret and all fire it, so the dwell follows the
-           * caret rather than a list of keys that would still miss the mouse.
-           *
-           * 'navigate' rather than 'typing' on purpose — only a change of LINE
-           * re-arms the dwell from here, so the left and right arrows inside
-           * one topic do not keep restarting a timer whose answer cannot
-           * change. */
+           * key all move the caret and all fire it, so the follow tracks the
+           * caret rather than a list of keys that would still miss the mouse. */
           onSelect={() => followCaret('navigate')}
           onClick={() => {
-            /* Resolves the dwell the select above armed. Whichever order the
-             * browser fires them in, the outcome is the same node: select
-             * arms, click cancels and highlights. Relying on that is safe here
-             * because a re-armed dwell on the node just highlighted would only
-             * re-broadcast an id that is already selected — there is no ring in
-             * this mode for it to look wrong against. */
+            /* A click is a deliberate act, so it says so rather than letting
+             * the select above speak for it. Whichever order the browser fires
+             * them in, the outcome is the same node: select follows, click
+             * follows and marks it deliberate. */
             followCaret('explicit');
           }}
           onBlur={() => {
@@ -773,9 +702,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
              * textarea is the source of truth while it has focus. */
             if (pendingRef.current) window.clearTimeout(pendingRef.current);
             pendingRef.current = null;
-            // Otherwise the dwell would fire into a field nobody is in and
-            // light a balloon up on the way out.
-            cancelDwell();
             const value = textareaRef.current?.value ?? text;
             if (!isUnchanged(value)) {
               onUpdateRoot(parseMarkdownToTree(value, root.text, root), 'markdown');

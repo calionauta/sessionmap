@@ -21,7 +21,6 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'papel',
   liveTextMode: 'live',
   thinBarAlwaysVisible: false,
-  focusDwellSeconds: 3,
   autoFitOnAdd: true,
   clientFontScale: 1.0,
   focusZoomMode: true, // Default to true so therapist can see focus zoom in action!

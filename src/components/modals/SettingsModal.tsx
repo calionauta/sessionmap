@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Moon, Sun, Type, Clock, Eye } from 'lucide-react';
+import { Sliders, Moon, Sun, Type, Eye } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
 import {
@@ -102,54 +102,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             />
           }
         />
-
-        <Divider />
-
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <div
-              id="dwell-label"
-              className="font-bold text-xs text-content flex items-center gap-1.5"
-            >
-              <Clock className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Tempo do Foco Automático no Outline</span>
-            </div>
-            <span className="text-xs font-mono font-bold text-content">
-              {settings.focusDwellSeconds === 0
-                ? 'Desligado'
-                : `${settings.focusDwellSeconds} segundos`}
-            </span>
-          </div>
-          <p className="text-xs text-content-muted font-medium mb-3">
-            Tempo com o cursor parado numa linha para iluminar o balão
-            correspondente para você e para o cliente.
-          </p>
-          <input
-            type="range"
-            min="0"
-            max="8"
-            step="1"
-            value={settings.focusDwellSeconds}
-            onChange={(e) => update('focusDwellSeconds', Number(e.target.value))}
-            aria-labelledby="dwell-label"
-            aria-valuetext={
-              settings.focusDwellSeconds === 0
-                ? 'Desligado'
-                : `${settings.focusDwellSeconds} segundos`
-            }
-            className="w-full accent-amber-500 cursor-pointer"
-          />
-          <div
-            className="flex justify-between text-[11px] font-mono text-content-muted mt-1"
-            aria-hidden="true"
-          >
-            <span>Desligado</span>
-            <span className="font-bold text-accent-text">3s (recomendado)</span>
-            <span>8s</span>
-          </div>
-        </div>
-
-        <Divider />
 
         <SettingRow
           id="focus-zoom"
