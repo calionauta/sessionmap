@@ -43,7 +43,6 @@ let drafts: Array<{
 
 function setup(
   root: MindMapNode = fixture(),
-  enableNodeMove = true,
   focusDwellSeconds = 0,
   outlineFontScale = 1
 ) {
@@ -71,7 +70,6 @@ function setup(
       selectedNodeId: null,
       focusDwellSeconds,
       theme: 'papel' as const,
-      enableNodeMove,
       outlineFontScale,
     }),
     { container }
@@ -323,7 +321,7 @@ describe('dwell in the markdown buffer', () => {
   test('resting the caret on a topic lights its balloon up', async () => {
     // The bug: this mode simply had no dwell at all, so the setting did
     // nothing here and the balloons never followed the caret.
-    setup(fixture(), true, 1);
+    setup(fixture(), 1);
     caretOnLine('- cansaço');
 
     // Navigation arms the dwell, it does not fire it.
@@ -336,7 +334,7 @@ describe('dwell in the markdown buffer', () => {
   test('at 0 the dwell never arms', async () => {
     // 0 means "desligado", and it has to mean it here too rather than falling
     // back to a default the therapist never chose.
-    setup(fixture(), true, 0);
+    setup(fixture(), 0);
     caretOnLine('- cansaço');
     await waitPastDwell(1);
     expect(selections).toEqual([]);
@@ -346,7 +344,7 @@ describe('dwell in the markdown buffer', () => {
     // The heading IS the root: the session's own name. Reading it as "not a
     // topic" left the dwell dead on the one line a therapist lands on first,
     // and dead on the client's screen with it.
-    setup(fixture(), true, 1);
+    setup(fixture(), 1);
     caretOnLine('# 28/09/2026');
     await waitPastDwell(1);
     expect(selections).toEqual([{ nodeId: 'root', reason: 'focus3s' }]);
@@ -355,7 +353,7 @@ describe('dwell in the markdown buffer', () => {
   test('a click highlights at once instead of waiting', () => {
     // A pointer click is a deliberate act on one topic; making it wait three
     // seconds is what makes an app feel broken.
-    setup(fixture(), true, 5);
+    setup(fixture(), 5);
     caretOnLine('- cansaço');
     act(() => {
       fireEvent.click(textarea());
@@ -365,7 +363,7 @@ describe('dwell in the markdown buffer', () => {
   });
 
   test('moving the caret re-arms on the new topic', async () => {
-    setup(fixture(), true, 1);
+    setup(fixture(), 1);
     caretOnLine('- cansaço');
     caretOnLine('- mãe apoia');
     await waitPastDwell(1);
@@ -377,7 +375,7 @@ describe('dwell in the markdown buffer', () => {
     // one line cannot change the answer, so restarting the timer on every arrow
     // press was churn — and a therapist arrowing to read a long thought would
     // keep pushing the highlight away.
-    setup(fixture(), true, 1);
+    setup(fixture(), 1);
     caretOnLine('- cansaço');
     const el = textarea();
     const start = el.value.indexOf('- cansaço');
@@ -403,7 +401,7 @@ describe('dwell in the markdown buffer', () => {
       node('a1', 'ansiedade', [node('a2', 'ansiedade')]),
       node('b', 'sono'),
     ]);
-    setup(root, true, 1);
+    setup(root, 1);
 
     caretOnLine('- ansiedade');
     await waitPastDwell(1);
@@ -415,7 +413,7 @@ describe('dwell in the markdown buffer', () => {
     drafts = [];
     container = document.createElement('div');
     document.body.appendChild(container);
-    setup(root, true, 1);
+    setup(root, 1);
     const nested = textarea().value.indexOf('\n  - ansiedade');
     act(() => {
       textarea().setSelectionRange(nested + 3, nested + 3);
@@ -423,15 +421,6 @@ describe('dwell in the markdown buffer', () => {
     });
     await waitPastDwell(1);
     expect(selections).toEqual([{ nodeId: 'a2', reason: 'focus3s' }]);
-  });
-
-  test('a lift is still refused on the session heading', () => {
-    // Resolving the heading to the root must not hand the lift a session to
-    // move. The refusal is a sentence, not a silent no-op.
-    setup(fixture(), true, 0);
-    caretOnLine('# 28/09/2026');
-    press('m', { ctrlKey: true, shiftKey: true });
-    expect(container!.textContent).toContain('não pode ser movida');
   });
 });
 
@@ -662,78 +651,6 @@ describe('the footer instructions are true', () => {
   });
 });
 
-describe('moving a topic from the markdown buffer', () => {  afterEach(() => {
-    cleanup();
-    container?.remove();
-    container = null;
-  });
-
-  /** Puts the caret on a topic's line, which is what identifies it. */
-  function caretOn(text: string) {
-    const el = textarea();
-    const at = el.value.indexOf(`- ${text}`);
-    if (at === -1) throw new Error(`no line for "${text}"`);
-    caretAt(at + 1);
-    return at;
-  }
-
-  test('Ctrl+Shift+M lifts the topic under the caret', () => {
-    setup();
-    caretOn('cansaço');
-    press('m', { ctrlKey: true, shiftKey: true });
-    expect(document.body.textContent).toMatch(/Movendo/);
-  });
-
-  test('arrows aim and Enter commits a real move', () => {
-    setup();
-    caretOn('cansaço');
-    press('m', { ctrlKey: true, shiftKey: true });
-    // Aim at Família.
-    for (let i = 0; i < 3; i++) press('ArrowDown');
-    press('Enter');
-    expect(updateCount).toBe(1);
-    const fam = (lastRoot as MindMapNode).children.find((c) => c.text === 'Família');
-    expect(fam?.children.map((c) => c.text)).toEqual(['mãe apoia', 'cansaço']);
-  });
-
-  test('the buffer shows the result of a move', () => {
-    setup();
-    caretOn('cansaço');
-    press('m', { ctrlKey: true, shiftKey: true });
-    for (let i = 0; i < 3; i++) press('ArrowDown');
-    press('Enter');
-    const value = textarea().value;
-    const famLine = value.indexOf('- Família');
-    const cansacoLine = value.indexOf('- cansaço');
-    expect(cansacoLine).toBeGreaterThan(famLine);
-  });
-
-  test('Escape cancels a lift and the tree is untouched', () => {
-    setup();
-    caretOn('cansaço');
-    press('m', { ctrlKey: true, shiftKey: true });
-    press('ArrowDown');
-    press('Escape');
-    expect(updateCount).toBe(0);
-    expect(document.body.textContent).not.toMatch(/Movendo/);
-  });
-
-  test('a bare M does not lift — the chord macOS would swallow', () => {
-    setup();
-    caretOn('cansaço');
-    press('m', { metaKey: true });
-    expect(document.body.textContent).not.toMatch(/Movendo/);
-  });
-
-  test('the move is off when the feature is off', () => {
-    setup(fixture(), false);
-    caretOn('cansaço');
-    press('m', { ctrlKey: true, shiftKey: true });
-    expect(updateCount).toBe(0);
-    expect(document.body.textContent).not.toMatch(/Movendo/);
-  });
-});
-
 describe('the buffer and the font scale', () => {
   afterEach(() => {
     cleanup();
@@ -747,7 +664,7 @@ describe('the buffer and the font scale', () => {
     // container, and the textarea reads the same variable. What matters is that
     // the setting still does something at all, rather than becoming a dead knob
     // along with the editor it was sized for.
-    setup(fixture(), true, 0, 1.4);
+    setup(fixture(), 0, 1.4);
     const wrapper = container!.querySelector<HTMLElement>('[style*="--row-scale"]');
     expect(wrapper).not.toBeNull();
     expect(wrapper!.getAttribute('style')).toContain('1.4');
@@ -757,5 +674,77 @@ describe('the buffer and the font scale', () => {
     setup();
     const wrapper = container!.querySelector<HTMLElement>('[style*="--row-scale"]')!;
     expect(wrapper.getAttribute('style')).toContain('1');
+  });
+});
+
+describe('the help disclosure', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  const helpButton = () =>
+    container!.querySelector<HTMLButtonElement>('[aria-controls="buffer-help"]')!;
+  const panel = () => container!.querySelector('#buffer-help');
+
+  test('it starts closed, so the editor is not a wall of text', () => {
+    // The complaint: a footer that explained everything taught the things nobody
+    // needed and buried the two that mattered. A reference nobody asked for
+    // should cost nothing until it is asked for.
+    setup();
+    expect(panel()).toBeNull();
+  });
+
+  test('the button says whether it is open', () => {
+    setup();
+    expect(helpButton().getAttribute('aria-expanded')).toBe('false');
+    act(() => {
+      fireEvent.click(helpButton());
+    });
+    expect(helpButton().getAttribute('aria-expanded')).toBe('true');
+    expect(panel()).not.toBeNull();
+  });
+
+  test('and it closes again', () => {
+    setup();
+    act(() => {
+      fireEvent.click(helpButton());
+    });
+    act(() => {
+      fireEvent.click(helpButton());
+    });
+    expect(panel()).toBeNull();
+  });
+
+  test('it states the rule the old footer left out', () => {
+    // The indent decides the parent, not where the caret landed. The previous
+    // text said cut-and-paste works and left the rule unstated, which is how
+    // the same paste builds a different tree silently.
+    setup();
+    act(() => {
+      fireEvent.click(helpButton());
+    });
+    const text = panel()!.textContent ?? '';
+    expect(text).toContain('indentação da primeira linha');
+    expect(text).toContain('Recorte');
+  });
+
+  test('the visible hint is only what a textarea cannot show itself', () => {
+    // Tab is captured here, which is invisible until it surprises someone, and
+    // Esc is the only way out. Nothing else belongs at this size.
+    setup();
+    const header = container!.querySelector('header, div')!.textContent ?? '';
+    expect(header).toContain('Tab');
+    expect(header).toContain('Esc');
+    expect(header).not.toContain('Ctrl+Shift+M');
+  });
+
+  test('the removed shortcut is gone for good', () => {
+    setup();
+    act(() => {
+      fireEvent.click(helpButton());
+    });
+    expect(container!.textContent).not.toContain('Ctrl+Shift+M');
   });
 });

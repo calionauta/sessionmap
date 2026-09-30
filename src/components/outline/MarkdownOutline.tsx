@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Info, Keyboard, MoveVertical, PanelLeft, Minimize2 } from 'lucide-react';
+import { HelpCircle, Info, PanelLeft, Minimize2 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
-import { findNodeById, moveNode, branchIndexOf, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
-import { isLiftChord, moveCandidates, MOVE_REFUSAL_TEXT } from '../../utils/lift';
+import { findNodeById, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { readLine, lineIndexAt, topicLines, parentTopicLine } from '../../utils/bufferLine';
 
 interface MarkdownOutlineProps {
@@ -27,7 +26,6 @@ interface MarkdownOutlineProps {
    */
   focusDwellSeconds: number;
   theme: 'papel' | 'noite';
-  enableNodeMove: boolean;
   outlineFontScale: number;
   maximizeOutline?: boolean;
   onToggleMaximize?: () => void;
@@ -83,7 +81,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   selectedNodeId,
   focusDwellSeconds,
   theme,
-  enableNodeMove,
   outlineFontScale = 1,
   maximizeOutline = false,
   onToggleMaximize,
@@ -97,7 +94,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   const [text, setText] = useState(() => treeToMarkdown(root));
   const [hint, setHint] = useState('');
   const [notice, setNotice] = useState('');
-  const [lifted, setLifted] = useState<{ sourceId: string; targetId: string | null } | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const noticeTimer = useRef<number | null>(null);
 
   /**
@@ -114,7 +111,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     if (lastSessionRef.current === sessionId) return;
     lastSessionRef.current = sessionId;
     setText(treeToMarkdown(root));
-    setLifted(null);
   }, [sessionId, root]);
 
   /**
@@ -394,68 +390,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     };
   }, []);
 
-  /* ==================== LIFT (the same one, driven from the buffer) ==================== */
-
-  const startLift = () => {
-    if (!enableNodeMove) return;
-    const { node } = caretNode();
-    if (!node) {
-      setHint('Coloque o cursor numa anotação para movê-la.');
-      return;
-    }
-    if (node.id === parsedRoot.id) {
-      setHint(MOVE_REFUSAL_TEXT.root);
-      return;
-    }
-    const candidates = moveCandidates(parsedRoot, node.id);
-    if (candidates.length === 0) {
-      setHint('Não há outro tópico para receber este aqui.');
-      return;
-    }
-    setLifted({ sourceId: node.id, targetId: candidates[0] });
-  };
-
-  /** The topic in flight, resolved for the banner. */
-  const source = lifted ? findNodeById(parsedRoot, lifted.sourceId) : null;
-
-  const commitLift = useCallback(
-    (targetId?: string) => {
-      if (!lifted) return;
-      const destination = targetId ?? lifted.targetId;
-      if (!destination) return;
-      const sourceNode = findNodeById(parsedRoot, lifted.sourceId);
-      const result = moveNode(parsedRoot, lifted.sourceId, destination);
-      setLifted(null);
-      if (!result.success) {
-        setHint(MOVE_REFUSAL_TEXT[result.refusal ?? 'no-change']);
-        return;
-      }
-      const before = branchIndexOf(parsedRoot, lifted.sourceId);
-      const after = branchIndexOf(result.root, lifted.sourceId);
-      const flips = before !== -1 && after !== -1 && before % 2 !== after % 2;
-      const target = findNodeById(result.root, destination);
-      setText(treeToMarkdown(result.root));
-      onUpdateRoot(result.root, 'move');
-      onSelectNode(lifted.sourceId, 'click');
-      sayNotice(
-        flips
-          ? `“${sourceNode?.text.trim() || 'Tópico'}” movido para “${target?.text.trim() || ''}”. Ele muda de lado no mapa para o cliente.`
-          : `“${sourceNode?.text.trim() || 'Tópico'}” movido para “${target?.text.trim() || ''}”.`
-      );
-    },
-    [lifted, parsedRoot, onUpdateRoot, onSelectNode, sayNotice]
-  );
-
-  const stepTarget = useCallback(
-    (delta: number) => {
-      if (!lifted) return;
-      const candidates = moveCandidates(parsedRoot, lifted.sourceId);
-      if (candidates.length === 0) return;
-      const i = Math.max(0, candidates.indexOf(lifted.targetId ?? ''));
-      setLifted({ ...lifted, targetId: candidates[Math.min(candidates.length - 1, Math.max(0, i + delta))] });
-    },
-    [lifted, parsedRoot]
-  );
 
   /**
    * Tab indents, Shift+Tab outdents — on the selected lines.
@@ -471,10 +405,8 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * browser gives for free and a list of one-input-per-topic never could.
    * Escape leaves the textarea, so the field is not a keyboard trap.
    *
-   * Declared after startLift/stepTarget/commitLift on purpose: it is a plain
-   * arrow function, not a useCallback, and it calls all three. Declaring it
-   * earlier would close over them in their temporal dead zone and throw the
-   * first time a key was pressed.
+   * It is a plain arrow function rather than a useCallback because it closes
+   * over commitEdit, which is declared just above it.
    */
   /**
    * Rewrites the buffer, puts the caret where it belongs, and re-broadcasts.
@@ -558,40 +490,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
 
-    /* A LIFT in flight owns the keys, and it is checked FIRST: the arrow keys
-     * below move the caret, so a lift that lost the race would edit the text
-     * instead of aiming the drop. */
-    if (lifted) {
-      e.preventDefault();
-      if (e.key === 'ArrowDown') return stepTarget(1);
-      if (e.key === 'ArrowUp') return stepTarget(-1);
-      if (e.key === 'PageDown') return stepTarget(4);
-      if (e.key === 'PageUp') return stepTarget(-4);
-      if (e.key === 'Home') {
-        const first = moveCandidates(parsedRoot, lifted.sourceId)[0];
-        if (first) setLifted({ ...lifted, targetId: first });
-        return;
-      }
-      if (e.key === 'End') {
-        const all = moveCandidates(parsedRoot, lifted.sourceId);
-        if (all.length) setLifted({ ...lifted, targetId: all[all.length - 1] });
-        return;
-      }
-      if (e.key === 'Enter') return commitLift();
-      if (e.key === 'Escape') {
-        setLifted(null);
-        return;
-      }
-      return;
-    }
-
-    if (isLiftChord(e) && e.key.toLowerCase() === 'm') {
-      e.preventDefault();
-      e.stopPropagation();
-      startLift();
-      return;
-    }
-
     if (e.key === 'Escape') {
       // The escape hatch for the captured Tab.
       e.preventDefault();
@@ -599,9 +497,8 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       return;
     }
 
-    /* Enter starts the next topic. After the lift, because a lifted row's Enter
-     * is a commit — see the branch above. Shift+Enter is left alone so a
-     * thought can still run over two lines. */
+    /* Enter starts the next topic. Shift+Enter is left alone, so a thought can
+     * still run over two lines. */
     if (e.key === 'Enter' && !e.shiftKey && insertTopicLine(el)) {
       e.preventDefault();
       return;
@@ -658,6 +555,17 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             <span className="font-mono text-[11px] font-bold text-content-muted">
               {flatItems.length} balões
             </span>
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              aria-expanded={showHelp}
+              aria-controls="buffer-help"
+              aria-label="Como escrever e mover tópicos"
+              title="Como escrever e mover tópicos"
+              className="ctl w-7 h-7 !min-h-0 px-0"
+            >
+              <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
             {onToggleMaximize && (
               <button
                 type="button"
@@ -672,37 +580,63 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             )}
           </div>
         </div>
+        {/* Two keys, and only the two a textarea cannot show for itself. Tab is
+            CAPTURED here to indent, which is invisible until it surprises
+            someone, and Esc is the only way out. Everything else is either
+            guessable or behind the help button — a footer that explained
+            everything taught the things nobody needed and buried the two that
+            mattered. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-[11px] font-mono text-content-muted">
           <strong className="font-bold text-content">Tab</strong>
           <span>indenta</span>
           <span aria-hidden="true">·</span>
           <span>
-            <strong className="font-bold text-content">Shift+Tab</strong> desindenta
+            <strong className="font-bold text-content">Esc</strong> solta o Tab
           </span>
-          {enableNodeMove && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>
-                <strong className="font-bold text-content">Ctrl+Shift+M</strong> move
-              </span>
-            </>
-          )}
         </div>
       </div>
 
-      {lifted && (
+      {/* PROGRESSIVE DISCLOSURE. An inline panel, not a popover: nothing is
+          positioned, nothing is trapped, and there is no second close path to
+          get wrong. A reference you open once and read does not need a dialog. */}
+      {showHelp && (
         <div
-          role="status"
-          aria-live="polite"
-          className="shrink-0 px-4 py-2 border-t border-line bg-surface-inset text-[11px] font-semibold text-content flex items-start gap-1.5"
+          id="buffer-help"
+          role="region"
+          aria-label="Como escrever e mover tópicos"
+          className="shrink-0 px-4 py-3 border-t border-line bg-surface-inset text-[11px] leading-relaxed text-content-muted"
         >
-          <MoveVertical className="w-3.5 h-3.5 shrink-0 mt-px text-accent-text" aria-hidden="true" />
-          <span className="min-w-0">
-            Movendo “{source?.text || 'tópico'}” —{' '}
-            <strong className="font-bold">setas</strong> escolhem o destino,{' '}
-            <strong className="font-bold">Enter</strong> confirma,{' '}
-            <strong className="font-bold">Esc</strong> cancela.
-          </span>
+          <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-x-6">
+            <p className="min-w-0">
+              <strong className="font-bold text-content">Escrever</strong>
+            </p>
+            <p className="min-w-0">
+              <strong className="font-bold text-content">Mover</strong>
+            </p>
+
+            <p className="min-w-0">
+              <code className="text-content">-</code> no começo da linha cria um tópico
+            </p>
+            <p className="min-w-0 sm:row-span-3">
+              Recorte um bloco e cole onde ele devia ficar. A{' '}
+              <strong className="font-bold text-content">indentação da primeira linha</strong>{' '}
+              decide quem é o pai — o lugar onde o cursor parou não decide nada.
+            </p>
+
+            <p className="min-w-0">
+              <strong className="font-bold text-content">Enter</strong> abre o próximo
+              tópico no mesmo nível
+            </p>
+            <p className="min-w-0">
+              <strong className="font-bold text-content">Tab</strong> /{' '}
+              <strong className="font-bold text-content">Shift+Tab</strong> aumenta /
+              diminui o nível
+            </p>
+            <p className="min-w-0">
+              Em <strong className="font-bold text-content">Esc</strong>, o bullet vazio
+              some
+            </p>
+          </div>
         </div>
       )}
 
@@ -717,7 +651,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         </div>
       )}
 
-      {hint && !lifted && (
+      {hint && (
         <div
           role="status"
           aria-live="polite"
@@ -794,36 +728,6 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         />
       </div>
 
-      {/* Why the buffer says what it says, and how to get back out of Tab.
-
-          The cut-and-paste sentence used to read "selecione um bloco e cole em
-          outro lugar para mover um ramo inteiro", which is TRUE and was the
-          reason a therapist tried it — and it left out the one thing that
-          decides the result. The destination is not where the caret landed; it
-          is the indentation of the first pasted line. The same paste under a
-          different indent builds a different tree, silently, and the footer was
-          asking for a technique whose main rule it did not state.
-
-          So it says the rule, and it points at Ctrl+Shift+M, which does the
-          same thing without the indent bookkeeping. */}
-      <div className="shrink-0 px-4 py-2 border-t border-line bg-surface-inset text-[11px] text-content-muted flex items-start gap-1.5">
-        <Keyboard className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
-        <span className="min-w-0 leading-relaxed">
-          <strong className="font-semibold text-content">-</strong> marca um tópico,{' '}
-          <strong className="font-semibold text-content">Tab</strong> aumenta o nível e{' '}
-          <strong className="font-semibold text-content">Esc</strong> solta o teclado
-          (o Tab fica preso aqui de propósito).
-          {enableNodeMove && (
-            <>
-              {' '}
-              <strong className="font-semibold text-content">Ctrl+Shift+M</strong>{' '}
-              move o tópico sob o cursor.
-            </>
-          )}{' '}
-          Recortar e colar um ramo também funciona — o nível de onde ele colar
-          é o que decide o pai, não o lugar onde o cursor parou.
-        </span>
-      </div>
     </div>
   );
 };

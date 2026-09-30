@@ -53,18 +53,6 @@ export interface Settings {
   clientFontScale: number;
   focusZoomMode: boolean; // Zoom in on active node + parents + children when navigating
   /**
-   * Whether a topic can be re-parented to another branch (Alt+M to lift,
-   * arrows to aim, Enter to drop).
-   *
-   * OFF by default, and not because the operation is unfinished — it is
-   * covered by tree.test.ts. It is off because a structural move is the only
-   * edit in the outline whose result the therapist cannot undo by typing: the
-   * only way back is Ctrl+Z, which is a button the size of a fingerprint hit
-   * away, and a client is watching the screen when it happens. Shipping it
-   * behind a switch lets it be used in a live session by someone who has chosen
-   * to accept that, and left off by everyone else.
-   */
-  enableNodeMove: boolean;
   /**
    * Scales the text of the outline rows — the therapist's own typing surface.
    *

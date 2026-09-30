@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical } from 'lucide-react';
+import { Sliders, Moon, Sun, Type, Clock, Eye } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
 import {
@@ -175,39 +175,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <Divider />
 
-        <SettingRow
-          id="node-move"
-          align="start"
-          label={
-            <>
-              <MoveVertical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Mover Tópico para Outra Hierarquia</span>
-            </>
-          }
-          description={
-            settings.enableNodeMove ? (
-              <>
-                O botão <strong>Mover</strong> na linha — ou{' '}
-                <strong>Ctrl+Shift+M</strong> (Cmd+Shift+M no Mac) — levanta o tópico,
-                <strong>as setas</strong> escolhem o destino e <strong>Enter</strong>{' '}
-                confirma. <strong>Esc</strong> cancela sem mudar nada. O tópico vai sempre
-                como último filho, levando os subtópicos junto — para reordenar dentro do
-                mesmo pai, use Alt+↑ e Alt+↓.
-              </>
-            ) : (
-              'Desligado. Com ligado, um tópico pode ser movido para dentro de outro ramo, em vez de ser apagado e redigitado.'
-            )
-          }
-          control={
-            <Switch
-              label="Permitir mover tópicos entre hierarquias"
-              checked={settings.enableNodeMove}
-              onChange={(v) => update('enableNodeMove', v)}
-            />
-          }
-        />
-
-        <Divider />
 
 
         <SettingRow

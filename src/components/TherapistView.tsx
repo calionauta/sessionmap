@@ -720,7 +720,6 @@ export const TherapistView: React.FC = () => {
               selectedNodeId={selectedNodeId}
               focusDwellSeconds={settings.focusDwellSeconds}
               theme={settings.theme}
-              enableNodeMove={settings.enableNodeMove}
               outlineFontScale={settings.outlineFontScale}
               maximizeOutline={maximizeOutline}
               onToggleMaximize={() => {

@@ -8,9 +8,6 @@ import {
   normalizeOutline,
   subtreeIds,
 } from './tree';
-// The lift's candidate list drives which moves are exercised here, so the
-// tree's own invariants are checked across every one of them.
-import { moveCandidates } from './lift';
 import { MindMapNode } from '../types';
 
 const node = (id: string, text: string, children: MindMapNode[] = [], collapsed = false): MindMapNode => ({
@@ -147,12 +144,16 @@ describe('moveNode — the move itself', () => {
   });
 
   test('every id in the tree is unique after any single move', () => {
-    // The invariant that duplicate keys violated. Checked across every legal
-    // source/target pair in the fixture, not just the ones that seem likely.
+    // The invariant that duplicate keys violated. Checked across EVERY
+    // source/target pair, legal or not: moveNode is asked to refuse the rest,
+    // and a refusal that is not a refusal is a duplicate id. Enumerating the
+    // pairs here rather than borrowing a UI's candidate list is deliberate —
+    // this test used to skip the illegal pairs by asking the lift which
+    // targets it would offer, so the refusals were never exercised at all.
     const root = fixture();
     const ids = flattenTree(root).map((i) => i.id);
     for (const from of ids) {
-      for (const to of moveCandidates(root, from)) {
+      for (const to of ids) {
         const result = moveNode(root, from, to);
         if (!result.success) continue;
         const after = flattenTree(result.root).map((i) => i.id);
