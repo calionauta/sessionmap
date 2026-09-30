@@ -3,7 +3,7 @@ import { Info, Keyboard, ListTree, MoveVertical, PanelLeft, Minimize2 } from 'lu
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import { findNodeById, moveNode, branchIndexOf, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { isLiftChord, moveCandidates, MOVE_REFUSAL_TEXT } from '../../utils/lift';
-import { readLine, lineIndexAt } from '../../utils/bufferLine';
+import { readLine, lineIndexAt, topicLines, parentTopicLine } from '../../utils/bufferLine';
 
 interface MarkdownOutlineProps {
   root: MindMapNode;
@@ -59,29 +59,19 @@ interface Caret {
  * Walks the lines above and takes the first one that is a topic at a SHALLOWER
  * indent, which is exactly how the parser nests. A bullet at column zero finds
  * nothing and returns null, and the caller reads that as the session root.
- *
- * Matching by text is what the rest of this file does, and the same limitation
- * applies: two topics with identical text resolve to the first. Here the
- * consequence is only which parent LABEL is shown, never the structure — the
- * structure is the buffer's indentation, which is unambiguous.
  */
 function parentAbove(
   value: string,
   lineIndex: number,
   indent: string,
-  flatItems: FlatOutlineItem[],
+  topics: FlatOutlineItem[],
   rootId: string
 ): FlatOutlineItem | null {
-  for (let i = lineIndex - 1; i >= 0; i--) {
-    const line = readLine(value, i);
-    if (line.isHeading) return null;
-    if (!line.isBullet || line.text === '') continue;
-    if (line.indent.length >= indent.length) continue;
-    return (
-      flatItems.find((f) => f.id !== rootId && f.text === line.text) ?? null
-    );
-  }
-  return null;
+  const parentLine = parentTopicLine(value, lineIndex, indent);
+  if (parentLine === -1) return null;
+  const ordinal = topicLines(value).indexOf(parentLine);
+  if (ordinal === -1) return null;
+  return topics[ordinal] ?? null;
 }
 
 export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
@@ -151,22 +141,17 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * Which topic the caret is in, and where a new one would land.
    *
    * The text has no ids, so the caret has to be mapped back to a node for the
-   * client broadcast and the highlight. It is matched by the text of the line
-   * the caret sits on: the rows model can hand over a node id, a text buffer
-   * cannot, and the line is the only handle that exists.
+   * client broadcast and the highlight. It is matched by POSITION: the Nth line
+   * that starts a topic is the Nth topic. Matching by text was the obvious
+   * thing, and it is wrong the moment a session says the same word twice — for
+   * notes about sleep, family or anxiety that is not an edge case but a
+   * Tuesday. Two "ansiedade" lines, and the dwell lit the first one whichever
+   * line the caret was on.
    *
-   * AN EMPTY BULGET IS THE INTERESTING CASE, and it is why this is not a
-   * one-liner. The parser discards a bullet with no text, so `- ` has no node
-   * to find — and this used to return "nothing at all" for it. That silenced
-   * everything downstream: the draft went out with `active: false`, so the
-   * ghost balloon did not appear, the footer mirror stayed hidden, and the
-   * client screen showed no sign that a topic was being started. Pressing Enter
-   * to write the next one produced a map that had nothing to say about it.
-   *
-   * The parent is therefore worked out from the BUFFER rather than from the
-   * tree: walk up the lines above, and the first topic at a shallower indent is
-   * the parent the parser would have given it. When there is none, the parent
-   * is the session root — which is also what a bullet at column zero means.
+   * Position is trusted only when the counts agree, one topic-starting line per
+   * topic, which is what the canonical form always produces. Pasted prose with
+   * wrapped paragraphs and blank lines breaks the correspondence, and there the
+   * text is a better guess than a count that has drifted.
    */
   const caretNode = useCallback((): Caret => {
     const el = textareaRef.current;
@@ -186,38 +171,71 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     // no topic at all, so the highlight and the lift would both do nothing
     // until the therapist typed further into the text.
     const line = readLine(value, lineIndex);
+    const topics = flatItems.filter((i) => i.id !== parsedRoot.id);
+    const starts = topicLines(value);
+    const aligned = starts.length === topics.length;
+    const ordinal = starts.indexOf(lineIndex);
 
-    if (!line.isBullet) {
-      // The session heading is not a topic. Reporting it as one put "Novo
-      // subitem em Tópico raiz" in the footer whenever the caret touched the
-      // date line, which describes an action nobody is taking.
-      return { ...empty, lineIndex, onBullet: false, node: null };
-    }
-
-    const own = flatItems.find(
-      (i) => i.id !== parsedRoot.id && i.text === line.text && line.text !== ''
-    );
-
-    if (own) {
-      const parent = own.parentId ? findNodeById(parsedRoot, own.parentId) : null;
+    /* THE SESSION HEADING IS THE ROOT NODE, which is what it is: the session's
+     * own name. Reading it as "not a topic" left the dwell dead on the one line
+     * a therapist lands on first, and dead on the client's screen with it. The
+     * lift already refuses to move the root, so resolving it costs nothing. */
+    if (line.isHeading) {
       return {
-        node: own,
-        parentId: own.parentId ?? parsedRoot.id,
-        parentText: parent?.text,
+        node: flatItems[0] ?? null,
+        parentId: parsedRoot.id,
+        parentText: parsedRoot.text,
         onBullet: true,
         lineIndex,
       };
     }
 
-    // An empty bullet: no node yet, so find the parent by indentation.
-    const parentItem = parentAbove(value, lineIndex, line.indent, flatItems, parsedRoot.id);
+    // A blank line or a wrapped paragraph belongs to no topic, and saying so is
+    // what keeps the footer from describing an edit nobody is making.
+    if (!line.isBullet) return { ...empty, lineIndex };
+
+    // An empty bullet has no node yet: the parser discards it. The parent comes
+    // from the buffer's own indentation, because the tree cannot help for a node
+    // that does not exist.
+    if (line.isEmptyBullet) {
+      const parentItem = parentAbove(value, lineIndex, line.indent, topics, parsedRoot.id);
+      return {
+        node: null,
+        parentId: parentItem?.id ?? parsedRoot.id,
+        // A bullet at column zero has no shallower topic above it, so its parent
+        // is the session. Saying so here rather than leaving it undefined saves
+        // the view a fallback lookup to reach the same answer.
+        parentText: parentItem?.text ?? parsedRoot.text,
+        onBullet: true,
+        lineIndex,
+      };
+    }
+
+    let own: FlatOutlineItem | null = null;
+    if (ordinal !== -1 && aligned) {
+      own = topics[ordinal];
+    } else {
+      const sameText = topics.filter((t) => t.text === line.text);
+      if (sameText.length === 1) {
+        own = sameText[0];
+      } else if (sameText.length > 1 && ordinal !== -1) {
+        // Duplicated text with the counts out of step: take the one nearest in
+        // document order rather than always the first.
+        own = sameText.reduce((best, t) =>
+          Math.abs(topics.indexOf(t) - ordinal) < Math.abs(topics.indexOf(best) - ordinal)
+            ? t
+            : best
+        );
+      }
+    }
+
+    if (!own) return { ...empty, lineIndex, onBullet: true };
+
+    const parent = own.parentId ? findNodeById(parsedRoot, own.parentId) : null;
     return {
-      node: null,
-      parentId: parentItem?.id ?? parsedRoot.id,
-      // A bullet at column zero has no shallower topic above it, so its parent
-      // is the session. Saying so here rather than leaving it undefined saves
-      // the view a fallback lookup to reach the same answer.
-      parentText: parentItem?.text ?? parsedRoot.text,
+      node: own,
+      parentId: own.parentId ?? parsedRoot.id,
+      parentText: parent?.text,
       onBullet: true,
       lineIndex,
     };
@@ -780,15 +798,34 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         />
       </div>
 
-      {/* Why the buffer says what it says, and how to get back out of Tab. */}
+      {/* Why the buffer says what it says, and how to get back out of Tab.
+
+          The cut-and-paste sentence used to read "selecione um bloco e cole em
+          outro lugar para mover um ramo inteiro", which is TRUE and was the
+          reason a therapist tried it — and it left out the one thing that
+          decides the result. The destination is not where the caret landed; it
+          is the indentation of the first pasted line. The same paste under a
+          different indent builds a different tree, silently, and the footer was
+          asking for a technique whose main rule it did not state.
+
+          So it says the rule, and it points at Ctrl+Shift+M, which does the
+          same thing without the indent bookkeeping. */}
       <div className="shrink-0 px-4 py-2 border-t border-line bg-surface-inset text-[11px] text-content-muted flex items-start gap-1.5">
         <Keyboard className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
         <span className="min-w-0 leading-relaxed">
           <strong className="font-semibold text-content">-</strong> marca um tópico,{' '}
           <strong className="font-semibold text-content">Tab</strong> aumenta o nível e{' '}
           <strong className="font-semibold text-content">Esc</strong> solta o teclado
-          (o Tab fica preso aqui de propósito). Selecione um bloco e cole em outro
-          lugar para mover um ramo inteiro.
+          (o Tab fica preso aqui de propósito).
+          {enableNodeMove && (
+            <>
+              {' '}
+              <strong className="font-semibold text-content">Ctrl+Shift+M</strong>{' '}
+              move o tópico sob o cursor.
+            </>
+          )}{' '}
+          Recortar e colar um ramo também funciona — o nível de onde ele colar
+          é o que decide o pai, não o lugar onde o cursor parou.
         </span>
       </div>
     </div>

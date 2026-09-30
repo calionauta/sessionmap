@@ -51,8 +51,9 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
    * for.
    *
    * 'collapsed' — just the title strip, outline keeps full height.
-   * 'panel'     — textarea docked at the bottom, outline still usable above.
-   *              This is the reading-while-typing mode.
+   * 'panel'     — takes HALF the pane; the outline keeps the other half.
+   *              This is the reading-while-typing mode, and half is what makes
+   *              it one: a strip five rows tall is a peep, not a read.
    * 'expanded'  — takes the whole outline pane.
    *
    * The expanded state exists because these notes get read at length: a
@@ -66,6 +67,19 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
     'collapsed'
   );
   const mode = modeState;
+
+  /**
+   * Whether this panel is the full-height one.
+   *
+   * Read from `mode`, never from the `expanded` PROP. The prop exists only to
+   * tell the parent to hide the outline; the panel's own size is `mode`'s
+   * business. Branching the layout on both meant a state and a prop that could
+   * disagree, and when they did the panel rendered the collapsed sizing while
+   * the parent had already hidden the outline — a strip of textarea under an
+   * empty pane. Two sources of truth for one thing is the bug; this makes the
+   * prop mean only what it says.
+   */
+  const isExpanded = mode === 'expanded';
 
   // The expanded flag is owned by the parent, which is what hides the outline,
   // so every mode change has to go through it. Accepts a value or an updater
@@ -153,8 +167,20 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
 
   return (
     <div
-      className={`border-line bg-surface-raised flex flex-col ${
-        expanded ? 'flex-1 min-h-0 border-t' : 'shrink-0 border-t'
+      /* 'panel' takes HALF the pane's height and the outline keeps the other
+         half. It used to be `shrink-0` around a rows={5} textarea, so "open"
+         meant a fixed five lines — about a fifth of a laptop screen, whatever
+         the window was. Half is the point of the middle state: the notes are
+         read at length and written between thoughts, and a strip you have to
+         drag to resize is a second, conflicting way to size the same thing.
+         `shrink-0` with `basis-1/2` is what holds the half against the
+         outline's `flex-1` above it. */
+      className={`border-line bg-surface-raised flex flex-col border-t ${
+        isExpanded
+          ? 'flex-1 min-h-0'
+          : mode === 'panel'
+            ? 'basis-1/2 min-h-0 shrink-0'
+            : 'shrink-0'
       }`}
     >
       <div className="flex items-center gap-1.5 px-3 py-1.5 shrink-0">
@@ -204,11 +230,11 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           <button
             type="button"
             onClick={() => setMode((m) => (m === 'expanded' ? 'panel' : 'expanded'))}
-            aria-label={expanded ? 'Reduzir anotações' : 'Expandir anotações para todo o espaço'}
-            title={expanded ? 'Reduzir' : 'Expandir para todo o espaço'}
+            aria-label={isExpanded ? 'Reduzir anotações' : 'Expandir anotações para todo o espaço'}
+            title={isExpanded ? 'Reduzir' : 'Expandir para todo o espaço'}
             className="ctl w-7 h-7 !min-h-0 px-0 shrink-0"
           >
-            {expanded ? (
+            {isExpanded ? (
               <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />
             ) : (
               <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -224,7 +250,9 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
            try at the expanded state. */
         <div
           className={`px-3 pb-3 ${
-            expanded ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'
+            isExpanded || mode === 'panel'
+              ? 'flex-1 min-h-0 flex flex-col'
+              : 'shrink-0'
           }`}
         >
           <label htmlFor="client-notes-textarea" className="sr-only">
@@ -243,18 +271,19 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
               // the debounce.
               void flush();
             }}
-            rows={5}
+            rows={3}
             disabled={!clientId || loading}
             placeholder={
               clientId
                 ? 'Observações sobre este cliente: contexto, histórico, pontos de atenção. Salvo por cliente, some com as sessões. Não aparece para o cliente.'
                 : 'Abra uma sessão para ter um cliente associado.'
             }
-            /* Expanded it fills the pane, so resize-none: a manual drag on top
-               of a flex-fill box fights the layout and leaves a second,
-               conflicting way to size the same thing. */
+            /* Both open states fill the box they are given, so resize-none: a
+               manual drag on top of a flex-fill box fights the layout and
+               leaves a second, conflicting way to size the same thing. rows is
+               only a floor for the collapsed state, which sizes to content. */
             className={`w-full rounded-control border border-line bg-surface px-2.5 py-2 text-xs leading-relaxed text-content placeholder:text-content-subtle ${
-              expanded ? 'flex-1 min-h-0 resize-none' : 'resize-y'
+              isExpanded || mode === 'panel' ? 'flex-1 min-h-0 resize-none' : 'resize-y'
             }`}
           />
           <p className="mt-1 shrink-0 text-[10px] text-content-subtle">

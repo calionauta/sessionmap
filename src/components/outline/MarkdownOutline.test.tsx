@@ -341,11 +341,14 @@ describe('dwell in the markdown buffer', () => {
     expect(selections).toEqual([]);
   });
 
-  test('the session heading is not a topic, so nothing lights up', async () => {
+  test('the session heading lights up the root balloon', async () => {
+    // The heading IS the root: the session's own name. Reading it as "not a
+    // topic" left the dwell dead on the one line a therapist lands on first,
+    // and dead on the client's screen with it.
     setup(fixture(), true, 1);
     caretOnLine('# 28/09/2026');
     await waitPastDwell(1);
-    expect(selections).toEqual([]);
+    expect(selections).toEqual([{ nodeId: 'root', reason: 'focus3s' }]);
   });
 
   test('a click highlights at once instead of waiting', () => {
@@ -388,6 +391,46 @@ describe('dwell in the markdown buffer', () => {
     await waitPastDwell(1);
     // Still fires — once, for the line it was armed on.
     expect(selections).toEqual([{ nodeId: 't1', reason: 'focus3s' }]);
+  });
+
+  test('two topics with the same text each light up their own balloon', async () => {
+    // The bug: the caret line was matched to a topic BY TEXT, so the second
+    // "ansiedade" resolved to the first one and the dwell lit a balloon two
+    // rows away. Matching by position fixes it, and duplicated wording is
+    // ordinary rather than exotic in notes about sleep or family.
+    const root = node('root', '28/09/2026', [
+      node('a1', 'ansiedade', [node('a2', 'ansiedade')]),
+      node('b', 'sono'),
+    ]);
+    setup(root, true, 1);
+
+    caretOnLine('- ansiedade');
+    await waitPastDwell(1);
+    expect(selections).toEqual([{ nodeId: 'a1', reason: 'focus3s' }]);
+
+    cleanup();
+    container?.remove();
+    selections = [];
+    drafts = [];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    setup(root, true, 1);
+    const nested = textarea().value.indexOf('\n  - ansiedade');
+    act(() => {
+      textarea().setSelectionRange(nested + 3, nested + 3);
+      fireEvent.select(textarea());
+    });
+    await waitPastDwell(1);
+    expect(selections).toEqual([{ nodeId: 'a2', reason: 'focus3s' }]);
+  });
+
+  test('a lift is still refused on the session heading', () => {
+    // Resolving the heading to the root must not hand the lift a session to
+    // move. The refusal is a sentence, not a silent no-op.
+    setup(fixture(), true, 0);
+    caretOnLine('# 28/09/2026');
+    press('m', { ctrlKey: true, shiftKey: true });
+    expect(container!.textContent).toContain('não pode ser movida');
   });
 });
 
@@ -550,17 +593,75 @@ describe('a new, empty topic tells the map about it', () => {
     expect(drafts[drafts.length - 1].active).toBe(false);
   });
 
-  test('the session heading is not a topic either', () => {
-    // Otherwise the footer reads "Novo subitem em Tópico raiz" every time the
-    // caret touches the date line, describing an action nobody is taking.
+  test('the session heading is the root, and says so as an edit', () => {
+    // It resolves to the root node rather than being reported as nothing, and
+    // it is an EDIT of the session name — not a new subitem under a root, which
+    // is what reporting it as a topic produced.
     setup();
     caretOnLine('# 28/09/2026');
-    expect(drafts[drafts.length - 1].active).toBe(false);
+    const draft = drafts[drafts.length - 1];
+    expect(draft.active).toBe(true);
+    expect(draft.mode).toBe('edit');
+    expect(draft.targetId).toBe('root');
   });
 });
 
-describe('moving a topic from the markdown buffer', () => {
+describe('the footer instructions are true', () => {
   afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  const texts = (n: MindMapNode): string[] =>
+    (n.children || []).flatMap((c) => [c.text, ...texts(c)]);
+
+  test('cutting a block and pasting it elsewhere really does move the branch', () => {
+    // The footer claims this. It is true — but only because the PASTED TEXT is
+    // the whole mechanism, so what decides the destination is the indentation
+    // of the first pasted line, not where the caret was dropped. That is the
+    // part the instruction leaves out.
+    setup();
+    const before = '# 28/09/2026\n- Trabalho\n  - cansaço\n  - chefe cobra\n- Família\n  - mãe apoia';
+    const after =
+      '# 28/09/2026\n- Trabalho\n  - chefe cobra\n- Família\n  - mãe apoia\n  - cansaço';
+    type(before);
+    act(() => {
+      fireEvent.blur(textarea());
+    });
+    expect(texts(lastRoot as MindMapNode)).toContain('cansaço');
+
+    type(after);
+    act(() => {
+      fireEvent.blur(textarea());
+    });
+    const root = lastRoot as MindMapNode;
+    const familia = root.children.find((c) => c.text === 'Família');
+    expect(familia?.children.map((c) => c.text)).toEqual(['mãe apoia', 'cansaço']);
+    // And it left where it was, which is what makes it a MOVE.
+    const trabalho = root.children.find((c) => c.text === 'Trabalho');
+    expect(trabalho?.children.map((c) => c.text)).toEqual(['chefe cobra']);
+  });
+
+  test('the same paste at the wrong indent lands somewhere else', () => {
+    // Why the instruction is incomplete: the destination is decided by the
+    // indentation, so the identical paste can produce a different tree.
+    setup();
+    type('# 28/09/2026\n- Trabalho\n- ');
+    act(() => {
+      fireEvent.change(textarea(), {
+        target: {
+          value: '# 28/09/2026\n- Trabalho\n- Família\n  - cansaço',
+        },
+      });
+      fireEvent.blur(textarea());
+    });
+    const familia = (lastRoot as MindMapNode).children.find((c) => c.text === 'Família');
+    expect(familia?.children.map((c) => c.text)).toEqual(['cansaço']);
+  });
+});
+
+describe('moving a topic from the markdown buffer', () => {  afterEach(() => {
     cleanup();
     container?.remove();
     container = null;

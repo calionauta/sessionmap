@@ -54,6 +54,11 @@ import { syncService } from '../services/sync';
 import { findPathToNode, findNodeById, generateNodeId, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
 import { formatSessionTimestamp } from '../utils/text';
 import { isBrowserUndoTarget } from '../utils/keyboard';
+import {
+  OUTLINE_MIN_PERCENT,
+  OUTLINE_MAX_PERCENT,
+  clampOutlineWidth,
+} from '../utils/layout';
 
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -71,8 +76,14 @@ export const TherapistView: React.FC = () => {
   const [activeMap, setActiveMap] = useState<MindMap | null>(null);
   const [settings, setSettings] = useState<Settings>(() => getSettings());
 
-  // Split view ratio
-  const [outlineWidthPercent, setOutlineWidthPercent] = useState<number>(38);
+  // Split view ratio. The floor and the ceiling live in utils/layout so they
+  // can be checked without mounting this.
+  const [outlineWidthPercent, setOutlineWidthPercent] = useState<number>(OUTLINE_MIN_PERCENT);
+  const [isResizingOutline, setIsResizingOutline] = useState<boolean>(false);
+  /** Removes the window listeners a drag in flight installed. */
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  /** The split view, measured so a drag can turn a pointer into a percentage. */
+  const mainRef = useRef<HTMLElement | null>(null);
   const [isMaximizedMap, setIsMaximizedMap] = useState<boolean>(false);
   /**
    * Dismisses the map so the outline takes the full width.
@@ -355,6 +366,69 @@ export const TherapistView: React.FC = () => {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [togglePause]);
+
+  /**
+   * Widening the outline pane by dragging its right edge.
+   *
+   * Pointer capture would be the modern way, but the listeners go on `window`
+   * to match the drag the outline editor already does, and for the same two
+   * reasons that one needed them: a pointerup that lands outside the handle
+   * still has to end the drag, and a component that unmounts mid-drag has to
+   * take its listeners with it. The second one is why resizeCleanupRef exists
+   * and why the effect below runs it — a leaked pointermove keeps resizing a
+   * pane that is no longer there.
+   */
+  const startOutlineResize = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setIsResizingOutline(true);
+
+    const container = mainRef.current;
+    const onMove = (ev: PointerEvent) => {
+      const width = container?.clientWidth ?? 0;
+      // A zero width means the pane is not laid out yet, and dividing by it
+      // would hand the state a NaN that no comparison can clamp.
+      if (width <= 0) return;
+      setOutlineWidthPercent(clampOutlineWidth((ev.clientX / width) * 100));
+    };
+    const onUp = () => cleanup();
+    // Escape abandons the drag AND puts the width back, so a mis-grab is one
+    // keystroke to undo rather than a drag back to where it started.
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      cleanup();
+      setOutlineWidthPercent(OUTLINE_MIN_PERCENT);
+    };
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('keydown', onKey, true);
+      resizeCleanupRef.current = null;
+      setIsResizingOutline(false);
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('keydown', onKey, true);
+    resizeCleanupRef.current = cleanup;
+  };
+
+  // A drag in flight must not outlive the pane it is resizing.
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
+
+  /**
+   * The same handle, by keyboard.
+   *
+   * A separator you can only drag is a separator some people cannot use, and
+   * the arrow keys are the whole gesture: 2% a press, 10% with Shift, clamped
+   * to the same bounds the drag uses.
+   */
+  const nudgeOutlineWidth = (delta: number) => {
+    setOutlineWidthPercent((w) => clampOutlineWidth(w + delta));
+  };
 
   // Switch Active Map
   const handleSelectMap = (mapId: string) => {
@@ -776,7 +850,7 @@ export const TherapistView: React.FC = () => {
       </header>
 
       {/* 2. MAIN SPLIT VIEW */}
-      <main className="flex-1 flex overflow-hidden relative">
+      <main ref={mainRef} className="flex-1 flex overflow-hidden relative">
         {/* Left Pane: Outline Editor.
 
             Full width when the map is dismissed. The pane is WIDTH-controlled,
@@ -787,7 +861,7 @@ export const TherapistView: React.FC = () => {
         {!isMaximizedMap && activeMap && (
           <section
             aria-label="Tópicos da sessão"
-            className="border-r border-line flex flex-col h-full"
+            className="border-r border-line flex flex-col h-full relative"
             style={{ width: maximizeOutline ? '100%' : `${outlineWidthPercent}%` }}
           >
             {/* Two editors, one tree. Which one is mounted is a setting, and
@@ -849,6 +923,61 @@ export const TherapistView: React.FC = () => {
               expanded={notesExpanded}
               onExpandedChange={setNotesExpanded}
             />
+
+            {/* The splitter.
+
+                Absolutely positioned INSIDE the section rather than placed
+                between the two panes. A sibling would take width from the map
+                on both sides of it, so the map would end up narrower than
+                100 - outlineWidth and the handle would sit in space that
+                belongs to neither. Overlapping the section's own border costs
+                nothing and puts the handle exactly on the line the user sees.
+
+                The 44px hit area is far wider than the 1px line it draws, and
+                deliberately so: a handle you have to hit within two pixels is
+                a handle nobody finds. The visible rule stays hairline so the
+                pane does not look like it is being edited. */}
+            {!maximizeOutline && (
+              <div
+                role="separator"
+                aria-label="Largura dos tópicos"
+                aria-orientation="vertical"
+                aria-valuenow={Math.round(outlineWidthPercent)}
+                aria-valuemin={OUTLINE_MIN_PERCENT}
+                aria-valuemax={OUTLINE_MAX_PERCENT}
+                tabIndex={0}
+                onPointerDown={startOutlineResize}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    nudgeOutlineWidth(e.shiftKey ? 10 : 2);
+                  } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    nudgeOutlineWidth(e.shiftKey ? -10 : -2);
+                  } else if (e.key === 'Home') {
+                    e.preventDefault();
+                    setOutlineWidthPercent(OUTLINE_MIN_PERCENT);
+                  }
+                }}
+                className="group absolute right-0 top-0 bottom-0 z-20 w-0 -mr-[22px] cursor-col-resize touch-none select-none focus:outline-none"
+              >
+                {/* The rule, and the grip, are on inner elements so the 44px hit
+                    area can stay invisible. The grip is what says "this is
+                    draggable" on hover, and it is driven by `group-focus` rather
+                    than a peer: the focused element is this handle, not a
+                    sibling of the grip. */}
+                <div
+                  className={`absolute right-[22px] top-0 bottom-0 w-px transition-colors ${
+                    isResizingOutline ? 'bg-accent-text' : 'bg-line group-hover:bg-accent-text'
+                  }`}
+                  aria-hidden="true"
+                />
+                <div
+                  className="absolute right-[13px] top-1/2 h-10 w-2 -translate-y-1/2 rounded-full bg-accent-text opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
           </section>
         )}
 

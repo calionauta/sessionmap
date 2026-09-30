@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readLine, lineIndexAt } from './bufferLine';
+import { readLine, lineIndexAt, topicLines, parentTopicLine } from './bufferLine';
 
 const DOC = '# 28/09/2026\n- Trabalho\n  - cansaço\n  - chefe cobra\n    - prazos curtos\n- Família';
 
@@ -100,5 +100,63 @@ describe('lineIndexAt', () => {
   test('an offset past the end does not run away', () => {
     expect(lineIndexAt(DOC, DOC.length + 50)).toBe(5);
     expect(lineIndexAt('', 10)).toBe(0);
+  });
+});
+
+describe('topicLines', () => {
+  test('every topic line, in document order', () => {
+    expect(topicLines(DOC)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('an empty bullet starts no topic, because the parser makes none', () => {
+    expect(topicLines('# 28/09/2026\n- cansaço\n- \n- Família')).toEqual([1, 3]);
+  });
+
+  test('a wrapped paragraph starts no topic', () => {
+    expect(topicLines('# 28/09/2026\n- cansaço\n  e mais texto\n- Família')).toEqual([1, 3]);
+  });
+
+  test('a blank line between topics does not shift the count', () => {
+    expect(topicLines('# s\n- a\n\n- b')).toEqual([1, 3]);
+  });
+
+  test('the session heading starts no topic', () => {
+    expect(topicLines('# s\n- a')).toEqual([1]);
+  });
+
+  test('an empty buffer has no topics and does not hang', () => {
+    expect(topicLines('')).toEqual([]);
+  });
+
+  test('a buffer of only one topic', () => {
+    expect(topicLines('- a')).toEqual([0]);
+  });
+});
+
+describe('parentTopicLine', () => {
+  test('an empty bullet at the same level hangs from the level above it', () => {
+    // "  - " is a SIBLING of "  - cansaço", not its child. The nearest
+    // SHALLOWER topic is "Trabalho", and getting this backwards puts a new
+    // topic inside its own sibling.
+    const value = '# 28/09/2026\n- Trabalho\n  - cansaço\n  - ';
+    expect(parentTopicLine(value, 3, '  ')).toBe(1);
+  });
+
+  test('a deeper bullet hangs from the topic one level up', () => {
+    const value = '# 28/09/2026\n- Trabalho\n  - cansaço\n    - ';
+    expect(parentTopicLine(value, 3, '    ')).toBe(2);
+  });
+
+  test('a bullet at column zero hangs from the session', () => {
+    const value = '# 28/09/2026\n- Trabalho\n- ';
+    expect(parentTopicLine(value, 2, '')).toBe(-1);
+  });
+
+  test('it reads the indentation, never the text', () => {
+    // Two topics with identical text, and the answer is still the right one.
+    const value = '# s\n-重复\n  - leaf\n- \n- repeated';
+    expect(parentTopicLine(value, 3, '')).toBe(-1);
+    const nested = '# s\n- x\n  - y\n    - ';
+    expect(parentTopicLine(nested, 3, '    ')).toBe(2);
   });
 });

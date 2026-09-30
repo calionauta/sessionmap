@@ -123,3 +123,52 @@ export function lineIndexAt(value: string, offset: number): number {
   }
   return line;
 }
+
+/**
+ * The line index of every line that STARTS a topic, in document order.
+ *
+ * A line starts a topic when it is a bullet with something after it. Blank
+ * lines and wrapped paragraphs start none, which is what makes the result
+ * comparable with a flattened tree: index N here is the Nth topic there.
+ *
+ * This exists because matching a line to a topic BY TEXT is wrong the moment
+ * two topics say the same thing, and "ansiedade" twice in a session is
+ * ordinary rather than exotic. Every outliner I know of hits this eventually.
+ */
+export function topicLines(value: string): number[] {
+  const found: number[] = [];
+  let index = 0;
+  let at = 0;
+  while (at <= value.length) {
+    const nl = value.indexOf('\n', at);
+    const end = nl === -1 ? value.length : nl;
+    const line = readLine(value, index);
+    if (line.start === at && line.isBullet && !line.isEmptyBullet) found.push(index);
+    at = end + 1;
+    index++;
+    if (nl === -1) break;
+  }
+  return found;
+}
+
+/**
+ * The line index of the topic an empty bullet at `indent` hangs from, or -1.
+ *
+ * The nearest line above that starts a topic at a SHALLOWER indent, which is
+ * how the parser nests. A bullet at column zero finds nothing and returns -1,
+ * which the caller reads as the session root.
+ *
+ * By indentation and position, never by text: the text of the line above is
+ * not consulted, so two topics saying the same thing cannot send the new one
+ * to the wrong branch.
+ */
+export function parentTopicLine(value: string, lineIndex: number, indent: string): number {
+  for (let i = lineIndex - 1; i >= 0; i--) {
+    const line = readLine(value, i);
+    if (line.isHeading) return -1;
+    if (!line.isBullet || line.text === '') continue;
+    if (line.indent.length >= indent.length) continue;
+    return i;
+  }
+  return -1;
+}
