@@ -1,4 +1,5 @@
 import { describe, expect, test, afterEach } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { registerDom } from '../../test/domEnv';
 
 registerDom();
@@ -986,5 +987,43 @@ describe('pasting a document, then navigating it', () => {
     expect(orphans).toEqual([]);
 
     box.remove();
+  });
+});
+
+describe('the buffer is parsed in exactly one place', () => {
+  /**
+   * A lint-shaped test, and deliberately so.
+   *
+   * The invariant is "the tree the mind map draws is the tree the caret
+   * resolved against", and it holds only if there is ONE parse of the buffer.
+   * There were three, then two, and I converted one of the two at a time — which
+   * is how "a paste breaks navigation and saving works" shipped twice. A comment
+   * saying so did not stop either; this does.
+   *
+   * Behavioural tests cannot catch it: the broken path looks identical from
+   * outside until a paste exposes it, and only then. So the check is on the
+   * source, and it is the smallest thing that makes a third call site a failing
+   * test rather than a bug someone finds in a session.
+   */
+  // Comments stripped first: this file explains the invariant in prose that
+  // mentions both function names, and a test that counted those mentions would
+  // break every time the explanation was reworded.
+  const code = readFileSync(new URL('./MarkdownOutline.tsx', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+
+  test('the buffer is parsed exactly once', () => {
+    expect(code.match(/parseMarkdownToTree\(/g) ?? []).toHaveLength(1);
+  });
+
+  test('onUpdateRoot is called exactly once, by commitBuffer', () => {
+    // The prop type and the destructuring are not calls. One call means there
+    // is no second path that can disagree about which tree gets committed.
+    expect(code.match(/onUpdateRoot\(/g) ?? []).toHaveLength(1);
+  });
+
+  test('and both commit paths go through it', () => {
+    // The debounce and the blur. A third caller would be a third path.
+    expect((code.match(/commitBuffer\(/g) ?? []).length).toBe(2);
   });
 });

@@ -368,42 +368,46 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * thrashes. A short settle is what makes this feel like typing while keeping
    * one coherent structure per pause.
    */
-  /**
-   * True when the buffer already describes the tree the app holds.
-   *
-   * Compared against the CURRENT TREE, not against the buffer. Comparing the
-   * buffer to itself is always true — parse it and serialise it back and you
-   * get the same text — so the first real edit looked like "no change" and
-   * nothing was ever committed. The question is not whether the text is
-   * self-consistent, it is whether it differs from what is stored.
-   */
   const isUnchanged = useCallback(
     (value: string): boolean => treeToMarkdown(root).trimEnd() === value.trimEnd(),
     [root]
+  );
+
+  /**
+   * The ONE place a buffer edit reaches the tree.
+   *
+   * There used to be two: the debounce and the blur handler, each doing its own
+   * `isUnchanged` check and its own `onUpdateRoot`. They looked the same and
+   * were not — the debounce re-parsed the buffer, the blur handed over the
+   * tree the caret had already resolved against. Only one of them was fixed
+   * when the id mismatch was found, which is how "a paste breaks navigation and
+   * saving works" reached production twice.
+   *
+   * One function, so a third path cannot disagree with the other two, and so
+   * the thing a reader has to check is a name rather than a scan for
+   * `onUpdateRoot`. Both callers pass the value they read; the tree that gets
+   * committed is always the one `liveTree` produced, which is the invariant the
+   * mind map's selection depends on.
+   *
+   * Returns whether anything was committed, so the caller can skip work that
+   * only makes sense when the tree actually moved.
+   */
+  const commitBuffer = useCallback(
+    (value: string): boolean => {
+      if (isUnchanged(value)) return false;
+      onUpdateRoot(liveTree().root, 'markdown');
+      return true;
+    },
+    [isUnchanged, liveTree, onUpdateRoot]
   );
 
   const scheduleParse = useCallback(() => {
     if (pendingRef.current) window.clearTimeout(pendingRef.current);
     pendingRef.current = window.setTimeout(() => {
       pendingRef.current = null;
-      const value = textareaRef.current?.value ?? text;
-      if (isUnchanged(value)) return;
-      /* liveTree, NOT a second parse of `value` here.
-
-         This is the path a paste takes — the debounce is what commits a whole
-         document — and a second parse mints fresh ids for every node it cannot
-         recycle by position. The caret had already resolved against the first
-         parse, so the tree the mind map then rendered held DIFFERENT ids for the
-         same topics: no node matched the selection, nothing highlighted, and
-         centreOn could not find anything to centre. It looked like navigation
-         simply stopped working partway down a long document, and the first few
-         topics worked because their ids happened to line up.
-
-         The blur handler below got this right. Two call sites, one of them
-         fixed, is the whole reason it went unnoticed. */
-      onUpdateRoot(liveTree().root, 'markdown');
+      commitBuffer(textareaRef.current?.value ?? text);
     }, PARSE_DEBOUNCE_MS);
-  }, [isUnchanged, liveTree, onUpdateRoot, root, text]);
+  }, [commitBuffer, text]);
 
 
   const sayNotice = useCallback((message: string) => {
@@ -735,10 +739,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
              * textarea is the source of truth while it has focus. */
             if (pendingRef.current) window.clearTimeout(pendingRef.current);
             pendingRef.current = null;
-            const value = textareaRef.current?.value ?? text;
-            if (!isUnchanged(value)) {
-              onUpdateRoot(liveTree().root, 'markdown');
-            }
+            commitBuffer(textareaRef.current?.value ?? text);
             onSelectNode(null, 'clear');
           }}
           spellCheck={false}
