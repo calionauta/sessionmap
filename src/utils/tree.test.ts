@@ -197,7 +197,7 @@ describe('moveNode — the move itself', () => {
     ]);
   });
 
-  test('force-expands a collapsed new parent, as indentNode does', () => {
+  test('force-expands a collapsed new parent', () => {
     const root = node('root', 's', [node('fam', 'Família', [node('f1', 'mãe')], true), node('t1', 'cansaço')]);
     const { root: moved } = moveNode(root, 't1', 'fam');
     // Otherwise the node is present in the outline and invisible on the

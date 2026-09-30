@@ -3,31 +3,39 @@ import { registerDom } from '../test/domEnv';
 
 registerDom();
 
-const { isBrowserUndoTarget } = await import('./keyboard');
+const { isTextEntryTarget } = await import('./keyboard');
 
-describe('isBrowserUndoTarget', () => {
+describe('isTextEntryTarget', () => {
   test('a textarea belongs to the browser', () => {
     // The whole point: the markdown outline is a textarea, and its text is the
     // only copy of the session until it is parsed back into a tree.
-    expect(isBrowserUndoTarget(document.createElement('textarea'))).toBe(true);
+    expect(isTextEntryTarget(document.createElement('textarea'))).toBe(true);
+  });
+
+  test('an input belongs to the browser too, and it used not to', () => {
+    // The row editor was a list of text inputs whose Ctrl+Z was deliberately
+    // the tree's, which is why <input> was excluded. That editor is gone, and
+    // every input left is a field in a dialog — a client's name, a map's title,
+    // a search box — where undoing a mind map is never what was meant.
+    expect(isTextEntryTarget(document.createElement('input'))).toBe(true);
   });
 
   test('a contenteditable region belongs to the browser', () => {
     const el = document.createElement('div');
     el.setAttribute('contenteditable', 'true');
-    expect(isBrowserUndoTarget(el)).toBe(true);
+    expect(isTextEntryTarget(el)).toBe(true);
   });
 
-  test('an outline row does NOT — tree undo there is the requested behaviour', () => {
-    // Stated as its own test because it is the line that could be crossed by a
-    // later "simplification". Taking tree undo away from the row editor would
-    // trade a feature for the bug this was written to fix.
-    expect(isBrowserUndoTarget(document.createElement('input'))).toBe(false);
-    expect(isBrowserUndoTarget(document.createElement('div'))).toBe(false);
+  test('anything that is not a field does not', () => {
+    // The body, the canvas and every button must still reach the tree undo:
+    // that is the shortcut's whole reason for existing once the editor is a
+    // textarea and the caret is usually somewhere else.
+    expect(isTextEntryTarget(document.createElement('div'))).toBe(false);
+    expect(isTextEntryTarget(document.createElement('button'))).toBe(false);
+    expect(isTextEntryTarget(document)).toBe(false);
   });
 
   test('nothing at all is not a target', () => {
-    expect(isBrowserUndoTarget(null)).toBe(false);
-    expect(isBrowserUndoTarget(document)).toBe(false);
+    expect(isTextEntryTarget(null)).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ type Overrides = Partial<{
   focusZoomOn: boolean;
   isDark: boolean;
   canRestoreSplit: boolean;
+  narrowPane: 'outline' | 'map' | null;
 }>;
 
 const calls: string[] = [];
@@ -33,6 +34,8 @@ function setup(overrides: Overrides = {}) {
       focusZoomOn: false,
       isDark: false,
       canRestoreSplit: false,
+      narrowPane: null,
+      onSwapPane: () => calls.push('swapPane'),
       onOpenClients: () => calls.push('clients'),
       onOpenClientWindow: () => calls.push('clientWindow'),
       onFocusClientWindow: () => calls.push('focusClient'),
@@ -324,5 +327,36 @@ describe('the overflow menu', () => {
     });
     const stops = items().filter((i) => i.getAttribute('tabindex') === '0');
     expect(stops).toHaveLength(1);
+  });
+});
+
+describe('the narrow-window pane switch', () => {
+  test('it appears only when the window is too narrow for a split', () => {
+    // Above the breakpoint it is noise: both panes fit, and a button whose
+    // label is "ver o mapa" would be a lie.
+    setup();
+    expect(bar().querySelector('[aria-label*="Ver o mapa"]')).toBeNull();
+    expect(bar().querySelector('[aria-label*="Ver os tópicos"]')).toBeNull();
+  });
+
+  test('on the outline it offers the map, and vice versa', () => {
+    setup({ narrowPane: 'outline' });
+    const swap = byLabel('Ver o mapa da sessão');
+    act(() => {
+      fireEvent.click(swap);
+    });
+    expect(calls).toEqual(['swapPane']);
+
+    setup({ narrowPane: 'map' });
+    expect(bar().querySelector('[aria-label="Ver os tópicos da sessão"]')).not.toBeNull();
+  });
+
+  test('it counts as a control in the bar, and the bar stays small', () => {
+    // The bar's whole point is a ceiling on how much lives in it. On a phone it
+    // gains exactly one button, and the map switch is not hiding behind a menu:
+    // it is the navigation between the only two surfaces there are.
+    setup({ narrowPane: 'outline', isClientConnected: true });
+    expect(buttons()).toHaveLength(5);
+    expect(byLabel('Mais ferramentas')).not.toBeNull();
   });
 });

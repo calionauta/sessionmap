@@ -1,6 +1,7 @@
 import { Client, MindMap, MindMapNode, Settings } from '../types';
 import { generateNodeId, normalizeOutline } from '../utils/tree';
 import { formatSessionTimestamp } from '../utils/text';
+import { OUTLINE_MIN_PERCENT, clampOutlineWidth } from '../utils/layout';
 
 const DB_NAME = 'sessionmap_db';
 // 3 = renamed database: every record is copied out of narratips_db on upgrade.
@@ -31,10 +32,12 @@ export const DEFAULT_SETTINGS: Settings = {
   // The map stays visible by default: hiding it is a per-session choice, and a
   // therapist who wants it gone every time can turn it on once.
   maximizeOutline: false,
-  // The row editor is the default because it is the one that was in use, and
-  // changing the editing surface without being asked is not a call to make for
-  // someone. The markdown buffer is a real alternative, not a preview.
-  outlineEditor: 'rows',
+  // Pane width, persisted. It used to be bare component state, so the split
+  // reset itself on every reload and a therapist who widened the outline to
+  // read a long topic had to drag it again every session. The bounds live in
+  // utils/layout and are applied on read, so a value written by a build with a
+  // different range cannot render the pane off screen.
+  outlineWidthPercent: OUTLINE_MIN_PERCENT,
 };
 
 const DEFAULT_SAMPLE_CLIENT: Client = {
@@ -839,7 +842,12 @@ export function getSettings(): Settings {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY);
     if (stored) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      const merged = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      /* The pane width is bounded on READ, not only on write. A value stored by
+         a build whose range was different — or a number that arrived from
+         somewhere else entirely — must not be able to render the pane off
+         screen, and the only place that is guaranteed is the read. */
+      return { ...merged, outlineWidthPercent: clampOutlineWidth(merged.outlineWidthPercent) };
     }
   } catch {
     // fallback

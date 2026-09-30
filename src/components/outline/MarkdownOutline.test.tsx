@@ -44,7 +44,8 @@ let drafts: Array<{
 function setup(
   root: MindMapNode = fixture(),
   enableNodeMove = true,
-  focusDwellSeconds = 0
+  focusDwellSeconds = 0,
+  outlineFontScale = 1
 ) {
   lastRoot = root;
   updateCount = 0;
@@ -71,7 +72,7 @@ function setup(
       focusDwellSeconds,
       theme: 'papel' as const,
       enableNodeMove,
-      outlineFontScale: 1,
+      outlineFontScale,
     }),
     { container }
   );
@@ -497,7 +498,7 @@ describe('Enter starts the next topic', () => {
   });
 
   test('on an empty bullet it ends the topic instead of stacking blanks', () => {
-    // What every outliner does, and what the row editor already did here. The
+    // What every outliner does. The
     // line goes with ONE of its two newlines: neither would leave a blank line
     // where the topic was, both would join the lines above and below.
     setup();
@@ -730,5 +731,31 @@ describe('moving a topic from the markdown buffer', () => {  afterEach(() => {
     press('m', { ctrlKey: true, shiftKey: true });
     expect(updateCount).toBe(0);
     expect(document.body.textContent).not.toMatch(/Movendo/);
+  });
+});
+
+describe('the buffer and the font scale', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  test('the scale reaches the buffer as one custom property', () => {
+    // The row editor had six tests pinning that the scale drove the row height,
+    // the indent step and the gutter. There is no row here: one font size on the
+    // container, and the textarea reads the same variable. What matters is that
+    // the setting still does something at all, rather than becoming a dead knob
+    // along with the editor it was sized for.
+    setup(fixture(), true, 0, 1.4);
+    const wrapper = container!.querySelector<HTMLElement>('[style*="--row-scale"]');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper!.getAttribute('style')).toContain('1.4');
+  });
+
+  test('the default renders without a scale set', () => {
+    setup();
+    const wrapper = container!.querySelector<HTMLElement>('[style*="--row-scale"]')!;
+    expect(wrapper.getAttribute('style')).toContain('1');
   });
 });

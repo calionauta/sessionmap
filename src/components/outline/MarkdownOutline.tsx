@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Info, Keyboard, ListTree, MoveVertical, PanelLeft, Minimize2 } from 'lucide-react';
+import { Info, Keyboard, MoveVertical, PanelLeft, Minimize2 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode } from '../../types';
 import { findNodeById, moveNode, branchIndexOf, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { isLiftChord, moveCandidates, MOVE_REFUSAL_TEXT } from '../../utils/lift';
@@ -22,10 +22,8 @@ interface MarkdownOutlineProps {
   /**
    * Seconds the caret must rest on a topic before its balloon lights up.
    *
-   * The setting is global and the row editor has always honoured it, so a
-   * therapist who set it to 3 seconds and then switched to this mode was told
-   * nothing and simply got no auto-focus. 0 means "never", which is honoured
-   * here too rather than treated as "use the default".
+   * 0 means "never" and is honoured as such rather than treated as "use the
+   * default".
    */
   focusDwellSeconds: number;
   theme: 'papel' | 'noite';
@@ -277,11 +275,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * Resting the caret on a topic lights its balloon up, after the configured
    * delay.
    *
-   * A plain setTimeout rather than the row editor's requestAnimationFrame loop,
-   * and the difference is the whole reason: that loop exists to animate the
-   * progress ring on the active row. There is no row here, so there is nothing
-   * to draw, and a timer that fires once is less code than a loop that redraws
-   * sixty times a second to report the same thing.
+   * A plain setTimeout, and the reason is that there is nothing to draw. A
+   * progress ring needs a requestAnimationFrame loop to animate; a buffer has no
+   * rows and no ring, so a timer that fires once is the whole thing.
    *
    * Armed on every caret move and on typing. Typing counts as resting: a
    * therapist working through a session writes a thought, pauses to think, and
@@ -323,9 +319,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   /**
    * Where the caret went, and what that should mean for the highlight.
    *
-   * Same intents the row editor uses, for the same reason. Navigation ARMS the
-   * dwell rather than highlighting, or the setting would control nothing; a
-   * pointer click is a deliberate act on one topic and highlights at once.
+   * Navigation ARMS the dwell rather than highlighting, or the setting would
+   * control nothing; a pointer click is a deliberate act on one topic and
+   * highlights at once.
    */
   const followCaret = useCallback(
     (intent: 'navigate' | 'typing' | 'explicit') => {
@@ -470,10 +466,10 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * same way, by taking the key and rewriting the indent of the affected lines.
    *
    * Tab is therefore CAPTURED, which means it no longer moves focus out of the
-   * field. That is a real accessibility cost and the one thing this mode is
-   * worse at than the row editor, where every topic is its own focusable field
-   * and Tab walks them natively. Escape leaves the textarea, so the field is
-   * not a keyboard trap.
+   * field. That is a real accessibility cost, and it is the price of the trade:
+   * in exchange, selection and cut-and-paste work ACROSS levels, which the
+   * browser gives for free and a list of one-input-per-topic never could.
+   * Escape leaves the textarea, so the field is not a keyboard trap.
    *
    * Declared after startLift/stepTarget/commitLift on purpose: it is a plain
    * arrow function, not a useCallback, and it calls all three. Declaring it
@@ -517,9 +513,8 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * worse surprise of the two.
    *
    * Enter on an EMPTY bullet ends the topic instead of nesting another one
-   * inside nothing, which is what every outliner does and what the row editor
-   * already did here ("Anotação vazia descartada"). Without it, a therapist who
-   * keeps pressing Enter walks down the buffer leaving a stack of blanks.
+   * inside nothing, which is what every outliner does. Without it, a therapist
+   * who keeps pressing Enter walks down the buffer leaving a stack of blanks.
    *
    * Returns false for a line that is not a topic — a wrapped paragraph, a blank
    * line — and the caller lets the browser have the key, because there a soft
@@ -563,10 +558,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
 
-    /* A LIFT in flight owns the keys, and it is checked FIRST for the same
-     * reason the row editor checks it first: the arrow keys below move the
-     * caret, so a lift that lost the race would edit the text instead of
-     * aiming the drop. */
+    /* A LIFT in flight owns the keys, and it is checked FIRST: the arrow keys
+     * below move the caret, so a lift that lost the race would edit the text
+     * instead of aiming the drop. */
     if (lifted) {
       e.preventDefault();
       if (e.key === 'ArrowDown') return stepTarget(1);
@@ -654,8 +648,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       }`}
       style={{ fontSize: `calc(1rem * var(--row-scale, ${outlineFontScale}))` }}
     >
-      {/* Header. Same shape as the row editor's, so switching between the two
-          modes does not move the controls the therapist already knows. */}
+      {/* Header. */}
       <div className="px-4 py-3 border-b border-line-muted shrink-0 bg-surface-inset text-content">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-bold tracking-tight">
           <span className="uppercase text-[11px] tracking-wider text-content-muted">

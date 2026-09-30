@@ -49,43 +49,6 @@ export function moveCandidates(root: MindMapNode, sourceId: string): string[] {
     .map((item) => item.id);
 }
 
-/**
- * Where the lift cursor should sit when a row is lifted.
- *
- * The row ABOVE the lifted one, not the top of the outline. The mis-filed
- * topic that motivates a move is nearly always a sibling or a cousin, so
- * starting the cursor in the visual neighbourhood of where the row already
- * sits means Enter — which lands on the current candidate — does the obvious
- * thing instead of teleporting the subtree to the top of the session.
- */
-export function initialLiftTarget(root: MindMapNode, sourceId: string): string | null {
-  const candidates = moveCandidates(root, sourceId);
-  if (candidates.length === 0) return null;
-
-  const order = flattenTree(root, 0, null, 0, true).map((i) => i.id);
-  const myIndex = order.indexOf(sourceId);
-  const before = candidates.filter((id) => order.indexOf(id) < myIndex);
-  return before.length > 0 ? before[before.length - 1] : candidates[0];
-}
-
-/**
- * Moves the lift cursor by `delta`, clamped to the ends.
- *
- * The candidate list is a list, not a set of flags on the rows, so the cursor
- * is a position in a list: it cannot stop anywhere the move would refuse, and
- * the skip over an invalid row is visible as the highlight jumping rather than
- * as a keystroke that appeared to do nothing.
- */
-export function stepLiftTarget(
-  candidates: string[],
-  current: string | null,
-  delta: number
-): string | null {
-  if (candidates.length === 0) return null;
-  const from = Math.max(0, candidates.indexOf(current ?? ''));
-  return candidates[Math.min(candidates.length - 1, Math.max(0, from + delta))];
-}
-
 export type { MoveRefusal };
 
 /**

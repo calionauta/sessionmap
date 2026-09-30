@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  moveCandidates,
-  initialLiftTarget,
-  stepLiftTarget,
-  isLiftChord,
-  MOVE_REFUSAL_TEXT,
-} from './lift';
+import { moveCandidates, isLiftChord, MOVE_REFUSAL_TEXT } from './lift';
 import { MoveRefusal, branchIndexOf, moveNode, flattenTree } from './tree';
 import { MindMapNode } from '../types';
 
@@ -109,82 +103,5 @@ describe('moveCandidates — the rows the lift cursor can land on', () => {
     for (const id of moveCandidates(root, 't2')) {
       expect(refusalOf(moveNode(root, 't2', id))).toBeNull();
     }
-  });
-});
-
-describe('initialLiftTarget — where the cursor lands when a row is lifted', () => {
-  test('aims at the nearest candidate above, so Enter does the obvious thing', () => {
-    // t2a is the last row; the nearest candidate above it is t1 — a local move
-    // rather than a jump to the top of the session.
-    expect(initialLiftTarget(fixture(), 't2a')).toBe('t1');
-    // t2a really is the row directly above f1, even though t2 is its parent.
-    expect(initialLiftTarget(fixture(), 'f1')).toBe('t2a');
-  });
-
-  test('a single top-level branch has nowhere to go', () => {
-    // Its only parent is the root, and the root is that parent, so there is no
-    // candidate at all. startLift reports this rather than entering a lift that
-    // could only be cancelled.
-    const root = node('root', 's', [node('only', 'Único')]);
-    expect(moveCandidates(root, 'only')).toEqual([]);
-    expect(initialLiftTarget(root, 'only')).toBeNull();
-  });
-
-  test('a single nested branch can still move up to the root', () => {
-    // b's only parent is a, and a is excluded as the current parent, so the
-    // root is what remains — which is exactly the "over-indented, make it its
-    // own branch" case Shift+Tab also covers.
-    const root = node('root', 's', [node('a', 'A', [node('b', 'B')])]);
-    expect(initialLiftTarget(root, 'b')).toBe('root');
-    const twoLevels = node('root', 's', [node('a', 'A', [node('b', 'B', [node('c', 'C')])])]);
-    // b is c's current parent, so the nearest candidate above it is a.
-    expect(initialLiftTarget(twoLevels, 'c')).toBe('a');
-  });
-
-  test('is null when there is nowhere to go', () => {
-    const root = node('root', 's', [node('only', 'Único')]);
-    expect(initialLiftTarget(root, 'root')).toBeNull();
-  });
-
-  test('every initial target is a real candidate the move accepts', () => {
-    const root = fixture();
-    for (const id of flattenTree(root).map((i) => i.id)) {
-      const target = initialLiftTarget(root, id);
-      if (target === null) continue;
-      expect(moveCandidates(root, id)).toContain(target);
-      expect(refusalOf(moveNode(root, id, target))).toBeNull();
-    }
-  });
-});
-
-describe('stepLiftTarget — arrow stepping', () => {
-  const list = ['a', 'b', 'c', 'd'];
-
-  test('steps forward and back', () => {
-    expect(stepLiftTarget(list, 'a', 1)).toBe('b');
-    expect(stepLiftTarget(list, 'c', -1)).toBe('b');
-  });
-
-  test('clamps at both ends instead of wrapping', () => {
-    // Wrapping would make ArrowUp at the top teleport the destination to the
-    // bottom of the session, which is the opposite of what the key says.
-    expect(stepLiftTarget(list, 'a', -1)).toBe('a');
-    expect(stepLiftTarget(list, 'd', 1)).toBe('d');
-    expect(stepLiftTarget(list, 'a', -99)).toBe('a');
-    expect(stepLiftTarget(list, 'd', 99)).toBe('d');
-  });
-
-  test('paging moves several rows and still clamps', () => {
-    expect(stepLiftTarget(list, 'a', 4)).toBe('d');
-    expect(stepLiftTarget(list, 'd', -4)).toBe('a');
-  });
-
-  test('a stale or null current position starts at the top', () => {
-    expect(stepLiftTarget(list, null, 1)).toBe('b');
-    expect(stepLiftTarget(list, 'gone', 1)).toBe('b');
-  });
-
-  test('an empty list has nowhere to point', () => {
-    expect(stepLiftTarget([], 'a', 1)).toBeNull();
   });
 });

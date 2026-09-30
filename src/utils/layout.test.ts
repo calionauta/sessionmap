@@ -3,6 +3,7 @@ import {
   OUTLINE_MIN_PERCENT,
   OUTLINE_MAX_PERCENT,
   clampOutlineWidth,
+  NARROW_VIEWPORT_MAX_PX,
 } from './layout';
 
 describe('the outline pane width', () => {
@@ -42,5 +43,13 @@ describe('the outline pane width', () => {
     expect(clampOutlineWidth(NaN)).toBe(OUTLINE_MIN_PERCENT);
     expect(clampOutlineWidth(Infinity)).toBe(OUTLINE_MIN_PERCENT);
     expect(clampOutlineWidth(-Infinity)).toBe(OUTLINE_MIN_PERCENT);
+  });
+});
+
+describe('the narrow viewport threshold', () => {
+  test('it is the md breakpoint, not a number somebody liked', () => {
+    // Chosen to match Tailwind's `md` so the CSS breakpoints and this number
+    // cannot drift apart. Below it, 38% of 375px is 142px.
+    expect(NARROW_VIEWPORT_MAX_PX).toBe(767);
   });
 });

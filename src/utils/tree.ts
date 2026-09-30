@@ -143,19 +143,6 @@ export function flattenTree(
 }
 
 /**
- * Updates text of a node immutably.
- */
-export function updateNodeText(root: MindMapNode, id: string, newText: string): MindMapNode {
-  if (root.id === id) {
-    return { ...root, text: newText };
-  }
-  return {
-    ...root,
-    children: (root.children || []).map((child) => updateNodeText(child, id, newText)),
-  };
-}
-
-/**
  * Toggle collapsed state of a node.
  */
 export function toggleNodeCollapse(root: MindMapNode, id: string): MindMapNode {
@@ -166,152 +153,6 @@ export function toggleNodeCollapse(root: MindMapNode, id: string): MindMapNode {
     ...root,
     children: (root.children || []).map((child) => toggleNodeCollapse(child, id)),
   };
-}
-
-/**
- * Add a sibling immediately after the given node ID.
- * Returns the new tree and the newly created node.
- */
-export function addSibling(
-  root: MindMapNode,
-  targetId: string,
-  initialText: string = ''
-): { root: MindMapNode; newNode: MindMapNode } {
-  // If target is root, add as child of root
-  if (root.id === targetId) {
-    const newNode: MindMapNode = {
-      id: generateNodeId(),
-      text: initialText,
-      children: [],
-    };
-    return {
-      root: {
-        ...root,
-        children: [...(root.children || []), newNode],
-      },
-      newNode,
-    };
-  }
-
-  const newNode: MindMapNode = {
-    id: generateNodeId(),
-    text: initialText,
-    children: [],
-  };
-
-  function insertAfter(node: MindMapNode): MindMapNode {
-    const idx = (node.children || []).findIndex((c) => c.id === targetId);
-    if (idx !== -1) {
-      const nextChildren = [...node.children];
-      nextChildren.splice(idx + 1, 0, newNode);
-      return { ...node, children: nextChildren };
-    }
-    return {
-      ...node,
-      children: (node.children || []).map(insertAfter),
-    };
-  }
-
-  return { root: insertAfter(root), newNode };
-}
-
-/**
- * Indent a node (Tab): it becomes the last child of its previous sibling.
- */
-export function indentNode(
-  root: MindMapNode,
-  targetId: string
-): { root: MindMapNode; success: boolean } {
-  if (root.id === targetId) return { root, success: false };
-
-  const pInfo = findParentAndIndex(root, targetId);
-  if (!pInfo || !pInfo.parent) return { root, success: false };
-
-  const { parent, index } = pInfo;
-  if (index <= 0) return { root, success: false }; // No previous sibling to become child of
-
-  const targetNode = parent.children[index];
-  const prevSibling = parent.children[index - 1];
-
-  // We need to remove target from parent, and append to prevSibling.children
-  function update(node: MindMapNode): MindMapNode {
-    if (node.id === parent.id) {
-      const newChildren = node.children.filter((c) => c.id !== targetId);
-      return {
-        ...node,
-        children: newChildren.map((child) => {
-          if (child.id === prevSibling.id) {
-            return {
-              ...child,
-              collapsed: false,
-              children: [...(child.children || []), targetNode],
-            };
-          }
-          return child;
-        }),
-      };
-    }
-    return {
-      ...node,
-      children: (node.children || []).map(update),
-    };
-  }
-
-  return { root: update(root), success: true };
-}
-
-/**
- * Unindent a node (Shift+Tab): it becomes a sibling of its parent (inserted after parent).
- */
-export function unindentNode(
-  root: MindMapNode,
-  targetId: string
-): { root: MindMapNode; success: boolean } {
-  if (root.id === targetId) return { root, success: false };
-
-  const pInfo = findParentAndIndex(root, targetId);
-  if (!pInfo || !pInfo.parent) return { root, success: false };
-
-  const { parent } = pInfo;
-  // If parent is root, we cannot unindent beyond root
-  if (parent.id === root.id) return { root, success: false };
-
-  const grandParentInfo = findParentAndIndex(root, parent.id);
-  if (!grandParentInfo || !grandParentInfo.parent) return { root, success: false };
-
-  const grandParent = grandParentInfo.parent;
-  const targetNode = parent.children.find((c) => c.id === targetId);
-  if (!targetNode) return { root, success: false };
-  const definedTarget: MindMapNode = targetNode;
-  const gpId = grandParent.id;
-  const pId = parent.id;
-
-  function update(node: MindMapNode): MindMapNode {
-    if (node.id === gpId) {
-      const newGrandChildren: MindMapNode[] = [];
-      node.children.forEach((c) => {
-        if (c.id === pId) {
-          // Remove targetNode from parent
-          const cleanedParent = {
-            ...c,
-            children: c.children.filter((child) => child.id !== targetId),
-          };
-          newGrandChildren.push(cleanedParent);
-          // Insert targetNode right after parent
-          newGrandChildren.push(definedTarget);
-        } else {
-          newGrandChildren.push(c);
-        }
-      });
-      return { ...node, children: newGrandChildren };
-    }
-    return {
-      ...node,
-      children: (node.children || []).map(update),
-    };
-  }
-
-  return { root: update(root), success: true };
 }
 
 /**
@@ -381,18 +222,19 @@ export type MoveRefusal =
  * destination is rebuilt, and the outline's rows are keyed by id rather than by
  * reference precisely so that does not cost a remount.
  *
- * ONE destination and ONE position. Reordering after the move is Alt+Arrow
- * (moveSibling), which is unambiguous on its own. A move that could also land
- * "before" or "after" some row would have three plausible outcomes per gesture,
- * and one of them is always a mistake.
+ * ONE destination and ONE position: the target becomes the LAST CHILD. Where
+ * it sits among its new siblings is a separate question, answered by the
+ * buffer's own indentation — write the text where you want it. A move that
+ * could also land "before" or "after" would have three plausible outcomes per
+ * gesture, and one of them is always a mistake.
  *
  * The whole tree is rebuilt in ONE pass, so the caller commits once. Two calls
  * (detach, then attach) would put two entries in the history stack and let the
  * client window receive an intermediate state where the subtree is gone.
  *
- * The new parent is force-expanded, as indentNode already does: a move into a
- * collapsed parent would otherwise leave the node present in the outline and
- * invisible on the shared screen, which is the worst failure available here.
+ * The new parent is force-expanded. A move into a collapsed parent would
+ * otherwise leave the node present in the outline and invisible on the shared
+ * screen, which is the worst failure available here.
  */
 export function moveNode(
   root: MindMapNode,
@@ -440,10 +282,11 @@ export function moveNode(
    *
    * A plain per-node `filter` is not enough. When the new parent is an ancestor
    * of the target — moving a node up to the root is the common case, and
-   * Shift+Tab already covers it, so this path runs constantly — the target is a
+   * Shift+Tab outdents for exactly that, so this path runs constantly — the
+   * target is a
    * GRANDCHILD of the destination, and filtering each node's direct children
    * leaves the original in place. Re-attaching then gives the tree two nodes
-   * with the same id: React reports duplicate keys, drops one, and the outline
+   * with the same id: React reports duplicate keys, drops one, and the map
    * renders the subtree twice.
    *
    * So the removal is done over the entire tree first, and the target is
@@ -467,43 +310,6 @@ export function moveNode(
   };
 
   return { root: reattach(detachEverywhere(root)), success: true, refusal: null };
-}
-
-/**
- * Move node up or down among its siblings (Alt+Up / Alt+Down).
- */
-export function moveSibling(
-  root: MindMapNode,
-  targetId: string,
-  direction: 'up' | 'down'
-): { root: MindMapNode; success: boolean } {
-  if (root.id === targetId) return { root, success: false };
-
-  const pInfo = findParentAndIndex(root, targetId);
-  if (!pInfo || !pInfo.parent) return { root, success: false };
-
-  const { parent, index } = pInfo;
-  const targetIndex = direction === 'up' ? index - 1 : index + 1;
-
-  if (targetIndex < 0 || targetIndex >= parent.children.length) {
-    return { root, success: false };
-  }
-
-  function update(node: MindMapNode): MindMapNode {
-    if (node.id === parent.id) {
-      const newChildren = [...node.children];
-      const temp = newChildren[index];
-      newChildren[index] = newChildren[targetIndex];
-      newChildren[targetIndex] = temp;
-      return { ...node, children: newChildren };
-    }
-    return {
-      ...node,
-      children: (node.children || []).map(update),
-    };
-  }
-
-  return { root: update(root), success: true };
 }
 
 /**
@@ -557,40 +363,4 @@ export function normalizeOutline(root: MindMapNode): MindMapNode {
 
   const [normalized] = walk(root, true);
   return normalized ?? root;
-}
-
-/**
- * Delete a node from the tree.
- * Root cannot be deleted (will just be cleared of children if requested).
- */
-export function deleteNode(
-  root: MindMapNode,
-  targetId: string
-): { root: MindMapNode; nextFocusId: string | null } {
-  if (root.id === targetId) {
-    // Cannot delete root, return same
-    return { root, nextFocusId: root.id };
-  }
-
-  const pInfo = findParentAndIndex(root, targetId);
-  if (!pInfo || !pInfo.parent) return { root, nextFocusId: null };
-
-  const { parent, index } = pInfo;
-  let nextFocusId: string = parent.id;
-  if (index > 0) {
-    nextFocusId = parent.children[index - 1].id;
-  } else if (parent.children.length > 1) {
-    nextFocusId = parent.children[1].id;
-  }
-
-  function remove(node: MindMapNode): MindMapNode {
-    return {
-      ...node,
-      children: (node.children || [])
-        .filter((child) => child.id !== targetId)
-        .map(remove),
-    };
-  }
-
-  return { root: remove(root), nextFocusId };
 }

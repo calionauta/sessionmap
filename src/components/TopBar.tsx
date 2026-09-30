@@ -4,7 +4,9 @@ import {
   Download,
   ExternalLink,
   Layers,
+  ListTree,
   Lock,
+  Map,
   MonitorUp,
   Minimize2,
   Pause,
@@ -46,6 +48,15 @@ export interface TopBarProps {
   isDark: boolean;
   /** The outline is off screen, so the split has to be restorable from here. */
   canRestoreSplit: boolean;
+  /**
+   * Set only on a narrow window, where two panes cannot both be usable and
+   * this button is the whole navigation between them.
+   *
+   * It lives in the bar rather than in either pane because whichever pane is
+   * NOT showing is the one that needs a way back, and a control inside a hidden
+   * pane cannot be pressed. The bar is the one surface that is always there.
+   */
+  narrowPane: 'outline' | 'map' | null;
 
   onOpenClients: () => void;
   onOpenClientWindow: () => void;
@@ -68,6 +79,7 @@ export interface TopBarProps {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onRestoreSplit: () => void;
+  onSwapPane: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -89,6 +101,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleTheme,
   onOpenSettings,
   onRestoreSplit,
+  narrowPane,
+  onSwapPane,
 }) => {
   /**
    * The one control that both reports the connection and acts on it.
@@ -244,6 +258,26 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isPaused ? 'Cliente em pausa' : isClientConnected ? 'Cliente conectado' : 'Cliente desconectado'}
           </span>
         </div>
+
+        {/* The narrow-window pane switch. Before it: a 375px screen showed a
+            142px outline beside a 233px map, and a 44px splitter across the
+            middle of it. The bar is the only surface that is on screen in both
+            states, which is why the switch lives here and not in a pane. */}
+        {narrowPane && (
+          <button
+            type="button"
+            onClick={onSwapPane}
+            title={narrowPane === 'outline' ? 'Ver o mapa' : 'Ver os tópicos'}
+            aria-label={narrowPane === 'outline' ? 'Ver o mapa da sessão' : 'Ver os tópicos da sessão'}
+            className="ctl w-9 h-9 !min-h-0 px-0"
+          >
+            {narrowPane === 'outline' ? (
+              <Map className="w-4 h-4" aria-hidden="true" />
+            ) : (
+              <ListTree className="w-4 h-4" aria-hidden="true" />
+            )}
+          </button>
+        )}
 
         <button
           type="button"

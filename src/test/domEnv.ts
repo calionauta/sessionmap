@@ -3,7 +3,7 @@
  *
  * Bun has no built-in jsdom/happy-dom preload, so this is wired through
  * `bunfig.toml` instead. It is scoped to test files that ask for it by
- * importing `registerDom()` themselves — see OutlineEditor.lift.test.tsx,
+ * importing `registerDom()` themselves — see MarkdownOutline.test.tsx,
  * which is the first test to need a real document.
  */
 import { GlobalRegistrator } from '@happy-dom/global-registrator';

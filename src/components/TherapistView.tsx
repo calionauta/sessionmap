@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Maximize2,
-  Minimize2,
   CheckCircle2,
   CornerDownRight,
   Undo2,
@@ -9,7 +8,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { Client, MindMap, MindMapNode, Settings } from '../types';
-import { OutlineEditor } from './outline/OutlineEditor';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { ShareGuideModal } from './modals/ShareGuideModal';
 import { ExportModal } from './modals/ExportModal';
@@ -19,6 +17,7 @@ import { AdminClientManager } from './admin/AdminClientManager';
 import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
 import { TopBar } from './TopBar';
+import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import {
   getAllMaps,
   getAllClients,
@@ -40,7 +39,7 @@ import {
 import { syncService } from '../services/sync';
 import { findPathToNode, findNodeById, generateNodeId, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
 import { formatSessionTimestamp } from '../utils/text';
-import { isBrowserUndoTarget } from '../utils/keyboard';
+import { isTextEntryTarget } from '../utils/keyboard';
 import {
   OUTLINE_MIN_PERCENT,
   OUTLINE_MAX_PERCENT,
@@ -98,6 +97,31 @@ export const TherapistView: React.FC = () => {
     active: boolean;
   } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  /**
+   * Which pane a NARROW window is showing.
+   *
+   * A separate boolean from the two maximisations, deliberately. Those are a
+   * desktop preference, and folding this into them would mean that rotating a
+   * phone rewrote the split the therapist chose on the laptop — the layout
+   * would come back wrong. Below the breakpoint the split is not a split, so
+   * this is the switch, and above it the maximisations keep their meaning
+   * untouched.
+   */
+  const isNarrow = useNarrowViewport();
+  const [narrowPane, setNarrowPane] = useState<'outline' | 'map'>('outline');
+
+  /**
+   * Layout policy, kept separate from "is there a session".
+   *
+   * `activeMap` is tested at the call site rather than folded in here, because a
+   * boolean cannot narrow a nullable for the compiler and the cast that follows
+   * would be a lie about a condition that really can be false.
+   */
+  const showOutlinePane = !isMaximizedMap && (!isNarrow || narrowPane === 'outline');
+  const showMap = !maximizeOutline && (!isNarrow || narrowPane === 'map');
+  /** On a narrow window the outline takes the whole width whatever it says. */
+  const outlineFull = maximizeOutline || isNarrow;
 
   // Modals state
   const [isShareGuideOpen, setIsShareGuideOpen] = useState(false);
@@ -338,8 +362,8 @@ export const TherapistView: React.FC = () => {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        // The browser owns undo inside a text buffer. See isBrowserUndoTarget.
-        if (isBrowserUndoTarget(e.target)) return;
+        // The browser owns undo inside a text field. See isTextEntryTarget.
+        if (isTextEntryTarget(e.target)) return;
         if (e.shiftKey) {
           e.preventDefault();
           handleRedo();
@@ -637,6 +661,8 @@ export const TherapistView: React.FC = () => {
         focusZoomOn={settings.focusZoomMode}
         isDark={isDark}
         canRestoreSplit={isMaximizedMap && Boolean(activeMap)}
+        narrowPane={isNarrow ? narrowPane : null}
+        onSwapPane={() => setNarrowPane((p) => (p === 'outline' ? 'map' : 'outline'))}
         onOpenClients={() => setIsAdminOpen(true)}
         onOpenClientWindow={openClientWindow}
         /* Focusing the existing window when there is one, and opening when
@@ -673,59 +699,38 @@ export const TherapistView: React.FC = () => {
             leaves no outline and a maximized outline leaves no map. Guarding on
             both here means neither toggle can produce a window with neither
             surface — which would be an empty screen mid-session. */}
-        {!isMaximizedMap && activeMap && (
+        {showOutlinePane && activeMap && (
           <section
             aria-label="Tópicos da sessão"
             className="border-r border-line flex flex-col h-full relative"
-            style={{ width: maximizeOutline ? '100%' : `${outlineWidthPercent}%` }}
+            style={{ width: outlineFull ? '100%' : `${outlineWidthPercent}%` }}
           >
-            {/* Two editors, one tree. Which one is mounted is a setting, and
-                both drive the same handlers, so the mind map, the client
-                window, the autosave and the undo stack are identical either
-                way. They are not interchangeable at runtime: the row editor
-                holds a focused input the markdown buffer has no equivalent of,
-                so switching unmounts one and mounts the other. The tree itself
-                is untouched by the switch — it lives in activeMap, not in
-                either editor. */}
-            {settings.outlineEditor === 'markdown' ? (
-              <MarkdownOutline
-                root={activeMap.root}
-                onUpdateRoot={handleUpdateRoot}
-                onDraftChange={handleDraftChange}
-                onSelectNode={handleSelectNode}
-                selectedNodeId={selectedNodeId}
-                focusDwellSeconds={settings.focusDwellSeconds}
-                theme={settings.theme}
-                enableNodeMove={settings.enableNodeMove}
-                outlineFontScale={settings.outlineFontScale}
-                maximizeOutline={maximizeOutline}
-                onToggleMaximize={() => {
-                  const next = !maximizeOutline;
-                  handleUpdateSettings({ ...settings, maximizeOutline: next });
-                }}
-                hidden={notesExpanded}
-              />
-            ) : (
-              <OutlineEditor
-                root={activeMap.root}
-                onUpdateRoot={handleUpdateRoot}
-                onDraftChange={handleDraftChange}
-                onSelectNode={handleSelectNode}
-                selectedNodeId={selectedNodeId}
-                focusDwellSeconds={settings.focusDwellSeconds}
-                theme={settings.theme}
-                enableNodeMove={settings.enableNodeMove}
-                outlineFontScale={settings.outlineFontScale}
-                maximizeOutline={maximizeOutline}
-                onToggleMaximize={() => {
-                  const next = !maximizeOutline;
-                  // Routed through the settings so the choice is persisted: a
-                  // therapist who always works this way should not re-press it.
-                  handleUpdateSettings({ ...settings, maximizeOutline: next });
-                }}
-                hidden={notesExpanded}
-              />
-            )}
+            {/* ONE editor. The row editor is gone: 1960 lines whose every
+                shortcut, affordance and bug report was about focus bookkeeping
+                between N inputs, and a textarea already does the parts that
+                mattered — cut, copy, paste and selection ACROSS levels are the
+                browser's own, with no code at all. What it costs is named in
+                the buffer's own footer: Tab is captured to indent, and Esc
+                releases it. */}
+            <MarkdownOutline
+              root={activeMap.root}
+              onUpdateRoot={handleUpdateRoot}
+              onDraftChange={handleDraftChange}
+              onSelectNode={handleSelectNode}
+              selectedNodeId={selectedNodeId}
+              focusDwellSeconds={settings.focusDwellSeconds}
+              theme={settings.theme}
+              enableNodeMove={settings.enableNodeMove}
+              outlineFontScale={settings.outlineFontScale}
+              maximizeOutline={maximizeOutline}
+              onToggleMaximize={() => {
+                const next = !maximizeOutline;
+                // Routed through the settings so the choice is persisted: a
+                // therapist who always works this way should not re-press it.
+                handleUpdateSettings({ ...settings, maximizeOutline: next });
+              }}
+              hidden={notesExpanded}
+            />
 
             {/* Free-text notes, scoped to the CLIENT so they survive session
                 switches. Sits under the outline rather than in a modal: the
@@ -807,7 +812,7 @@ export const TherapistView: React.FC = () => {
             the therapist never looks at the map — the client has it on the
             second screen — and a 62% pane of canvas is a large piece of the
             display doing nothing. */}
-        {!maximizeOutline && (
+        {showMap && (
         <section aria-label="Prévia do mapa" className="flex-1 flex flex-col h-full relative overflow-hidden">
           {/* Header Tag / Preview info */}
           <div className="absolute top-3 right-4 z-10 flex items-center gap-2 pointer-events-auto">

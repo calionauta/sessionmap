@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical, FileText, ListTree } from 'lucide-react';
+import { Sliders, Moon, Sun, Type, Clock, Eye, Sparkles, MoveVertical } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
 import {
@@ -209,43 +209,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <Divider />
 
-        <SettingRow
-          id="outline-editor"
-          align="start"
-          label={
-            <>
-              <FileText className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Modo de Edição dos Tópicos</span>
-            </>
-          }
-          description={
-            <>
-              <strong>Lista:</strong> um campo por tópico. O Tab navega entre eles
-              naturalmente e um leitor de tela anuncia cada um.
-              <br />
-              <strong>Texto:</strong> tudo em um só campo, com a hierarquia pela
-              indentação. Copiar, recortar e colar um ramo inteiro é o comportamento
-              nativo do navegador — selecione o bloco e cole onde quiser. Em troca,
-              o Tab fica preso dentro do campo para indentar (o Esc solta).
-              <br />
-              <br />
-              Os dois modos editam a mesma árvore e alimentam o mesmo mapa.
-            </>
-          }
-          control={
-            <Segmented
-              label="Modo de edição dos tópicos"
-              value={settings.outlineEditor}
-              onChange={(v) => update('outlineEditor', v)}
-              options={[
-                { value: 'rows' as const, label: 'Lista', icon: <ListTree className="w-3.5 h-3.5" /> },
-                { value: 'markdown' as const, label: 'Texto', icon: <FileText className="w-3.5 h-3.5" /> },
-              ]}
-            />
-          }
-        />
-
-        <Divider />
 
         <SettingRow
           id="outline-font-scale"
