@@ -4,6 +4,7 @@ import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { syncService } from '../services/sync';
 import { getCachedActiveMap, getSettings } from '../services/storage';
 import { Maximize, Minimize } from 'lucide-react';
+import { TypingBar } from './ui/TypingBar';
 import { findPathToNode, findNodeById } from '../utils/tree';
 
 const CURSOR_IDLE_MS = 2500;
@@ -285,54 +286,12 @@ export const ClientView: React.FC = () => {
             focusZoomMode={focusZoomMode}
           />
 
-          {/* Floating Bottom Thin Bar (RF-20, RF-21, RF-23)
-              Was `fixed bottom-6 left-1/2 -translate-x-1/2 max-w-xl` with a
-              `shrink-0` label: at 375px the bar could be wider than the
-              window (max-w-xl is 36rem) and the label could never shrink, so
-              the two spans overlapped. It is now an edge-anchored band with a
-              1rem gutter and a centred max-width, so its width is
-              min(100% - 2rem, 36rem) at every viewport — fluid, not a
-              breakpoint. Below `sm` (640px) the label and the draft stack
-              instead of competing for one 16px-tall line. */}
-          {/* Deliberately NOT aria-hidden when hidden. Toggling aria-hidden on
-              a live region makes its announcement behaviour undefined: content
-              that changes while the region is hidden is not announced, and the
-              un-hide races the announcement. The region stays in the tree and
-              the visual hiding is done with opacity/transform, which a screen
-              reader correctly ignores. */}
-          <div
-            role="status"
-            aria-live="polite"
-            className={`pointer-events-none absolute inset-x-0 bottom-0 z-40 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] transition-all duration-300 ${
-              showThinBar ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-            }`}
-          >
-            <div className="mx-auto flex max-w-xl flex-col gap-0.5 rounded-panel border border-line bg-surface-raised px-4 py-2.5 text-content shadow-xl backdrop-blur-md sm:flex-row sm:items-center sm:gap-2">
-              <span className="min-w-0 shrink truncate text-xs font-bold text-accent-text">
-                {thinBarLabel}
-              </span>
-              {/* The draft wraps to at most two lines when narrow and is
-                  clamped back to one line from `sm` up. `line-clamp-*` rather
-                  than `sm:truncate` so both states share the same display
-                  (-webkit-box) and the ellipsis actually renders. `min-w-0`
-                  is what lets the clamp engage inside a flex row. */}
-              <div className="flex w-full min-w-0 items-baseline gap-1 sm:w-auto sm:flex-1">
-                <span className="min-w-0 line-clamp-2 text-sm font-semibold tracking-tight sm:line-clamp-1">
-                  {liveTextMode === 'confirm_only'
-                    ? 'digitando…'
-                    : (draft?.text || '…')}
-                </span>
-                {liveTextMode === 'live' && (
-                  <span
-                    aria-hidden="true"
-                    className="shrink-0 animate-ping font-mono text-accent-text text-xs"
-                  >
-                    ▌
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+          <TypingBar
+            label={thinBarLabel}
+            text={draft?.text ?? ''}
+            visible={showThinBar}
+            liveTextMode={liveTextMode}
+          />
         </>
       ) : (
         <div

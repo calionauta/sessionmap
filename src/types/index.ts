@@ -82,6 +82,15 @@ export interface Settings {
   outlineWidthPercent: number;
 }
 
+/**
+ * Why a selection changed.
+ *
+ * 'caret' is the therapist's OWN view following the cursor and is never sent to
+ * the client window — see handleSelectNode. The rest travel, because the
+ * client's highlight is what the dwell setting is about.
+ */
+export type SelectReason = 'caret' | 'focus3s' | 'click' | 'clear' | 'navigate';
+
 export type SyncMessage =
   | { type: 'snapshot'; map: MindMap }
   | {
@@ -99,7 +108,8 @@ export type SyncMessage =
       type: 'select';
       selection: {
         nodeId: string | null;
-        reason: 'focus3s' | 'click' | 'clear' | 'navigate';
+        /** 'caret' never reaches here: it is local-only by design. */
+        reason: Exclude<SelectReason, 'caret'>;
       };
     }
   | { type: 'pause'; paused: boolean }

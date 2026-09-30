@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Maximize2,
   CheckCircle2,
-  CornerDownRight,
   Undo2,
   Redo2,
   Plus,
 } from 'lucide-react';
-import { Client, MindMap, MindMapNode, Settings } from '../types';
+import { Client, MindMap, MindMapNode, SelectReason, Settings } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { ShareGuideModal } from './modals/ShareGuideModal';
 import { ExportModal } from './modals/ExportModal';
@@ -16,6 +15,7 @@ import { MapListDrawer } from './modals/MapListDrawer';
 import { AdminClientManager } from './admin/AdminClientManager';
 import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
+import { TypingBar } from './ui/TypingBar';
 import { TopBar } from './TopBar';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import {
@@ -56,7 +56,6 @@ export const TherapistView: React.FC = () => {
    * and centres it, so the floating "what am I editing" mirror only appears
    * when this is false.
    */
-  const [editTargetVisible, setEditTargetVisible] = useState(true);
   /** Lifted so the outline can be hidden while the notes take the pane. */
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [activeMap, setActiveMap] = useState<MindMap | null>(null);
@@ -97,6 +96,38 @@ export const TherapistView: React.FC = () => {
     active: boolean;
   } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  /**
+   * Whether the typing bar is up, on the CLIENT's rule rather than its own.
+   *
+   * A draft turns it on and an idle timer turns it off, which is what the
+   * client window has always done. The therapist's copy used to key off whether
+   * the edited node happened to be on screen, recomputed on every keystroke —
+   * and since a balloon grows and shrinks as it is typed into, that answer
+   * flipped while the sentence was being written and the bar flickered. One
+   * rule for both windows is the whole fix; the flicker was a symptom of having
+   * two.
+   */
+  const [typingBarVisible, setTypingBarVisible] = useState(false);
+  const typingBarTimerRef = useRef<number | null>(null);
+  const BAR_IDLE_MS = 1200;
+
+  useEffect(() => {
+    if (!draft?.active) {
+      setTypingBarVisible(false);
+      if (typingBarTimerRef.current) window.clearTimeout(typingBarTimerRef.current);
+      return;
+    }
+    setTypingBarVisible(true);
+    if (typingBarTimerRef.current) window.clearTimeout(typingBarTimerRef.current);
+    typingBarTimerRef.current = window.setTimeout(() => {
+      setTypingBarVisible(false);
+      typingBarTimerRef.current = null;
+    }, BAR_IDLE_MS);
+    return () => {
+      if (typingBarTimerRef.current) window.clearTimeout(typingBarTimerRef.current);
+    };
+  }, [draft?.active, draft?.text]);
 
   /**
    * Which pane a NARROW window is showing.
@@ -240,8 +271,20 @@ export const TherapistView: React.FC = () => {
 
   // Broadcast selection
   const handleSelectNode = useCallback(
-    (nodeId: string | null, reason: 'focus3s' | 'click' | 'clear' | 'navigate') => {
+    (nodeId: string | null, reason: SelectReason) => {
+      /* 'caret' is LOCAL ONLY, and the distinction is the point.
+
+         The therapist is looking at their own screen and wants the balloon they
+         are typing into in the middle of it, now — not after the dwell. The
+         client is looking at a second screen mid-session, and a map that
+         slides on every arrow key is a distraction rather than a help; that is
+         what the dwell setting governs, and what 'focus3s' is for.
+
+         So the caret moves the therapist's own view and is never sent. One
+         channel and two audiences, told apart by the reason, rather than a
+         second callback that would have to be kept in step with this one. */
       setSelectedNodeId(nodeId);
+      if (reason === 'caret') return;
       syncService.send({ type: 'select', selection: { nodeId, reason } });
     },
     []
@@ -866,7 +909,6 @@ export const TherapistView: React.FC = () => {
                 );
               }}
               svgRef={svgCanvasRef}
-              onEditTargetVisibleChange={setEditTargetVisible}
             />
           ) : (
             /* Empty is a real state now that deleting the last session sticks:
@@ -887,70 +929,27 @@ export const TherapistView: React.FC = () => {
             </div>
           )}
 
-          {/* Mirror of Thin Bar at Bottom. Solid --surface-raised rather than
-              a /95 wash: the label and the live caret are both text, and a
-              composited background is not a pair that can be measured.
+          {/* The SAME bar the client sees.
 
-              Two stacked lines, not one. See draftParentLabel for why the
-              location and the live text are separated vertically. The whole
-              region is one live region so a screen reader hears the location
-              and the text as a single announcement rather than two unrelated
-              strings.
+              It used to be a second implementation of the same sentence, and
+              that is the only way two copies can disagree: the client's keyed
+              off an idle timer and sat still, this one keyed off "is the edited
+              node on screen" and recomputed that on every keystroke — so it
+              appeared and vanished as the balloon grew and shrank around the
+              edge of the viewport. Same words, two behaviours.
 
-              Shown ONLY while the node being edited is off-screen, and docked
-              bottom-LEFT. Two rules, both about not covering things:
-
-              1. It used to be centred at the bottom, where it sat on top of
-                 the canvas control cluster (zoom, fit, reset) in the
-                 bottom-right — a transient badge permanently hiding the tools
-                 you need mid-session. Overlays are not supposed to cover
-                 controls; the layout should reserve a zone for them and keep
-                 transient UI out of it. Bottom-right is that reserved zone, so
-                 the mirror goes to bottom-left, which is free.
-
-              2. More importantly, the canvas ALREADY shows the target: it
-                 highlights the node and, with focus zoom on, centres it. So
-                 the mirror mostly restated what was on screen, at the cost of
-                 a permanent floating card in the middle of the canvas. It now
-                 appears only when the target is off-screen — panned away,
-                 zoomed out, or on a collapsed branch — which is the only case
-                 where the information is not already visible. That removes
-                 the noise instead of relocating it. */}
-          {draft && draft.active && !editTargetVisible && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="absolute bottom-4 left-4 z-30 pointer-events-none transition-all duration-300 w-[min(26rem,calc(100%-2rem))]"
-            >
-              <div className="px-4 py-2 rounded-panel shadow-lg border border-line bg-surface-raised text-content">
-                {/* Line 1 — where. One short fragment: the direct parent,
-                    nothing more. Quiet, small, truncating normally with the
-                    full name on the title attribute for hover. */}
-                <div className="flex items-baseline gap-1.5 text-[11px] leading-tight text-content-muted">
-                  <CornerDownRight
-                    className="w-3 h-3 shrink-0 self-center"
-                    aria-hidden="true"
-                  />
-                  <span className="shrink-0 font-semibold">{draftVerb}</span>
-                  <span className="min-w-0 truncate" title={draftParentLabel}>
-                    {draftParentLabel}
-                  </span>
-                </div>
-                {/* Line 2 — what. The only accented, bold, live element here,
-                    so the eye lands on the text and the caret with it. */}
-                <div className="mt-0.5 flex items-center gap-1 text-sm font-bold leading-tight text-accent-text">
-                  <span className="min-w-0 truncate">
-                    {draft.text || <span className="text-content-subtle">digitando…</span>}
-                  </span>
-                  {settings.liveTextMode === 'live' && (
-                    <span aria-hidden="true" className="animate-ping font-mono text-xs shrink-0">
-                      ▌
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+              One component, so there is nothing left to disagree. The
+              visibility rule is the CLIENT's: an idle timeout, so the bar
+              appears while something is being typed and settles when the
+              therapist stops. The canvas already highlights the node being
+              edited, and with focus zoom it centres it, so restating that here
+              was the noise — a floating card over the canvas. */}
+          <TypingBar
+            label={draft && draft.active ? `${draftVerb} ${draftParentLabel} › ` : ''}
+            text={draft?.text ?? ''}
+            visible={typingBarVisible}
+            liveTextMode={settings.liveTextMode}
+          />
         </section>
         )}
       </main>

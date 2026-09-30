@@ -1,9 +1,15 @@
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Maximize2, Minus, Plus, RotateCcw, Target } from 'lucide-react';
-import { MindMapNode } from '../../types';
-import { useMindMapLayout } from './useMindMapLayout';
-import { BalloonNode } from './BalloonNode';
-import { findPathToNode } from '../../utils/tree';
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import { Maximize2, Minus, Plus, RotateCcw, Target } from "lucide-react";
+import { MindMapNode } from "../../types";
+import { useMindMapLayout } from "./useMindMapLayout";
+import { BalloonNode } from "./BalloonNode";
+import { findPathToNode } from "../../utils/tree";
 
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2.5;
@@ -13,7 +19,7 @@ const PAN_STEP = 60;
 interface MindMapCanvasProps {
   root: MindMapNode;
   draft: {
-    mode: 'add' | 'edit';
+    mode: "add" | "edit";
     parentId: string | null;
     targetId?: string | null;
     parentText?: string;
@@ -22,9 +28,9 @@ interface MindMapCanvasProps {
   } | null;
   selectedNodeId: string | null;
   highlightedPath: string[] | null;
-  theme: 'papel' | 'noite';
+  theme: "papel" | "noite";
   fontScale?: number;
-  liveTextMode?: 'live' | 'confirm_only';
+  liveTextMode?: "live" | "confirm_only";
   readOnly?: boolean;
   clientName?: string;
   sessionDate?: string;
@@ -39,7 +45,6 @@ interface MindMapCanvasProps {
    * zoom) centring it, so the mirror only earns its space when the target is
    * off-screen. See TherapistView for the collision this removes.
    */
-  onEditTargetVisibleChange?: (visible: boolean) => void;
   svgRef?: React.RefObject<SVGSVGElement | null>;
 }
 
@@ -50,7 +55,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   highlightedPath,
   theme,
   fontScale = 1.0,
-  liveTextMode = 'live',
+  liveTextMode = "live",
   readOnly = false,
   clientName,
   sessionDate,
@@ -58,7 +63,6 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   onToggleFocusZoomMode,
   onNodeClick,
   onToggleCollapse,
-  onEditTargetVisibleChange,
   svgRef: externalSvgRef,
 }) => {
   const localSvgRef = useRef<SVGSVGElement | null>(null);
@@ -66,14 +70,23 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodeRefs = useRef<Record<string, SVGGElement | null>>({});
 
-  const [transform, setTransform] = useState<{ x: number; y: number; k: number }>({
+  const [transform, setTransform] = useState<{
+    x: number;
+    y: number;
+    k: number;
+  }>({
     x: 0,
     y: 0,
     k: 1,
   });
 
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number }>({
+  const dragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    initialX: number;
+    initialY: number;
+  }>({
     startX: 0,
     startY: 0,
     initialX: 0,
@@ -84,7 +97,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     root,
     draft,
     highlightedPath,
-    fontScale
+    fontScale,
   );
 
   // Roving tabindex: the single node that is reachable with Tab.
@@ -94,7 +107,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   // what the user sees, not the depth-first order the layout emits.
   const navOrder = useMemo(
     () => [...nodes].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.id),
-    [nodes]
+    [nodes],
   );
 
   // Sibling position of every node, for aria-posinset / aria-setsize.
@@ -117,7 +130,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   useEffect(() => {
     if (nodes.length === 0) return;
     if (activeNodeId && nodes.some((n) => n.id === activeNodeId)) return;
-    const keepSelection = selectedNodeId && nodes.some((n) => n.id === selectedNodeId);
+    const keepSelection =
+      selectedNodeId && nodes.some((n) => n.id === selectedNodeId);
     setActiveNodeId(keepSelection ? selectedNodeId : nodes[0].id);
   }, [nodes, activeNodeId, selectedNodeId]);
 
@@ -180,6 +194,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   // not re-fit on every keystroke-driven relayout; a real change re-frames the
   // map, which is the right trade — a half-visible map is worse than losing a
   // manual pan.
+  /* The resize observer below binds once, so it cannot read props directly —
+     whatever `selectedNodeId` was at mount, which is null. */
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+  }, [selectedNodeId]);
+
   const fitRef = useRef(fitToScreen);
   useEffect(() => {
     fitRef.current = fitToScreen;
@@ -188,130 +209,137 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (w === 0 || h === 0) return;
       const last = lastFitSizeRef.current;
-      if (last && Math.abs(w - last.w) < 24 && Math.abs(h - last.h) < 24) return;
+      if (last && Math.abs(w - last.w) < 24 && Math.abs(h - last.h) < 24)
+        return;
       lastFitSizeRef.current = { w, h };
-      fitRef.current();
+      /* Re-frame around what the therapist is on, not around the whole map.
+
+         Fitting everything is right when there is no selection, but with one it
+         throws the node being edited to wherever the new bounds put it — which
+         is the complaint: drag the splitter and the balloon you are typing
+         into walks off to a corner. Keeping the current node centred while the
+         pane resizes is also what makes dragging the splitter feel like
+         changing the window rather than losing the subject.
+
+         The 24px threshold stays: below it, nothing visibly changed, and the
+         re-frame would be churn. */
+      /* Read through refs, not through props. This effect binds once, with
+         `[]` — re-binding it on every selection change would tear down and
+         rebuild the observer each time, and reading the prop directly would
+         capture whatever it was at mount, which is null. */
+      const selected = selectedNodeIdRef.current;
+      if (selected) {
+        centreOnRef.current(selected);
+      } else {
+        fitRef.current();
+      }
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
+  /**
+   * Puts one node in the middle of the pane, at the right zoom.
+   *
+   * Extracted so the resize handler can use the same arithmetic. Two copies of
+   * "centre the selected node" is how a resize ends up doing one thing and a
+   * selection change another.
+   */
+  const centreOn = useCallback(
+    (nodeId: string) => {
+      const el = containerRef.current;
+      if (!el) return;
+      const target = nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+      const containerW = el.clientWidth;
+      const containerH = el.clientHeight;
+      if (containerW === 0 || containerH === 0) return;
+
+      if (focusZoomMode) {
+        // Find family cluster: selected node + its direct children + ancestors to root
+        const ancestorIds = findPathToNode(root, nodeId) || [];
+        const childLayouts = nodes.filter((n) => n.parentId === nodeId);
+        const ancestorLayouts = nodes.filter((n) => ancestorIds.includes(n.id));
+
+        const cluster = [target, ...childLayouts, ...ancestorLayouts];
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        cluster.forEach((n) => {
+          const left = n.x - n.width / 2;
+          const right = n.x + n.width / 2;
+          const top = n.y - n.height / 2;
+          const bottom = n.y + n.height / 2;
+          if (left < minX) minX = left;
+          if (right > maxX) maxX = right;
+          if (top < minY) minY = top;
+          if (bottom > maxY) maxY = bottom;
+        });
+
+        const clusterW = Math.max(300, maxX - minX);
+        const clusterH = Math.max(220, maxY - minY);
+
+        const padding = 140;
+        const scaleX = (containerW - padding * 2) / clusterW;
+        const scaleY = (containerH - padding * 2) / clusterH;
+        // Generous zoom-in for family focus
+        const targetK = Math.min(
+          1.65,
+          Math.max(0.75, Math.min(scaleX, scaleY)),
+        );
+
+        // Centre the SELECTED NODE, not the cluster's bounding box.
+        //
+        // Centring the box was the bug: a node with many children reaching
+        // right and few ancestors reaching left is the common shape, and the
+        // box centre then sits well to the right of the node the therapist is
+        // actually on. "Focus" that puts the subject off-centre is not focus.
+        //
+        // The scale still comes from the cluster, so the zoom level keeps
+        // adapting to how much context this node carries — a leaf stays
+        // readable instead of being magnified for context it does not have.
+        // Trade-off, stated plainly: if the context is far wider than the
+        // viewport even at the minimum scale, some of it goes off-screen. That
+        // is the correct trade, because the node you are on stays in the same
+        // place every time, and the context that spills is what you pan to
+        // deliberately.
+        setTransform({
+          x: containerW / 2 - target.x * targetK,
+          y: containerH / 2 - target.y * targetK,
+          k: targetK,
+        });
+      } else {
+        // Smoothly pan and center directly on selected node with zero latency!
+        setTransform((prev) => ({
+          ...prev,
+          x: containerW / 2 - target.x * prev.k,
+          y: containerH / 2 - target.y * prev.k,
+        }));
+      }
+    },
+    [nodes, root, focusZoomMode],
+  );
+
+  /* A ref, so the ResizeObserver — declared above centreOn — can reach it
+     without being re-bound and re-observing every time a node moves. */
+  const centreOnRef = useRef(centreOn);
+  useEffect(() => {
+    centreOnRef.current = centreOn;
+  }, [centreOn]);
+
   // Focus Zoom Mode: Zoom in on node + parents + children!
   useEffect(() => {
-    if (!selectedNodeId || !containerRef.current) return;
-    const selectedLayout = nodes.find((n) => n.id === selectedNodeId);
-    if (!selectedLayout) return;
-
-    const containerW = containerRef.current.clientWidth;
-    const containerH = containerRef.current.clientHeight;
-
-    if (focusZoomMode) {
-      // Find family cluster: selected node + its direct children + ancestors to root
-      const ancestorIds = findPathToNode(root, selectedNodeId) || [];
-      const childLayouts = nodes.filter((n) => n.parentId === selectedNodeId);
-      const ancestorLayouts = nodes.filter((n) => ancestorIds.includes(n.id));
-
-      const cluster = [selectedLayout, ...childLayouts, ...ancestorLayouts];
-
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-
-      cluster.forEach((n) => {
-        const left = n.x - n.width / 2;
-        const right = n.x + n.width / 2;
-        const top = n.y - n.height / 2;
-        const bottom = n.y + n.height / 2;
-        if (left < minX) minX = left;
-        if (right > maxX) maxX = right;
-        if (top < minY) minY = top;
-        if (bottom > maxY) maxY = bottom;
-      });
-
-      const clusterW = Math.max(300, maxX - minX);
-      const clusterH = Math.max(220, maxY - minY);
-
-      const padding = 140;
-      const scaleX = (containerW - padding * 2) / clusterW;
-      const scaleY = (containerH - padding * 2) / clusterH;
-      // Generous zoom-in for family focus
-      const targetK = Math.min(1.65, Math.max(0.75, Math.min(scaleX, scaleY)));
-
-      // Centre the SELECTED NODE, not the cluster's bounding box.
-      //
-      // Centring the box was the bug: a node with many children reaching
-      // right and few ancestors reaching left is the common shape, and the
-      // box centre then sits well to the right of the node the therapist is
-      // actually on. "Focus" that puts the subject off-centre is not focus.
-      //
-      // The scale still comes from the cluster, so the zoom level keeps
-      // adapting to how much context this node carries — a leaf stays
-      // readable instead of being magnified for context it does not have.
-      // Trade-off, stated plainly: if the context is far wider than the
-      // viewport even at the minimum scale, some of it goes off-screen. That
-      // is the correct trade, because the node you are on stays in the same
-      // place every time, and the context that spills is what you pan to
-      // deliberately.
-      setTransform({
-        x: containerW / 2 - selectedLayout.x * targetK,
-        y: containerH / 2 - selectedLayout.y * targetK,
-        k: targetK,
-      });
-    } else {
-      // Smoothly pan and center directly on selected node with zero latency!
-      setTransform((prev) => ({
-        ...prev,
-        x: containerW / 2 - selectedLayout.x * prev.k,
-        y: containerH / 2 - selectedLayout.y * prev.k,
-      }));
-    }
-  }, [selectedNodeId, focusZoomMode, nodes, root]);
-
-  /**
-   * Is the node being edited actually on screen?
-   *
-   * Screen position of a node is world position through the current
-   * transform: sx = x * k + translateX. The node counts as visible when its
-   * whole box lands inside the container, so a balloon half off the edge does
-   * not count as "you can see it".
-   *
-   * Reported rather than rendered here so the decision lives with the
-   * component that owns the floating mirror.
-   */
-  const editTargetId = draft?.active ? (draft.targetId ?? null) : null;
-  useEffect(() => {
-    if (!onEditTargetVisibleChange) return;
-    const el = containerRef.current;
-    if (!editTargetId || !el) {
-      onEditTargetVisibleChange(true);
-      return;
-    }
-    const layout = nodes.find((n) => n.id === editTargetId);
-    if (!layout) {
-      onEditTargetVisibleChange(true);
-      return;
-    }
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    if (w === 0 || h === 0) {
-      onEditTargetVisibleChange(true);
-      return;
-    }
-    const halfW = (layout.width / 2) * transform.k;
-    const halfH = (layout.height / 2) * transform.k;
-    const sx = layout.x * transform.k + transform.x;
-    const sy = layout.y * transform.k + transform.y;
-    const visible =
-      sx - halfW >= 0 && sx + halfW <= w && sy - halfH >= 0 && sy + halfH <= h;
-    onEditTargetVisibleChange(visible);
-  }, [editTargetId, nodes, transform, onEditTargetVisibleChange]);
+    if (selectedNodeId) centreOn(selectedNodeId);
+  }, [selectedNodeId, focusZoomMode, nodes, root, centreOn]);
 
   // Mouse Wheel Zoom
   const handleWheel = (e: React.WheelEvent) => {
@@ -323,7 +351,10 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     const mouseY = e.clientY - rect.top;
 
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    const newK = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, transform.k * zoomFactor));
+    const newK = Math.min(
+      MAX_ZOOM,
+      Math.max(MIN_ZOOM, transform.k * zoomFactor),
+    );
 
     const newX = mouseX - (mouseX - transform.x) * (newK / transform.k);
     const newY = mouseY - (mouseY - transform.y) * (newK / transform.k);
@@ -335,7 +366,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   // while the container itself holds focus (a focused node owns the arrows).
   const handleContainerKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === '0') {
+      if (e.key === "0") {
         e.preventDefault();
         fitToScreen();
       }
@@ -343,13 +374,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     }
 
     switch (e.key) {
-      case '+':
-      case '=':
+      case "+":
+      case "=":
         e.preventDefault();
         zoomBy(ZOOM_STEP);
         return;
-      case '-':
-      case '_':
+      case "-":
+      case "_":
         e.preventDefault();
         zoomBy(1 / ZOOM_STEP);
         return;
@@ -365,16 +396,16 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     };
 
     switch (e.key) {
-      case 'ArrowLeft':
+      case "ArrowLeft":
         pan(PAN_STEP, 0);
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         pan(-PAN_STEP, 0);
         break;
-      case 'ArrowUp':
+      case "ArrowUp":
         pan(0, PAN_STEP);
         break;
-      case 'ArrowDown':
+      case "ArrowDown":
         pan(0, -PAN_STEP);
         break;
       default:
@@ -393,19 +424,19 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       const firstChild = nodes.find((n) => n.parentId === nodeId);
 
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           if (index >= 0 && index < navOrder.length - 1) {
             e.preventDefault();
             focusNode(navOrder[index + 1]);
           }
           break;
-        case 'ArrowUp':
+        case "ArrowUp":
           if (index > 0) {
             e.preventDefault();
             focusNode(navOrder[index - 1]);
           }
           break;
-        case 'ArrowRight':
+        case "ArrowRight":
           e.preventDefault();
           if (node.hasChildren && node.collapsed) {
             // No handler means the read-only client window: expanding is not
@@ -415,7 +446,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
             focusNode(firstChild.id);
           }
           break;
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           if (node.hasChildren && !node.collapsed) {
             onToggleCollapse?.(nodeId);
@@ -424,20 +455,20 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
             focusNode(node.parentId);
           }
           break;
-        case 'Home':
+        case "Home":
           if (navOrder.length) {
             e.preventDefault();
             focusNode(navOrder[0]);
           }
           break;
-        case 'End':
+        case "End":
           if (navOrder.length) {
             e.preventDefault();
             focusNode(navOrder[navOrder.length - 1]);
           }
           break;
-        case 'Enter':
-        case ' ':
+        case "Enter":
+        case " ":
           // Always swallowed: Space would otherwise scroll the page out from
           // under the map when the canvas is read-only (client window).
           e.preventDefault();
@@ -447,7 +478,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           break;
       }
     },
-    [nodes, navOrder, focusNode, onNodeClick, onToggleCollapse]
+    [nodes, navOrder, focusNode, onNodeClick, onToggleCollapse],
   );
 
   // Pointer Down (Pan drag)
@@ -481,7 +512,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     }
   };
 
-  const isDark = theme === 'noite';
+  const isDark = theme === "noite";
 
   // SVG geometry cannot take a Tailwind class, but it does resolve CSS custom
   // properties, so the canvas reads the same tokens as the rest of the app
@@ -492,13 +523,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   //   highlight  var(--accent-text)       5.02:1 papel · 11.11:1 noite
   // Decorative only (background texture, and the wide glow under the
   // highlighted path) stays exempt.
-  const gridDotColor = 'var(--border-muted)';
-  const connectorColor = 'var(--border)';
-  const highlightStroke = 'var(--accent-text)';
+  const gridDotColor = "var(--border-muted)";
+  const connectorColor = "var(--border)";
+  const highlightStroke = "var(--accent-text)";
 
   const mapLabel = clientName
-    ? `Mapa mental da sessão com ${clientName}${sessionDate ? `, ${sessionDate}` : ''}`
-    : 'Mapa mental da sessão';
+    ? `Mapa mental da sessão com ${clientName}${sessionDate ? `, ${sessionDate}` : ""}`
+    : "Mapa mental da sessão";
 
   return (
     <div
@@ -520,7 +551,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
          `@container` + the `@min-*` variants, so nothing is hand-written and
          index.css stays untouched. */
       className={`@container relative w-full h-full select-none overflow-hidden bg-surface ${
-        isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
     >
       {/* Describes only the keys that actually work in this instance. The
@@ -529,8 +560,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           a screen-reader user on every focus. */}
       <p id="mapa-teclas" className="sr-only">
         {onToggleCollapse
-          ? 'Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis, a seta para a direita abre ou entra no primeiro filho, a seta para a esquerda fecha ou volta ao pai, e Enter ou Espaço selecionam o ponto em modo edição. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo.'
-          : 'Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis e Enter ou Espaço selecionam o ponto. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo.'}
+          ? "Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis, a seta para a direita abre ou entra no primeiro filho, a seta para a esquerda fecha ou volta ao pai, e Enter ou Espaço selecionam o ponto em modo edição. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo."
+          : "Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis e Enter ou Espaço selecionam o ponto. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo."}
       </p>
 
       <svg
@@ -567,7 +598,11 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
              camera's, so the exported frame follows the map, not the view. */
           data-world="true"
           transform={`translate(${transform.x}, ${transform.y}) scale(${transform.k})`}
-          style={{ transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          style={{
+            transition: isDragging
+              ? "none"
+              : "transform 0.12s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
         >
           {/* Connector Links — the tree structure is carried by
               aria-level/posinset, so the curves are hidden from AT. */}
@@ -593,7 +628,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
                        as a 2.2px stroke on --surface. Noite: the palette is far
                        too dark on a dark canvas, so connectors take the neutral
                        --border token instead. */
-                    stroke={isHigh ? highlightStroke : (isDark ? connectorColor : link.color)}
+                    stroke={
+                      isHigh
+                        ? highlightStroke
+                        : isDark
+                          ? connectorColor
+                          : link.color
+                    }
                     strokeWidth={isHigh ? 3.5 : 2.2}
                     strokeOpacity={isHigh ? 1 : 0.9}
                     strokeLinecap="round"
@@ -627,8 +668,14 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           >
             {nodes.map((node) => {
               const isRoot = node.id === root.id;
-              const isTargetParent = draft?.active && draft.mode === 'add' && draft.parentId === node.id;
-              const isEditing = draft?.active && draft.mode === 'edit' && draft.targetId === node.id;
+              const isTargetParent =
+                draft?.active &&
+                draft.mode === "add" &&
+                draft.parentId === node.id;
+              const isEditing =
+                draft?.active &&
+                draft.mode === "edit" &&
+                draft.targetId === node.id;
               const isSelected = selectedNodeId === node.id;
               const siblings = siblingInfo.get(node.id);
 
@@ -703,9 +750,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           narrow canvas — decided by the canvas width, not the viewport, so the
           same 5 buttons read as a label + 4 icons on a wide pane and as 5
           icons on a 233px one without a horizontal scrollbar either way. */}
-      <div
-        className="absolute bottom-4 right-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-0.5 rounded-panel border border-line bg-surface-raised p-1 text-content shadow-md"
-      >
+      <div className="absolute bottom-4 right-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-0.5 rounded-panel border border-line bg-surface-raised p-1 text-content shadow-md">
         {/* Toggle Focus Zoom Mode Button */}
         {onToggleFocusZoomMode && !readOnly && (
           <>
@@ -716,19 +761,24 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
               aria-label="Zoom no Foco"
               title={
                 focusZoomMode
-                  ? 'Foco com Zoom ATIVADO (aproxima o nó, pais e filhos ao navegar no outline)'
-                  : 'Ativar Foco com Zoom (aproxima nó + pais + filhos ao navegar)'
+                  ? "Foco com Zoom ATIVADO (aproxima o nó, pais e filhos ao navegar no outline)"
+                  : "Ativar Foco com Zoom (aproxima nó + pais + filhos ao navegar)"
               }
               className={`flex min-h-touch min-w-touch items-center justify-center gap-1 rounded-control px-2.5 text-xs font-semibold transition-colors @min-[24rem]:px-3 ${
                 focusZoomMode
-                  ? 'bg-accent text-content-onaccent shadow-xs'
-                  : 'hover:bg-content/10 text-content-muted'
+                  ? "bg-accent text-content-onaccent shadow-xs"
+                  : "hover:bg-content/10 text-content-muted"
               }`}
             >
               <Target className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span className="hidden whitespace-nowrap @min-[24rem]:inline">Zoom no Foco</span>
+              <span className="hidden whitespace-nowrap @min-[24rem]:inline">
+                Zoom no Foco
+              </span>
             </button>
-            <div className="mx-0.5 h-6 w-px shrink-0 bg-line-muted" aria-hidden="true" />
+            <div
+              className="mx-0.5 h-6 w-px shrink-0 bg-line-muted"
+              aria-hidden="true"
+            />
           </>
         )}
 
@@ -752,7 +802,10 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         >
           <Minus className="w-4 h-4" aria-hidden="true" />
         </button>
-        <div className="mx-0.5 h-6 w-px shrink-0 bg-line-muted" aria-hidden="true" />
+        <div
+          className="mx-0.5 h-6 w-px shrink-0 bg-line-muted"
+          aria-hidden="true"
+        />
         <button
           type="button"
           onClick={fitToScreen}

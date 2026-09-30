@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HelpCircle, Info, PanelLeft, Minimize2 } from 'lucide-react';
-import { FlatOutlineItem, MindMapNode } from '../../types';
+import { FlatOutlineItem, MindMapNode, SelectReason } from '../../types';
 import { findNodeById, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { readLine, lineIndexAt, topicLines, parentTopicLine } from '../../utils/bufferLine';
 
@@ -8,7 +8,7 @@ interface MarkdownOutlineProps {
   root: MindMapNode;
   /** Commits a parsed tree. `reason` decides whether it is one undo step. */
   onUpdateRoot: (newRoot: MindMapNode, reason: string) => void;
-  onSelectNode: (nodeId: string | null, reason: 'focus3s' | 'click' | 'clear' | 'navigate') => void;
+  onSelectNode: (nodeId: string | null, reason: SelectReason) => void;
   onDraftChange: (draft: {
     mode: 'add' | 'edit';
     parentId: string | null;
@@ -134,6 +134,35 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     [parsedRoot]
   );
 
+  const liveValueRef = useRef('');
+  const liveTreeRef = useRef<{ items: FlatOutlineItem[]; root: MindMapNode } | null>(null);
+
+  /**
+   * The tree the textarea describes RIGHT NOW, which during a keystroke is
+   * newer than the `text` state.
+   *
+   * `setText` is async, so on the very keystroke that turns "- " into "- sono"
+   * the state still holds the old value and the new topic has no node yet. The
+   * caret therefore resolved to nothing, the map never learned about the topic
+   * being written, and it only caught up a keystroke later.
+   *
+   * Cached on the string rather than on the state, and keyed on the DOM value
+   * rather than on `text` for exactly that reason. An arrow key does not change
+   * the value, so it does not re-parse: the fast path is `el.value === text`,
+   * which is true for every caret move.
+   */
+  const liveTree = useCallback((): { items: FlatOutlineItem[]; root: MindMapNode } => {
+    const el = textareaRef.current;
+    if (!el) return { items: flatItems, root: parsedRoot };
+    if (el.value === text) return { items: flatItems, root: parsedRoot };
+    if (liveTreeRef.current && liveValueRef.current === el.value) return liveTreeRef.current;
+    const root = parseMarkdownToTree(el.value, parsedRoot.text, parsedRoot);
+    const next = { items: flattenTree(root, 0, null, 0, true), root };
+    liveValueRef.current = el.value;
+    liveTreeRef.current = next;
+    return next;
+  }, [flatItems, parsedRoot, text]);
+
   /**
    * Which topic the caret is in, and where a new one would land.
    *
@@ -168,7 +197,10 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     // no topic at all, so the highlight and the lift would both do nothing
     // until the therapist typed further into the text.
     const line = readLine(value, lineIndex);
-    const topics = flatItems.filter((i) => i.id !== parsedRoot.id);
+    /* The live tree, not the committed one: on the keystroke that completes a
+       topic, `text` has not caught up and the topic has no node yet. */
+    const live = liveTree();
+    const topics = live.items.filter((i) => i.id !== live.root.id);
     const starts = topicLines(value);
     const aligned = starts.length === topics.length;
     const ordinal = starts.indexOf(lineIndex);
@@ -179,9 +211,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
      * lift already refuses to move the root, so resolving it costs nothing. */
     if (line.isHeading) {
       return {
-        node: flatItems[0] ?? null,
-        parentId: parsedRoot.id,
-        parentText: parsedRoot.text,
+        node: live.items[0] ?? null,
+        parentId: live.root.id,
+        parentText: live.root.text,
         onBullet: true,
         lineIndex,
       };
@@ -198,11 +230,11 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       const parentItem = parentAbove(value, lineIndex, line.indent, topics, starts);
       return {
         node: null,
-        parentId: parentItem?.id ?? parsedRoot.id,
+        parentId: parentItem?.id ?? live.root.id,
         // A bullet at column zero has no shallower topic above it, so its parent
         // is the session. Saying so here rather than leaving it undefined saves
         // the view a fallback lookup to reach the same answer.
-        parentText: parentItem?.text ?? parsedRoot.text,
+        parentText: parentItem?.text ?? live.root.text,
         onBullet: true,
         lineIndex,
       };
@@ -228,15 +260,15 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
 
     if (!own) return { ...empty, lineIndex, onBullet: true };
 
-    const parent = own.parentId ? findNodeById(parsedRoot, own.parentId) : null;
+    const parent = own.parentId ? findNodeById(live.root, own.parentId) : null;
     return {
       node: own,
-      parentId: own.parentId ?? parsedRoot.id,
+      parentId: own.parentId ?? live.root.id,
       parentText: parent?.text,
       onBullet: true,
       lineIndex,
     };
-  }, [flatItems, parsedRoot]);
+  }, [liveTree]);
 
   const broadcastCaret = useCallback(
     (caret: Caret) => {
@@ -313,6 +345,35 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   const armedLineRef = useRef<number>(-1);
 
   /**
+   * The topic the therapist's own map is already following.
+   *
+   * Held so the follow is a CHANGE, not a position: arrowing across a line
+   * character by character would otherwise re-centre the map on every
+   * keystroke, which reads as the map chasing the cursor rather than showing
+   * where you are.
+   */
+  const followedRef = useRef<string | null>(null);
+
+  /**
+   * Moves the therapist's OWN map to the topic under the cursor.
+   *
+   * Local only, and immediately — the dwell is the client's business. A
+   * therapist writing in the left pane wants the balloon they are writing into
+   * in the middle of their own window; making them wait three seconds, or
+   * navigate a different topic first, is the map not answering a question that
+   * was asked.
+   */
+  const announceCaret = useCallback(
+    (caret: Caret) => {
+      const id = caret.node?.id ?? null;
+      if (id === followedRef.current) return;
+      followedRef.current = id;
+      onSelectNode(id, 'caret');
+    },
+    [onSelectNode]
+  );
+
+  /**
    * Where the caret went, and what that should mean for the highlight.
    *
    * Navigation ARMS the dwell rather than highlighting, or the setting would
@@ -327,6 +388,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       if (intent === 'explicit') {
         cancelDwell();
         armedLineRef.current = caret.lineIndex;
+        followedRef.current = caret.node?.id ?? null;
         onSelectNode(caret.node?.id ?? null, 'click');
         return;
       }
@@ -335,8 +397,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       }
       armedLineRef.current = caret.lineIndex;
       armDwell(caret.node?.id ?? null);
+      announceCaret(caret);
     },
-    [armDwell, broadcastCaret, cancelDwell, caretNode, onSelectNode]
+    [announceCaret, armDwell, broadcastCaret, cancelDwell, caretNode, onSelectNode]
   );
 
   /**
