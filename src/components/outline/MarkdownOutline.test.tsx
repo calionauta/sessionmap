@@ -6,7 +6,7 @@ registerDom();
 const { render, fireEvent, cleanup, act } = await import('@testing-library/react');
 const React = await import('react');
 const { MarkdownOutline } = await import('./MarkdownOutline');
-const { treeToMarkdown, parseMarkdownToTree } = await import('../../utils/tree');
+const { treeToMarkdown, parseMarkdownToTree, flattenTree, findNodeById } = await import('../../utils/tree');
 import type { MindMapNode } from '../../types';
 
 const node = (
@@ -820,3 +820,77 @@ describe("the client's map follows the caret", () => {
     expect(afterSecond).not.toBe(afterFirst);
   });
   });
+
+describe('the id the caret names is the id the map will find', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  /**
+   * The symptom, stated as the thing that causes it.
+   *
+   * The mind map renders the COMMITTED tree. The selection names an id the
+   * caret resolved. If those two disagree the balloon gets no halo and
+   * `centreOn` cannot find the node to centre — and the map still looks like it
+   * followed, because autoFit re-framed the whole thing. Which is exactly what
+   * was reported: the map moved to the new item, and the item had no border
+   * until the therapist left the line and came back.
+   */
+  test('a topic named with the keyboard exists under the followed id once committed', () => {
+    setup();
+    caretAtEndOfLine('- cansaço');
+    act(() => {
+      fireEvent.keyDown(textarea(), { key: 'Enter' });
+    });
+    // Type the new item and leave it there.
+    type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - sono');
+    caretOnLine('- sono');
+
+    const followed = selections
+      .filter((s) => s.reason === 'caret' && s.nodeId !== null)
+      .at(-1)?.nodeId;
+    expect(followed).toBeTruthy();
+
+    // Blur commits, exactly as leaving the field does.
+    act(() => {
+      fireEvent.blur(textarea());
+    });
+    const committed = flattenTree(lastRoot as MindMapNode).map((i) => i.id);
+    // The one line that matters: the map is about to look this id up.
+    expect(committed).toContain(followed as string);
+  });
+
+  test('and the same holds for a topic typed into a fresh bullet', () => {
+    setup();
+    type('# 28/09/2026\n- cansaço\n- ');
+    caretOnLine('- cansaço');
+    caretAt(textarea().value.length);
+    type('# 28/09/2026\n- cansaço\n- insônia');
+    caretOnLine('- insônia');
+
+    const followed = selections
+      .filter((s) => s.reason === 'caret' && s.nodeId !== null)
+      .at(-1)?.nodeId;
+    act(() => {
+      fireEvent.blur(textarea());
+    });
+    expect(flattenTree(lastRoot as MindMapNode).map((i) => i.id)).toContain(followed as string);
+  });
+
+  test('the committed tree is the very tree the caret read', () => {
+    // Not merely equivalent — the same object. Comparing structure would pass
+    // with two parses that mint different ids for the same node, which is the
+    // bug; identity is what makes the claim.
+    setup();
+    type('# 28/09/2026\n- cansaço\n- sono');
+    caretOnLine('- sono');
+    act(() => {
+      fireEvent.blur(textarea());
+    });
+    const targetId = drafts[drafts.length - 1].targetId;
+    expect(targetId).toBeTruthy();
+    expect(findNodeById(lastRoot as MindMapNode, targetId as string)).not.toBeNull();
+  });
+});

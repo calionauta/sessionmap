@@ -116,44 +116,50 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * A lift is not drawn here: while dragging, the buffer is the source of truth
    * and moving rows under the pointer is not possible.
    */
-  const parsedRoot = useMemo(
-    () => parseMarkdownToTree(text, root.text, root),
-    [text, root]
-  );
-
-  const flatItems = useMemo(
-    () => flattenTree(parsedRoot, 0, null, 0, true),
-    [parsedRoot]
-  );
-
   const liveValueRef = useRef('');
   const liveTreeRef = useRef<{ items: FlatOutlineItem[]; root: MindMapNode } | null>(null);
 
   /**
-   * The tree the textarea describes RIGHT NOW, which during a keystroke is
-   * newer than the `text` state.
+   * The tree the buffer describes, parsed ONCE per distinct text.
    *
-   * `setText` is async, so on the very keystroke that turns "- " into "- sono"
-   * the state still holds the old value and the new topic has no node yet. The
-   * caret therefore resolved to nothing, the map never learned about the topic
-   * being written, and it only caught up a keystroke later.
+   * It used to be parsed three times over: a memo on `text`, a second pass for
+   * the caret reading the DOM, and a third at commit time. Each pass mints
+   * fresh ids for every node it cannot recycle by position, so a topic created a
+   * moment earlier had one id in the caret, another in the tree that was
+   * committed, and a third once that one was re-read. The mind map renders the
+   * COMMITTED tree while the selection names an id from this one, so the two
+   * never matched: no selection halo on a topic being written, and no recentre
+   * either — `centreOn` looks the id up in the committed layout, fails, and
+   * returns. The map only appeared to follow because autoFit was re-framing.
    *
-   * Cached on the string rather than on the state, and keyed on the DOM value
-   * rather than on `text` for exactly that reason. An arrow key does not change
-   * the value, so it does not re-parse: the fast path is `el.value === text`,
-   * which is true for every caret move.
+   * One parse fixes it by construction rather than by synchronising: the commit
+   * hands over the very tree this returned, so the id the caret saw is the id
+   * the map will look for.
+   *
+   * Keyed on the DOM value, not on the state, because `setText` is async — on
+   * the keystroke that turns "- " into "- sono" the state still holds the old
+   * text. An arrow key does not change the value, so it does not re-parse.
    */
   const liveTree = useCallback((): { items: FlatOutlineItem[]; root: MindMapNode } => {
     const el = textareaRef.current;
-    if (!el) return { items: flatItems, root: parsedRoot };
-    if (el.value === text) return { items: flatItems, root: parsedRoot };
-    if (liveTreeRef.current && liveValueRef.current === el.value) return liveTreeRef.current;
-    const root = parseMarkdownToTree(el.value, parsedRoot.text, parsedRoot);
-    const next = { items: flattenTree(root, 0, null, 0, true), root };
-    liveValueRef.current = el.value;
+    const value = el ? el.value : text;
+    if (liveTreeRef.current && liveValueRef.current === value) return liveTreeRef.current;
+    const parsed = parseMarkdownToTree(value, root.text, root);
+    const next = { items: flattenTree(parsed, 0, null, 0, true), root: parsed };
+    liveValueRef.current = value;
     liveTreeRef.current = next;
     return next;
-  }, [flatItems, parsedRoot, text]);
+  }, [root, text]);
+
+  /**
+   * How many balloons the buffer describes, for the header's count.
+   *
+   * A useMemo that CALLS liveTree rather than a second parse of its own: the
+   * cache is keyed on the string, so when this runs the tree is already there
+   * and it is a lookup. Deriving the count from a different parse would be the
+   * same id-mismatch mistake again, one field over.
+   */
+  const balloonCount = useMemo(() => liveTree().items.length, [liveTree, text]);
 
   /**
    * Which topic the caret is in, and where a new one would land.
@@ -266,7 +272,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     (caret: Caret) => {
       onDraftChange({
         mode: caret.node && caret.node.text ? 'edit' : 'add',
-        parentId: caret.node ? (caret.node.parentId ?? parsedRoot.id) : caret.parentId,
+        parentId: caret.node ? (caret.node.parentId ?? liveTree().root.id) : caret.parentId,
         parentText: caret.parentText,
         targetId: caret.node?.id ?? null,
         text: caret.node?.text ?? '',
@@ -277,7 +283,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         active: caret.onBullet,
       });
     },
-    [onDraftChange, parsedRoot.id]
+    [liveTree, onDraftChange]
   );
 
   /* ==================== WHERE THE CARET IS ==================== */
@@ -552,7 +558,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-bold text-content-muted">
-              {flatItems.length} balões
+              {balloonCount} balões
             </span>
             <button
               type="button"
@@ -704,7 +710,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             pendingRef.current = null;
             const value = textareaRef.current?.value ?? text;
             if (!isUnchanged(value)) {
-              onUpdateRoot(parseMarkdownToTree(value, root.text, root), 'markdown');
+              onUpdateRoot(liveTree().root, 'markdown');
             }
             onSelectNode(null, 'clear');
           }}
