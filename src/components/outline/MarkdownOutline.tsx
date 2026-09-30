@@ -388,9 +388,22 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       pendingRef.current = null;
       const value = textareaRef.current?.value ?? text;
       if (isUnchanged(value)) return;
-      onUpdateRoot(parseMarkdownToTree(value, root.text, root), 'markdown');
+      /* liveTree, NOT a second parse of `value` here.
+
+         This is the path a paste takes — the debounce is what commits a whole
+         document — and a second parse mints fresh ids for every node it cannot
+         recycle by position. The caret had already resolved against the first
+         parse, so the tree the mind map then rendered held DIFFERENT ids for the
+         same topics: no node matched the selection, nothing highlighted, and
+         centreOn could not find anything to centre. It looked like navigation
+         simply stopped working partway down a long document, and the first few
+         topics worked because their ids happened to line up.
+
+         The blur handler below got this right. Two call sites, one of them
+         fixed, is the whole reason it went unnoticed. */
+      onUpdateRoot(liveTree().root, 'markdown');
     }, PARSE_DEBOUNCE_MS);
-  }, [isUnchanged, onUpdateRoot, root, text]);
+  }, [isUnchanged, liveTree, onUpdateRoot, root, text]);
 
 
   const sayNotice = useCallback((message: string) => {

@@ -9,6 +9,9 @@ const { MarkdownOutline } = await import('./MarkdownOutline');
 const { treeToMarkdown, parseMarkdownToTree, flattenTree, findNodeById } = await import('../../utils/tree');
 import type { MindMapNode } from '../../types';
 
+/** The debounce the buffer commits on, so the test waits the app's own time. */
+const PARSE_DEBOUNCE_MS = 400;
+
 const node = (
   id: string,
   text: string,
@@ -892,5 +895,96 @@ describe('the id the caret names is the id the map will find', () => {
     const targetId = drafts[drafts.length - 1].targetId;
     expect(targetId).toBeTruthy();
     expect(findNodeById(lastRoot as MindMapNode, targetId as string)).not.toBeNull();
+  });
+});
+
+describe('pasting a document, then navigating it', () => {
+  afterEach(() => {
+    cleanup();
+    container?.remove();
+    container = null;
+  });
+
+  /**
+   * A paste is the path that breaks, and it is the one nobody thinks about.
+   *
+   * The caret resolves against a live parse. The debounce 400ms later is what
+   * commits the document, and it used to make its OWN parse — minting fresh
+   * ids for every node it could not recycle by position. The mind map then
+   * rendered a tree whose ids did not match the selection at all: nothing
+   * highlighted, and centreOn found nothing to centre. The first few topics
+   * appeared to work because their ids happened to line up, which is why it read
+   * as "navigation stops partway down a long document".
+   *
+   * So the assertion is the one the map cares about: does the id the caret named
+   * exist in the tree the map is drawing?
+   */
+  test('every topic the caret names is in the committed tree', async () => {
+    // A document with a duplicated wording, a deep nest and a top-level leaf —
+    // the shapes that make a positional mapping interesting.
+    const doc = [
+      '# 30/09/2026 07:01',
+      '- companheiro',
+      '  - reconhece forças',
+      '    - coragem',
+      '    - pessoa inspiradora',
+      '- confiança na vida',
+      '  - não deixar dominar',
+      '- tentative',
+      '  - confiança na vida',
+      '- trabalho',
+    ].join('\n');
+
+    // A session with a DIFFERENT tree already in it, as any real paste lands in.
+    let root: MindMapNode = node('root', '28/09/2026', [
+      node('c1', 'cliente', [node('c1a', 'tópico antigo')]),
+    ]);
+    const Rerender = () =>
+      React.createElement(MarkdownOutline, {
+        root,
+        onUpdateRoot: (next: MindMapNode) => {
+          root = next;
+        },
+        onSelectNode: (id: string | null) => {
+          followedIds.push(id);
+        },
+        onDraftChange: () => {},
+        selectedNodeId: null,
+        theme: 'papel' as const,
+        outlineFontScale: 1,
+      });
+
+    const box = document.createElement('div');
+    document.body.appendChild(box);
+    let followedIds: Array<string | null> = [];
+    render(Rerender(), { container: box });
+    const ta = () => box.querySelector('textarea') as HTMLTextAreaElement;
+
+    act(() => {
+      fireEvent.change(ta(), { target: { value: doc } });
+    });
+    // The debounce commits the paste. This is the step that used to re-parse.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, PARSE_DEBOUNCE_MS + 250));
+    });
+    render(Rerender(), { container: box });
+
+    const committed = new Set(flattenTree(root).map((i) => i.id));
+    const lines = doc.split('\n');
+    for (let ln = 0; ln < lines.length; ln++) {
+      if (!/^\s*[-*+]\s+\S/.test(lines[ln])) continue;
+      const at = doc.indexOf(lines[ln]) + 2;
+      act(() => {
+        ta().setSelectionRange(at, at);
+        fireEvent.select(ta());
+      });
+    }
+
+    const named = followedIds.filter((id): id is string => Boolean(id));
+    expect(named.length).toBeGreaterThan(0);
+    const orphans = named.filter((id) => !committed.has(id));
+    expect(orphans).toEqual([]);
+
+    box.remove();
   });
 });
