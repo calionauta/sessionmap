@@ -571,9 +571,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             ))}
           </div>
         </div>
-        <div className="-mx-6 -mb-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
         {panelTab === 'participantes' && (
-          <>
+        <div className="-mx-6 -mb-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
           {/* Left Column: Client List */}
           <div className="w-full md:w-72 md:shrink-0 min-h-0 max-h-[40vh] md:max-h-none border-b md:border-b-0 md:border-r border-line flex flex-col bg-surface-sunken">
             {/* Search and + Client button */}
@@ -1169,9 +1168,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               </div>
             )}
           </div>
-            </>
-        )}
         </div>
+        )}
         {panelTab === 'catalogo' && (
           /* Normal flow, no inner scroll prison: the modal body already
              scrolls, and a fixed-height box with its own scroller is what

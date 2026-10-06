@@ -96,6 +96,21 @@ describe('AdminClientManager modality wiring', () => {
 });
 
 describe('AdminClientManager catalog tab', () => {
+  test('the catalog tab leaves no empty participantes pane behind', () => {
+    // Regression: the participantes split rendered unconditionally with a
+    // fixed md:h-[70vh], so the catalog tab opened with a viewport-tall
+    // blank above its content. The pane must only exist in its own room.
+    const { container } = renderAdmin();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
+    const body = container.querySelector('[role="dialog"]')?.children[1];
+    // Tab bar plus exactly one room.
+    expect(body?.children).toHaveLength(2);
+    const fixedPanes = Array.from(body?.children ?? []).filter((el) =>
+      (el as HTMLElement).className.includes('md:h-[70vh]')
+    );
+    expect(fixedPanes).toHaveLength(0);
+  });
+
   test('the catalog lives beside the clients, not inside one', () => {
     renderAdmin();
     // Default room: the client workflow, no global config in sight.
