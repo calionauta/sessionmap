@@ -42,6 +42,67 @@ export interface MindMap {
    * stamps every one of their sessions too, so the two stay consistent.
    */
   archivedAt?: string | null;
+  /**
+   * The kind of work this session is: the id of a Modality in the catalog.
+   * ONE per session, null/undefined means "not classified" (every session
+   * written before modalities existed). The client is never classified —
+   * the same person can do therapy on Tuesday and mentoring on Thursday,
+   * and the badge on their row is the union of their sessions.
+   */
+  modalityId?: string | null;
+}
+
+/**
+ * A kind of work the therapist offers: terapia, mentoria, consultoria…
+ *
+ * A flat CUSTOMIZABLE catalog, not a fixed hierarchy and not free-form tags:
+ * a hierarchy forces one client into one drawer (and the same person is two
+ * drawers here), while free tags drift into synonyms ("terapia",
+ * "Terapia ", "therapia") that no filter can trust. The catalog gives every
+ * session exactly one controlled value, and the list itself is editable.
+ */
+export interface Modality {
+  id: string;
+  name: string;
+  /** Hex for the badge dot. Null means the default accent. */
+  color?: string | null;
+  createdAt: string;
+}
+
+/**
+ * A starting skeleton for a session, bound to one modality (or none, which
+ * means "offer for every kind of session").
+ *
+ * Stored as the markdown the outline itself edits, so applying a template is
+ * just parsing it: no second format to keep in sync with the parser, and the
+ * therapist writes templates in the same language they write sessions in.
+ */
+export interface SessionTemplate {
+  id: string;
+  /** Null = general, offered whichever modality is picked. */
+  modalityId: string | null;
+  title: string;
+  /** Markdown: an optional "# heading" names the session root, bullets nest. */
+  markdown: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Totally optional cloud backup (Puter), off by default.
+ *
+ * Local-first stays the product: this only records THAT the user opted in,
+ * plus outcome metadata. NEVER a passphrase, a key, or a token — those live
+ * in tab memory at most, so a stolen browser profile yields ciphertext in
+ * the cloud and nothing to open it with.
+ */
+export interface CloudBackupState {
+  enabled: boolean;
+  /** Upload automatically a while after local saves, when unlocked. */
+  auto: boolean;
+  lastBackupAt: string | null;
+  lastError: string | null;
+  puterUsername: string | null;
 }
 
 export interface Settings {
@@ -79,6 +140,11 @@ export interface Settings {
    * the pane off screen.
    */
   outlineWidthPercent: number;
+  /**
+   * Optional encrypted cloud backup. Off by default and metadata-only:
+   * see CloudBackupState — no secret is ever persisted.
+   */
+  cloudBackup: CloudBackupState;
 }
 
 /**

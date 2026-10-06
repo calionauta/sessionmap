@@ -341,26 +341,39 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     if (selectedNodeId) centreOn(selectedNodeId);
   }, [selectedNodeId, focusZoomMode, nodes, root, centreOn]);
 
-  // Mouse Wheel Zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    const newK = Math.min(
-      MAX_ZOOM,
-      Math.max(MIN_ZOOM, transform.k * zoomFactor),
-    );
-
-    const newX = mouseX - (mouseX - transform.x) * (newK / transform.k);
-    const newY = mouseY - (mouseY - transform.y) * (newK / transform.k);
-
-    setTransform({ x: newX, y: newY, k: newK });
-  };
+  // Mouse Wheel Zoom.
+  //
+  // Attached as a NATIVE listener with { passive: false }, not as React's
+  // onWheel. Chrome treats wheel listeners at the document root as passive
+  // by default, and React 17+ attaches at the root — so preventDefault()
+  // inside onWheel only logged "Unable to preventDefault inside passive
+  // event listener invocation" and the page scrolled under the zoom.
+  // A native listener on the container itself can opt out of that.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+      setTransform((prev) => {
+        const newK = Math.min(
+          MAX_ZOOM,
+          Math.max(MIN_ZOOM, prev.k * zoomFactor),
+        );
+        if (newK === prev.k) return prev;
+        return {
+          x: mouseX - (mouseX - prev.x) * (newK / prev.k),
+          y: mouseY - (mouseY - prev.y) * (newK / prev.k),
+          k: newK,
+        };
+      });
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, []);
 
   // Keyboard equivalent of the wheel/drag: zoom on +/-, pan on the arrows
   // while the container itself holds focus (a focused node owns the arrows).
@@ -539,7 +552,6 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       aria-label={mapLabel}
       aria-describedby="mapa-teclas"
       onKeyDown={handleContainerKeyDown}
-      onWheel={handleWheel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

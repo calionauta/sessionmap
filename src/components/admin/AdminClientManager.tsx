@@ -16,24 +16,31 @@ import {
   FolderArchive,
   AlertTriangle,
 } from 'lucide-react';
-import { Client, MindMap } from '../../types';
+import { Client, MindMap, Modality, SessionTemplate } from '../../types';
 import {
   createNewSession,
   saveMap,
   saveClient,
-  deleteClient,
   deleteMap,
   archiveClient,
   unarchiveClient,
   archiveMap,
   unarchiveMap,
   deleteClientAndSessions,
+  deleteModalityAndClear,
   isArchived,
+  loadModalities,
+  persistModalities,
+  loadTemplates,
+  persistTemplates,
+  clientModalityIds,
 } from '../../services/storage';
 import { countTotalNodes, parseMarkdownToTree } from '../../utils/tree';
 import { formatSessionTimestamp } from '../../utils/text';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
 import { Modal, ConfirmDialog } from '../ui/Modal';
+import { ModalityBadge } from '../ui/ModalityBadge';
+import { NewSessionDialog } from '../modals/NewSessionDialog';
 
 /**
  * A session whose clientId matches no client row.
@@ -96,7 +103,8 @@ interface AdminClientManagerProps {
   activeMapId: string;
   activeClientId: string | null;
   onSelectSession: (map: MindMap) => void;
-  onRefreshData: () => void;
+  /** Async: callers must await it before selecting, or the list is stale. */
+  onRefreshData: () => void | Promise<void>;
   /**
    * Retained for API compatibility with the host view. Every colour in
    * this panel now resolves through the semantic token layer, so the
@@ -144,6 +152,48 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     null
   );
 
+  // Kind + template picker for the next session. Resolved on CONFIRM, not on
+  // open: the client row could change under the open dialog.
+  const [pendingSessionFor, setPendingSessionFor] = useState<Client | null>(null);
+
+  // The catalog lives here (state) and in storage (persisted): the dialog and
+  // the badges read this state, so an edit applies everywhere at once.
+  const [modalities, setModalities] = useState<Modality[]>(() => loadModalities());
+  const [templates, setTemplates] = useState<SessionTemplate[]>(() => loadTemplates());
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [newModalityName, setNewModalityName] = useState('');
+  const [editingModalityId, setEditingModalityId] = useState<string | null>(null);
+  const [editingModalityName, setEditingModalityName] = useState('');
+  const [pendingModalityDelete, setPendingModalityDelete] = useState<Modality | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateDraft, setTemplateDraft] = useState({ title: '', modalityId: '', markdown: '' });
+  const [modalityFilter, setModalityFilter] = useState<string>('all');
+
+  // The catalog has no live cross-tab sync by design (localStorage has no
+  // subscription for the writer's own tab, and polling a config screen is
+  // churn): reloading on open is the sync point, same as the session
+  // dialog and the drawer already do.
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setModalities(loadModalities());
+    setTemplates(loadTemplates());
+  }, [isOpen]);
+
+  // Re-syncs the selection when the list changes underneath it (a client was
+  // just created, deleted or restored elsewhere). Only fires when the
+  // selected id is ABSENT, so it never yanks the user off the client they
+  // are browsing. Must sit before the early return: hooks cannot be
+  // conditional.
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (selectedClientId && clients.some((c) => c.id === selectedClientId)) return;
+    if (activeClientId && clients.some((c) => c.id === activeClientId)) {
+      setSelectedClientId(activeClientId);
+    } else if (clients.length > 0) {
+      setSelectedClientId(clients[0].id);
+    }
+  }, [isOpen, clients, activeClientId, selectedClientId]);
+
   if (!isOpen) return null;
 
   // Archived clients and their sessions are excluded from the working lists.
@@ -168,6 +218,13 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   const clientSessions = maps
     .filter((m) => m.clientId === currentClient?.id)
     .filter((m) => (showArchived ? isArchived(m) : !isArchived(m)))
+    .filter((m) =>
+      modalityFilter === 'all'
+        ? true
+        : modalityFilter === 'none'
+          ? !m.modalityId
+          : m.modalityId === modalityFilter
+    )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   /**
@@ -210,7 +267,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           view: { zoom: 1, x: 0, y: 0 },
         };
         await saveMap(newSession);
-        onRefreshData();
+        await onRefreshData();
         onSelectSession(newSession);
         onClose();
       }
@@ -255,17 +312,136 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setNewClientName('');
     setIsCreatingClient(false);
     setSelectedClientId(newClient.id);
-    onRefreshData();
+    // Awaited: selecting or creating a session right after must see the new
+    // row, otherwise it falls back to another client and the session is
+    // filed under the wrong person.
+    await onRefreshData();
   };
 
-  // Create new session for current client
-  const handleCreateSession = async () => {
-    if (!currentClient) return;
-    const newSession = createNewSession(currentClient.id, currentClient.name);
+  // Create new session for current client — via the kind + template picker.
+  // The record is built on CONFIRM so the picked kind and skeleton land on
+  // it directly, instead of creating a blank session and patching it after.
+  const handleConfirmNewSession = async (
+    modalityId: string | null,
+    template: SessionTemplate | null
+  ) => {
+    const target = pendingSessionFor;
+    setPendingSessionFor(null);
+    if (!target) return;
+    const newSession = createNewSession(target.id, target.name, {
+      modalityId,
+      templateMarkdown: template?.markdown ?? null,
+    });
     await saveMap(newSession);
-    onRefreshData();
+    await onRefreshData();
     onSelectSession(newSession);
     onClose();
+  };
+
+  // Reclassifies one session. The client row's union updates on its own —
+  // it is derived, never stored — so there is nothing else to write.
+  const handleSessionModality = async (session: MindMap, modalityId: string | null) => {
+    if ((session.modalityId ?? null) === modalityId) return;
+    await saveMap({ ...session, modalityId });
+    await onRefreshData();
+  };
+
+  // ---- Catalog: kinds ----
+
+  const handleAddModality = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newModalityName.trim();
+    if (!name) return;
+    const next: Modality = {
+      id: `mod_${Date.now().toString(36)}`,
+      name,
+      color: null,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...modalities, next];
+    setModalities(updated);
+    persistModalities(updated);
+    setNewModalityName('');
+  };
+
+  const handleRenameModality = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingModalityId || !editingModalityName.trim()) return;
+    const updated = modalities.map((m) =>
+      m.id === editingModalityId ? { ...m, name: editingModalityName.trim() } : m
+    );
+    setModalities(updated);
+    persistModalities(updated);
+    setEditingModalityId(null);
+  };
+
+  const confirmModalityDelete = async () => {
+    const target = pendingModalityDelete;
+    setPendingModalityDelete(null);
+    if (!target) return;
+    // Sessions keep existing as "sem tipo": the record stays, the label goes.
+    await deleteModalityAndClear(target.id);
+    setModalities(loadModalities());
+    if (modalityFilter === target.id) setModalityFilter('all');
+    await onRefreshData();
+  };
+
+  // ---- Catalog: templates ----
+
+  const startNewTemplate = () => {
+    setEditingTemplateId('new');
+    setTemplateDraft({ title: '', modalityId: currentClient ? '' : '', markdown: '' });
+  };
+
+  const startEditTemplate = (t: SessionTemplate) => {
+    setEditingTemplateId(t.id);
+    setTemplateDraft({
+      title: t.title,
+      modalityId: t.modalityId ?? '',
+      markdown: t.markdown,
+    });
+  };
+
+  const handleSaveTemplate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!templateDraft.title.trim() || !templateDraft.markdown.trim()) return;
+    const now = new Date().toISOString();
+    let updated: SessionTemplate[];
+    if (editingTemplateId && editingTemplateId !== 'new') {
+      updated = templates.map((t) =>
+        t.id === editingTemplateId
+          ? {
+              ...t,
+              title: templateDraft.title.trim(),
+              modalityId: templateDraft.modalityId || null,
+              markdown: templateDraft.markdown,
+              updatedAt: now,
+            }
+          : t
+      );
+    } else {
+      updated = [
+        ...templates,
+        {
+          id: `tpl_${Date.now().toString(36)}`,
+          title: templateDraft.title.trim(),
+          modalityId: templateDraft.modalityId || null,
+          markdown: templateDraft.markdown,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+    }
+    setTemplates(updated);
+    persistTemplates(updated);
+    setEditingTemplateId(null);
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    const updated = templates.filter((t) => t.id !== id);
+    setTemplates(updated);
+    persistTemplates(updated);
+    if (editingTemplateId === id) setEditingTemplateId(null);
   };
 
   // Rename client
@@ -277,7 +453,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     if (c) {
       await saveClient({ ...c, name: editingClientName.trim() });
       setEditingClientId(null);
-      onRefreshData();
+      await onRefreshData();
     }
   };
 
@@ -300,7 +476,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     if (remaining.length > 0) {
       setSelectedClientId(remaining[0].id);
     }
-    onRefreshData();
+    await onRefreshData();
     setUndoClientDeleteState({
       client: target,
       sessionCount: ownSessions.length,
@@ -319,7 +495,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setPendingClientArchive(null);
     if (!target) return;
     await archiveClient(target.id);
-    onRefreshData();
+    await onRefreshData();
     const remaining = clients.filter((c) => c.id !== target.id);
     if (remaining.length > 0 && selectedClientId === target.id) {
       setSelectedClientId(remaining[0].id);
@@ -332,7 +508,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
   const handleUnarchiveClient = async (client: Client) => {
     await unarchiveClient(client.id);
-    onRefreshData();
+    await onRefreshData();
   };
 
   // Archive a single session, leaving its client active. Restoring is one
@@ -342,12 +518,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setPendingSessionArchive(null);
     if (!target) return;
     await archiveMap(target.id);
-    onRefreshData();
+    await onRefreshData();
   };
 
   const handleUnarchiveSession = async (session: MindMap) => {
     await unarchiveMap(session.id);
-    onRefreshData();
+    await onRefreshData();
   };
 
   // Delete session
@@ -356,7 +532,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setPendingSessionDelete(null);
     if (!target) return;
     await deleteMap(target.id);
-    onRefreshData();
+    await onRefreshData();
     setUndoSessionDeleteState(target);
   };
 
@@ -370,8 +546,15 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     const target = undoClientDeleteState;
     setUndoClientDeleteState(null);
     if (!target) return;
+    // The sessions went down with the client (deleteClientAndSessions), so
+    // bringing back the row alone orphaned-then-hid them: the undo toast
+    // promised a restore and delivered half of one. Both come back.
     await saveClient(target.client);
-    onRefreshData();
+    for (const s of target.sessions) {
+      await saveMap(s);
+    }
+    setSelectedClientId(target.client.id);
+    await onRefreshData();
   };
 
   const handleUndoSessionDelete = async () => {
@@ -379,7 +562,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setUndoSessionDeleteState(null);
     if (!target) return;
     await saveMap(target);
-    onRefreshData();
+    await onRefreshData();
   };
 
   return (
@@ -597,6 +780,17 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                           >
                             {count} {count === 1 ? 'sessão' : 'sessões'}
                           </div>
+                          {/* The union of this client's sessions' kinds.
+                              Derived, never stored: a therapy client who
+                              starts mentoring grows a second badge on its
+                              own, and no client is ever filed in one drawer. */}
+                          <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1">
+                            {clientModalityIds(maps, client.id).map((id) => {
+                              const mod = modalities.find((m) => m.id === id);
+                              if (!mod) return null;
+                              return <ModalityBadge key={id} modality={mod} />;
+                            })}
+                          </div>
                         </button>
                       )}
 
@@ -741,7 +935,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     {/* Create New Session */}
                     <button
                       type="button"
-                      onClick={handleCreateSession}
+                      onClick={() => currentClient && setPendingSessionFor(currentClient)}
                       className="ctl ctl-primary w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -754,9 +948,30 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     is a fixed-height column; stacked, the pane owns
                     the scroll. */}
                 <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
-                  <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
-                    Histórico de Sessões ({clientSessions.length})
-                  </h3>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
+                      Histórico de Sessões ({clientSessions.length})
+                    </h3>
+                    {modalities.length > 0 && (
+                      <label className="flex items-center gap-1.5 text-[11px] font-bold text-content-muted">
+                        <span className="sr-only">Filtrar por tipo</span>
+                        <select
+                          value={modalityFilter}
+                          onChange={(e) => setModalityFilter(e.target.value)}
+                          aria-label="Filtrar sessões por tipo"
+                          className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
+                        >
+                          <option value="all">Todos os tipos</option>
+                          {modalities.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                          <option value="none">Sem tipo</option>
+                        </select>
+                      </label>
+                    )}
+                  </div>
 
                   {clientSessions.length === 0 ? (
                     <div className="py-12 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
@@ -801,6 +1016,35 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               </span>
                               <span aria-hidden="true">·</span>
                               <span className="min-w-0 break-words">Raiz: {session.root.text}</span>
+                            </div>
+
+                            {/* One kind per session, changeable after the
+                                fact: a session that started as mentoring
+                                and turned into therapy is reclassified,
+                                not recreated. */}
+                            <div className="flex items-center gap-2 flex-wrap mt-2">
+                              <ModalityBadge
+                                modality={modalities.find((m) => m.id === session.modalityId) ?? null}
+                              />
+                              <label className="flex items-center gap-1.5">
+                                <span className="sr-only">
+                                  Tipo da sessão {sessionLabel}
+                                </span>
+                                <select
+                                  value={session.modalityId ?? ''}
+                                  onChange={(e) =>
+                                    void handleSessionModality(session, e.target.value || null)
+                                  }
+                                  className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
+                                >
+                                  <option value="">Sem tipo</option>
+                                  {modalities.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                             </div>
                           </div>
 
@@ -899,6 +1143,284 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       </div>
                     </div>
                   )}
+                  {/* Catalog: kinds and starting skeletons, managed where they
+                      are used. Collapsed by default: it is configuration,
+                      not the daily workflow, and an always-open block would
+                      push the session history down on every open. */}
+                  <div className="pt-2 mt-2 border-t border-line">
+                    <button
+                      type="button"
+                      onClick={() => setShowCatalog((v) => !v)}
+                      aria-expanded={showCatalog}
+                      className="flex items-center gap-1.5 text-xs font-bold text-content-muted uppercase tracking-wider py-1"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+                      Tipos & roteiros ({modalities.length} tipos · {templates.length} roteiros)
+                    </button>
+
+                    {showCatalog && (
+                      <div className="mt-2 space-y-4">
+                        {/* Kinds */}
+                        <div className="space-y-2">
+                          {modalities.map((m) => {
+                            const inUse = maps.filter(
+                              (s) => s.modalityId === m.id
+                            ).length;
+                            return (
+                              <div
+                                key={m.id}
+                                className="flex items-center gap-1.5 p-1.5 rounded-panel border border-line bg-surface"
+                              >
+                                {editingModalityId === m.id ? (
+                                  <form
+                                    onSubmit={handleRenameModality}
+                                    className="flex-1 min-w-0 flex items-center gap-1"
+                                  >
+                                    <label htmlFor={`mod-rename-${m.id}`} className="sr-only">
+                                      Renomear {m.name}
+                                    </label>
+                                    <input
+                                      id={`mod-rename-${m.id}`}
+                                      autoFocus
+                                      type="text"
+                                      value={editingModalityName}
+                                      onChange={(e) => setEditingModalityName(e.target.value)}
+                                      className="flex-1 min-w-0 h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
+                                    />
+                                    <button
+                                      type="submit"
+                                      className="ctl ctl-primary w-10 px-0"
+                                      aria-label={`Confirmar novo nome de ${m.name}`}
+                                    >
+                                      <Check className="w-4 h-4" aria-hidden="true" />
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <div className="flex-1 min-w-0 px-1">
+                                    <ModalityBadge modality={m} />
+                                    <div className="text-[11px] font-mono text-content-subtle mt-0.5">
+                                      {inUse} {inUse === 1 ? 'sessão' : 'sessões'}
+                                    </div>
+                                  </div>
+                                )}
+                                {editingModalityId !== m.id && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingModalityId(m.id);
+                                        setEditingModalityName(m.name);
+                                      }}
+                                      aria-label={`Renomear tipo ${m.name}`}
+                                      className="ctl w-10 px-0"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingModalityDelete(m)}
+                                      aria-label={`Excluir tipo ${m.name}`}
+                                      title="Excluir tipo (sessões viram “sem tipo”)"
+                                      className="ctl ctl-danger w-10 px-0"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <form onSubmit={handleAddModality} className="flex items-center gap-1.5">
+                            <label htmlFor="new-modality-name" className="sr-only">
+                              Nome do novo tipo
+                            </label>
+                            <input
+                              id="new-modality-name"
+                              type="text"
+                              value={newModalityName}
+                              onChange={(e) => setNewModalityName(e.target.value)}
+                              placeholder="Novo tipo… ex. Supervisão"
+                              className="flex-1 min-w-0 h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
+                            />
+                            <button
+                              type="submit"
+                              className="ctl ctl-primary h-10 px-3 text-xs font-bold"
+                            >
+                              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>Tipo</span>
+                            </button>
+                          </form>
+                        </div>
+
+                        {/* Templates */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-[11px] font-bold text-content-muted uppercase tracking-wider">
+                              Roteiros ({templates.length})
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={startNewTemplate}
+                              className="ctl h-9 px-2.5 text-[11px] font-bold"
+                            >
+                              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>Roteiro</span>
+                            </button>
+                          </div>
+                          {templates.map((t) => (
+                            <div
+                              key={t.id}
+                              className="p-2.5 rounded-panel border border-line bg-surface"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-content truncate">
+                                    {t.title}
+                                  </div>
+                                  <div className="mt-0.5">
+                                    <ModalityBadge
+                                      modality={modalities.find((m) => m.id === t.modalityId) ?? null}
+                                      fallbackLabel="Geral"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditTemplate(t)}
+                                    aria-label={`Editar roteiro ${t.title}`}
+                                    className="ctl w-10 px-0"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTemplate(t.id)}
+                                    aria-label={`Excluir roteiro ${t.title}`}
+                                    className="ctl ctl-danger w-10 px-0"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              </div>
+                              {editingTemplateId === t.id && (
+                                <form onSubmit={handleSaveTemplate} className="mt-2 space-y-2">
+                                  <input
+                                    type="text"
+                                    value={templateDraft.title}
+                                    onChange={(e) =>
+                                      setTemplateDraft((d) => ({ ...d, title: e.target.value }))
+                                    }
+                                    aria-label="Título do roteiro"
+                                    placeholder="Título do roteiro"
+                                    className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
+                                  />
+                                  <select
+                                    value={templateDraft.modalityId}
+                                    onChange={(e) =>
+                                      setTemplateDraft((d) => ({ ...d, modalityId: e.target.value }))
+                                    }
+                                    aria-label="Tipo do roteiro"
+                                    className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
+                                  >
+                                    <option value="">Geral (todos os tipos)</option>
+                                    {modalities.map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        {m.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <textarea
+                                    value={templateDraft.markdown}
+                                    onChange={(e) =>
+                                      setTemplateDraft((d) => ({ ...d, markdown: e.target.value }))
+                                    }
+                                    aria-label="Texto do roteiro em tópicos"
+                                    placeholder="- Primeiro tópico&#10;  - Subtópico"
+                                    rows={5}
+                                    className="w-full p-2.5 text-xs font-mono rounded-control border border-line bg-surface-raised text-content"
+                                  />
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingTemplateId(null)}
+                                      className="ctl h-9 px-3 text-[11px] font-bold"
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="ctl ctl-primary h-9 px-3 text-[11px] font-bold"
+                                    >
+                                      Salvar roteiro
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
+                            </div>
+                          ))}
+                          {editingTemplateId === 'new' && (
+                            <form
+                              onSubmit={handleSaveTemplate}
+                              className="p-2.5 rounded-panel border border-line bg-surface space-y-2"
+                            >
+                              <input
+                                type="text"
+                                autoFocus
+                                value={templateDraft.title}
+                                onChange={(e) =>
+                                  setTemplateDraft((d) => ({ ...d, title: e.target.value }))
+                                }
+                                aria-label="Título do novo roteiro"
+                                placeholder="Título do roteiro"
+                                className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
+                              />
+                              <select
+                                value={templateDraft.modalityId}
+                                onChange={(e) =>
+                                  setTemplateDraft((d) => ({ ...d, modalityId: e.target.value }))
+                                }
+                                aria-label="Tipo do novo roteiro"
+                                className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
+                              >
+                                <option value="">Geral (todos os tipos)</option>
+                                {modalities.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <textarea
+                                value={templateDraft.markdown}
+                                onChange={(e) =>
+                                  setTemplateDraft((d) => ({ ...d, markdown: e.target.value }))
+                                }
+                                aria-label="Texto do novo roteiro em tópicos"
+                                placeholder="- Primeiro tópico&#10;  - Subtópico"
+                                rows={5}
+                                className="w-full p-2.5 text-xs font-mono rounded-control border border-line bg-surface-raised text-content"
+                              />
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingTemplateId(null)}
+                                  className="ctl h-9 px-3 text-[11px] font-bold"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="ctl ctl-primary h-9 px-3 text-[11px] font-bold"
+                                >
+                                  Salvar roteiro
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             ) : (
@@ -950,6 +1472,47 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           announced, and paired with a restorable window below. They are
           siblings of the panel, not children — a confirmation nested
           inside a focus trap is unreachable. */}
+      <NewSessionDialog
+        isOpen={pendingSessionFor !== null}
+        onClose={() => setPendingSessionFor(null)}
+        clientName={pendingSessionFor?.name ?? 'Cliente'}
+        defaultModalityId={
+          (pendingSessionFor &&
+            maps.find(
+              (m) => m.clientId === pendingSessionFor.id && m.modalityId
+            )?.modalityId) ??
+          null
+        }
+        onConfirm={(modalityId, template) => void handleConfirmNewSession(modalityId, template)}
+      />
+      <ConfirmDialog
+        isOpen={pendingModalityDelete !== null}
+        title="Excluir este tipo?"
+        isDestructive
+        confirmLabel="Excluir tipo"
+        cancelLabel="Manter"
+        onCancel={() => setPendingModalityDelete(null)}
+        onConfirm={() => void confirmModalityDelete()}
+        description={
+          pendingModalityDelete ? (
+            <>
+              <p>
+                O tipo <strong>{pendingModalityDelete.name}</strong> sai do
+                catálogo. As{' '}
+                <strong>
+                  {maps.filter((m) => m.modalityId === pendingModalityDelete.id).length}{' '}
+                  sessões
+                </strong>{' '}
+                que o usam passam a “sem tipo”.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Nada é apagado: só o rótulo sai, e você pode reclassificar cada
+                sessão depois.
+              </p>
+            </>
+          ) : null
+        }
+      />
       <ConfirmDialog
         isOpen={pendingClientDelete !== null}
         title="Excluir este cliente?"

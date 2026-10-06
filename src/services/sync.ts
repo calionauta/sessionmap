@@ -20,6 +20,7 @@ class SyncService {
   private isClient: boolean = false;
   private heartbeatInterval: number | null = null;
   private lastPongTime: number = 0;
+  private lastStorageWrite: number = 0;
   private clientConnected: boolean = false;
   private onConnectionChangeCallbacks: Set<(connected: boolean) => void> = new Set();
 
@@ -109,8 +110,22 @@ class SyncService {
     }
 
     try {
+      // Storage fallback, throttled for ephemeral traffic. Every keystroke
+      // used to rewrite localStorage AND fire a storage event in every other
+      // tab: the fallback exists for browsers without BroadcastChannel, not
+      // as a second real-time channel. Heartbeats, drafts and selections go
+      // instantly over the channel and at most ~1/s over storage; snapshots,
+      // pause and view state always go immediately on both.
+      const ephemeral =
+        msg.type === 'draft' ||
+        msg.type === 'select' ||
+        msg.type === 'ping' ||
+        msg.type === 'pong';
+      const now = Date.now();
+      if (ephemeral && now - this.lastStorageWrite < 800) return;
+      this.lastStorageWrite = now;
       // Storage fallback
-      const payload = JSON.stringify({ ...msg, _t: Date.now() });
+      const payload = JSON.stringify({ ...msg, _t: now });
       localStorage.setItem(SYNC_STORAGE_KEY, payload);
     } catch {
       // ignore

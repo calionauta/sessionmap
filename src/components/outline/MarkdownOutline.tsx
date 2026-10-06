@@ -23,6 +23,13 @@ interface MarkdownOutlineProps {
   maximizeOutline?: boolean;
   onToggleMaximize?: () => void;
   hidden?: boolean;
+  /**
+   * Receives a synchronous flush: parse the buffer NOW and commit it,
+   * returning the committed root (or null when nothing changed). The parent
+   * calls it before switching sessions, so keystrokes newer than the parse
+   * debounce are not dropped by the session-change buffer reload.
+   */
+  flushRef?: React.MutableRefObject<(() => MindMapNode | null) | null>;
 }
 
 /** How long typing settles before the text is parsed back into a tree. */
@@ -91,6 +98,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   maximizeOutline = false,
   onToggleMaximize,
   hidden = false,
+  flushRef,
 }) => {
   const isDark = theme === 'noite';
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -408,6 +416,24 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       commitBuffer(textareaRef.current?.value ?? text);
     }, PARSE_DEBOUNCE_MS);
   }, [commitBuffer, text]);
+
+  // Synchronous flush for session switches. Assigned every render so it
+  // always closes over the current buffer, tree and commit — a stale flush
+  // would parse yesterday's text into today's session. Goes through
+  // commitBuffer like every other path, so the one-parse invariant holds.
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = () => {
+      if (pendingRef.current) {
+        window.clearTimeout(pendingRef.current);
+        pendingRef.current = null;
+      }
+      const el = textareaRef.current;
+      const value = el ? el.value : text;
+      if (!commitBuffer(value)) return null;
+      return liveTree().root;
+    };
+  });
 
 
   const sayNotice = useCallback((message: string) => {

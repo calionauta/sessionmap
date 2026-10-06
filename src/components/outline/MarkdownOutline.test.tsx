@@ -1022,8 +1022,9 @@ describe('the buffer is parsed in exactly one place', () => {
     expect(code.match(/onUpdateRoot\(/g) ?? []).toHaveLength(1);
   });
 
-  test('and both commit paths go through it', () => {
-    // The debounce and the blur. A third caller would be a third path.
-    expect((code.match(/commitBuffer\(/g) ?? []).length).toBe(2);
+  test('and every commit path goes through it', () => {
+    // The debounce, the blur, and the synchronous flush the parent calls
+    // before switching sessions. A fourth caller would be a fourth path.
+    expect((code.match(/commitBuffer\(/g) ?? []).length).toBe(3);
   });
 });

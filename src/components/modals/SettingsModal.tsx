@@ -2,6 +2,7 @@ import React from 'react';
 import { Sliders, Moon, Sun, Type, Eye } from 'lucide-react';
 import { Settings } from '../../types';
 import { Modal } from '../ui/Modal';
+import { CloudBackupSection } from './CloudBackupSection';
 import {
   Segmented,
   SettingRow,
@@ -14,6 +15,8 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: Settings;
   onUpdateSettings: (newSettings: Settings) => void;
+  /** Re-reads storage after a cloud restore lands many records at once. */
+  onCloudRestore?: () => void | Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -21,6 +24,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onUpdateSettings,
+  onCloudRestore,
 }) => {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     onUpdateSettings({ ...settings, [key]: value });
@@ -181,6 +185,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }))}
             />
           }
+        />
+
+        <CloudBackupSection
+          settings={settings}
+          onUpdateSettings={onUpdateSettings}
+          onCloudRestore={onCloudRestore ?? (() => {})}
         />
       </div>
     </Modal>

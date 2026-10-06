@@ -1,5 +1,5 @@
-import { Client, MindMap, MindMapNode, Settings } from '../types';
-import { generateNodeId, normalizeOutline } from '../utils/tree';
+import { Client, MindMap, MindMapNode, Modality, SessionTemplate, Settings } from '../types';
+import { generateNodeId, normalizeOutline, parseMarkdownToTree } from '../utils/tree';
 import { formatSessionTimestamp } from '../utils/text';
 import { OUTLINE_MIN_PERCENT, clampOutlineWidth } from '../utils/layout';
 
@@ -34,6 +34,13 @@ export const DEFAULT_SETTINGS: Settings = {
   // utils/layout and are applied on read, so a value written by a build with a
   // different range cannot render the pane off screen.
   outlineWidthPercent: OUTLINE_MIN_PERCENT,
+  cloudBackup: {
+    enabled: false,
+    auto: false,
+    lastBackupAt: null,
+    lastError: null,
+    puterUsername: null,
+  },
 };
 
 const DEFAULT_SAMPLE_CLIENT: Client = {
@@ -391,6 +398,23 @@ function getDB(): Promise<IDBDatabase> {
       );
     };
     request.onerror = () => reject(request.error);
+    // Without this the promise hangs FOREVER when another tab holds the
+    // database (therapist window + client window is exactly two tabs), and
+    // every getAll/save hangs with it: the footer sticks on "Gravando…" and
+    // the user reads it as "parou de salvar". Rejecting drops the callers
+    // into their localStorage fallback instead of hanging.
+    request.onblocked = () => {
+      console.warn('[storage] IndexedDB bloqueado por outra aba; usando fallback local.');
+      reject(new Error('IndexedDB blocked by another tab'));
+    };
+  });
+
+  // A rejected open must not poison every later call: the block is transient
+  // (the other tab closes, the upgrade finishes), so a failure clears the
+  // cache and the next operation retries. Without this, one blocked open
+  // made "parou de salvar" permanent until reload.
+  dbPromise.catch(() => {
+    dbPromise = null;
   });
 
   return dbPromise;
@@ -504,11 +528,18 @@ export async function saveClient(client: Client): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   } catch {
-    const clients = await getAllClients();
-    const idx = clients.findIndex((c) => c.id === client.id);
-    if (idx >= 0) clients[idx] = client;
-    else clients.push(client);
-    localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify(clients));
+    // Fallback reads localStorage DIRECTLY. Calling getAllClients() here
+    // would re-enter getDB() and hang the same way this call just did.
+    try {
+      const raw = localStorage.getItem(LOCAL_CLIENTS_KEY);
+      const clients: Client[] = raw ? JSON.parse(raw) : [];
+      const idx = clients.findIndex((c) => c.id === client.id);
+      if (idx >= 0) clients[idx] = client;
+      else clients.push(client);
+      localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify(clients));
+    } catch {
+      // storage disabled: nothing left to try
+    }
   }
 }
 
@@ -523,9 +554,16 @@ export async function deleteClient(clientId: string): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   } catch {
-    const clients = await getAllClients();
-    const filtered = clients.filter((c) => c.id !== clientId);
-    localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify(filtered));
+    try {
+      const raw = localStorage.getItem(LOCAL_CLIENTS_KEY);
+      const clients: Client[] = raw ? JSON.parse(raw) : [];
+      localStorage.setItem(
+        LOCAL_CLIENTS_KEY,
+        JSON.stringify(clients.filter((c) => c.id !== clientId))
+      );
+    } catch {
+      // storage disabled: nothing left to try
+    }
   }
 }
 
@@ -681,28 +719,43 @@ export function tidyOutline(root: MindMapNode): MindMapNode {
 
 // =================== SESSION / MINDMAP OPERATIONS ===================
 
-export function createNewSession(clientId: string, clientName: string): MindMap {
+export function createNewSession(
+  clientId: string,
+  clientName: string,
+  opts?: {
+    /** Catalog id. Null/undefined = unclassified (the old default). */
+    modalityId?: string | null;
+    /** Template body: parsed straight into the starting tree. */
+    templateMarkdown?: string | null;
+    /** Overrides the default timestamp title (e.g. "Sessão 3"). */
+    title?: string | null;
+  }
+): MindMap {
   const timestamp = formatSessionTimestamp();
   const newId = `m_${Date.now().toString(36)}`;
+  const body = opts?.templateMarkdown?.trim() ?? '';
   return {
     schema: 1,
     id: newId,
     clientId,
     clientName,
     sessionDate: timestamp,
-    title: timestamp,
+    title: opts?.title?.trim() ? opts.title : timestamp,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    root: {
-      id: generateNodeId(),
-      text: timestamp,
-      // No seeded first child. "Ponto Inicial" was a placeholder that had to
-      // be selected and replaced, and if it was not, it survived into the
-      // canvas as a balloon the therapist never wrote and every export
-      // contained. The root row is itself the first thing to type into, so an
-      // empty session now opens with exactly one editable line.
-      children: [],
-    },
+    modalityId: opts?.modalityId ?? null,
+    root: body
+      ? parseMarkdownToTree(body, timestamp)
+      : {
+          id: generateNodeId(),
+          text: timestamp,
+          // No seeded first child. "Ponto Inicial" was a placeholder that had to
+          // be selected and replaced, and if it was not, it survived into the
+          // canvas as a balloon the therapist never wrote and every export
+          // contained. The root row is itself the first thing to type into, so an
+          // empty session now opens with exactly one editable line.
+          children: [],
+        },
     view: { zoom: 1, x: 0, y: 0 },
   };
 }
@@ -769,11 +822,9 @@ export async function getMap(id: string): Promise<MindMap | null> {
   }
 }
 
-export async function saveMap(map: MindMap): Promise<void> {
-  const updatedMap: MindMap = {
-    ...map,
-    updatedAt: new Date().toISOString(),
-  };
+export async function saveMap(map: MindMap, opts?: { stamp?: boolean }): Promise<void> {
+  const updatedMap: MindMap =
+    opts?.stamp === false ? map : { ...map, updatedAt: new Date().toISOString() };
 
   try {
     const db = await getDB();
@@ -785,18 +836,112 @@ export async function saveMap(map: MindMap): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   } catch {
-    const maps = await getAllMaps();
-    const idx = maps.findIndex((m) => m.id === updatedMap.id);
-    if (idx >= 0) maps[idx] = updatedMap;
-    else maps.push(updatedMap);
-    localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
+    // Same as saveClient: direct localStorage, never via getAllMaps().
+    try {
+      const raw = localStorage.getItem(LOCAL_MAPS_KEY);
+      const maps: MindMap[] = raw ? JSON.parse(raw) : [];
+      const idx = maps.findIndex((m) => m.id === updatedMap.id);
+      if (idx >= 0) maps[idx] = updatedMap;
+      else maps.push(updatedMap);
+      localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
+    } catch {
+      // storage disabled: nothing left to try
+    }
   }
 
   try {
-    localStorage.setItem(CACHED_ACTIVE_MAP_KEY, JSON.stringify(updatedMap));
-    localStorage.setItem(ACTIVE_MAP_KEY, updatedMap.id);
+    // A maintenance write (reclassifying a kind, restoring a pending root)
+    // must not steal the recency order: only a real edit stamps updatedAt
+    // and advertises itself as the active session.
+    if (opts?.stamp !== false) {
+      localStorage.setItem(CACHED_ACTIVE_MAP_KEY, JSON.stringify(updatedMap));
+      localStorage.setItem(ACTIVE_MAP_KEY, updatedMap.id);
+    }
   } catch {
     // quota
+  }
+}
+
+// =================== PENDING ROOT (beforeunload) ===================
+//
+// The outline parses on a 400ms debounce and the autosave waits another
+// 400ms, so the freshest keystrokes live only in the textarea DOM. A refresh
+// or tab close inside that window used to drop them: async IndexedDB writes
+// never complete inside beforeunload. The synchronous localStorage write
+// below DOES complete, and refreshAllData() reconciles it on the next load:
+// applied only when it is newer than what storage holds, then cleared, so a
+// stale entry can never resurrect itself.
+
+const PENDING_ROOT_KEY = 'sessionmap_pending_root';
+
+export interface PendingRoot {
+  mapId: string;
+  root: MindMapNode;
+  savedAt: string;
+}
+
+export function writePendingRoot(mapId: string, root: MindMapNode): void {
+  try {
+    const payload: PendingRoot = {
+      mapId,
+      root,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(PENDING_ROOT_KEY, JSON.stringify(payload));
+  } catch {
+    // quota or storage disabled: the debounced autosave already did its best
+  }
+}
+
+export function readPendingRoot(): PendingRoot | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ROOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingRoot;
+    if (!parsed || typeof parsed.mapId !== 'string' || !parsed.root) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingRoot(): void {
+  try {
+    localStorage.removeItem(PENDING_ROOT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Applies a pending root left by beforeunload, if it is still newer than
+ * storage. Returns true when something was written.
+ */
+export async function reconcilePendingRoot(): Promise<boolean> {
+  const pending = readPendingRoot();
+  if (!pending) return false;
+  try {
+    const stored = await getMap(pending.mapId);
+    if (!stored) {
+      clearPendingRoot();
+      return false;
+    }
+    const same = JSON.stringify(stored.root) === JSON.stringify(pending.root);
+    // Another tab may have saved after this entry was written: storage wins.
+    const stale = (stored.updatedAt || '') > pending.savedAt;
+    if (same || stale) {
+      clearPendingRoot();
+      return false;
+    }
+    await saveMap(
+      { ...stored, root: tidyOutline(pending.root), updatedAt: new Date().toISOString() },
+      { stamp: false }
+    );
+    clearPendingRoot();
+    return true;
+  } catch {
+    // IDB hiccup: keep the entry so the next load retries.
+    return false;
   }
 }
 
@@ -811,9 +956,16 @@ export async function deleteMap(id: string): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   } catch {
-    const maps = await getAllMaps();
-    const filtered = maps.filter((m) => m.id !== id);
-    localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(filtered));
+    try {
+      const raw = localStorage.getItem(LOCAL_MAPS_KEY);
+      const maps: MindMap[] = raw ? JSON.parse(raw) : [];
+      localStorage.setItem(
+        LOCAL_MAPS_KEY,
+        JSON.stringify(maps.filter((m) => m.id !== id))
+      );
+    } catch {
+      // storage disabled: nothing left to try
+    }
   }
 }
 
@@ -872,4 +1024,266 @@ export async function saveSnapshot(mapId: string, root: MindMapNode): Promise<vo
   } catch {
     // ignore
   }
+}
+
+// =================== MODALITIES & TEMPLATES ===================
+//
+// The catalog lives in localStorage, not IndexedDB, on purpose: it is a few
+// dozen small rows read on every render, and a schema upgrade plus an async
+// load for that would buy nothing. Sessions reference it by id and degrade
+// to "sem tipo" when the id is gone, so deleting a catalog entry never
+// corrupts a clinical record.
+
+const MODALITIES_KEY = 'sessionmap_modalities';
+const TEMPLATES_KEY = 'sessionmap_templates';
+
+const DEFAULT_MODALITIES: Array<Pick<Modality, 'id' | 'name' | 'color'>> = [
+  { id: 'mod_terapia', name: 'Terapia', color: '#7c6cf0' },
+  { id: 'mod_mentoria', name: 'Mentoria', color: '#2f9e6e' },
+  { id: 'mod_consultoria', name: 'Consultoria', color: '#c47b1e' },
+];
+
+const DEFAULT_TEMPLATES: Array<{ modalityId: string; title: string; markdown: string }> = [
+  {
+    modalityId: 'mod_terapia',
+    title: 'Sessão de terapia',
+    markdown:
+      '- Como chega hoje\n- Tema central\n  - O que pesa mais\n  - O que ajuda\n- Fechamento e próximos passos',
+  },
+  {
+    modalityId: 'mod_mentoria',
+    title: 'Sessão de mentoria',
+    markdown:
+      '- Objetivo da sessão\n- Onde está travando\n- Opções e decisão\n- Compromisso até a próxima',
+  },
+  {
+    modalityId: 'mod_consultoria',
+    title: 'Sessão de consultoria',
+    markdown:
+      '- Contexto e meta\n- Diagnóstico\n- Recomendações\n- Próximos passos e responsáveis',
+  },
+];
+
+/** The catalog, seeded once with the three kinds from the request. */
+export function loadModalities(): Modality[] {
+  try {
+    const raw = localStorage.getItem(MODALITIES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Modality[];
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    return [];
+  }
+  const seeded: Modality[] = DEFAULT_MODALITIES.map((m) => ({
+    ...m,
+    createdAt: new Date().toISOString(),
+  }));
+  persistModalities(seeded);
+  return seeded;
+}
+
+export function persistModalities(modalities: Modality[]): void {
+  try {
+    localStorage.setItem(MODALITIES_KEY, JSON.stringify(modalities));
+  } catch {
+    // quota: the in-memory list still works for this session
+  }
+}
+
+export function modalityName(modalities: Modality[], id: string | null | undefined): string | null {
+  if (!id) return null;
+  return modalities.find((m) => m.id === id)?.name ?? null;
+}
+
+/**
+ * Deletes a catalog entry and unclassifies every session that used it.
+ * Sessions are never deleted with their kind: the record stays, the label
+ * goes, and the session reads "sem tipo" until reclassified.
+ */
+export async function deleteModalityAndClear(modalityId: string): Promise<void> {
+  persistModalities(loadModalities().filter((m) => m.id !== modalityId));
+  const maps = await getAllMaps();
+  for (const m of maps) {
+    if (m.modalityId === modalityId) {
+      // No stamp: unlabelling is maintenance, not an edit, and stamping
+      // every session would shove them all to the top of the recency order.
+      await saveMap({ ...m, modalityId: null }, { stamp: false });
+    }
+  }
+}
+
+export function loadTemplates(): SessionTemplate[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SessionTemplate[];
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    return [];
+  }
+  const now = new Date().toISOString();
+  const seeded: SessionTemplate[] = DEFAULT_TEMPLATES.map((t, i) => ({
+    id: `tpl_seed_${i}`,
+    modalityId: t.modalityId,
+    title: t.title,
+    markdown: t.markdown,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  persistTemplates(seeded);
+  return seeded;
+}
+
+export function persistTemplates(templates: SessionTemplate[]): void {
+  try {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
+  } catch {
+    // quota: the in-memory list still works for this session
+  }
+}
+
+/** Templates offered for a modality: its own plus the general ones. */
+export function templatesFor(
+  templates: SessionTemplate[],
+  modalityId: string | null
+): SessionTemplate[] {
+  return templates.filter(
+    (t) => t.modalityId === null || t.modalityId === modalityId
+  );
+}
+
+/** The union of a client's sessions' kinds, for the badge on their row. */
+export function clientModalityIds(
+  maps: MindMap[],
+  clientId: string
+): string[] {
+  const ids = new Set<string>();
+  for (const m of maps) {
+    if (m.clientId === clientId && m.modalityId && !isArchived(m)) ids.add(m.modalityId);
+  }
+  return [...ids];
+}
+
+// =================== FULL BACKUP (envelope + restore) ===================
+//
+// The old backup was a bare array of sessions: clients came along only as
+// denormalized names inside each map, and the kind catalog plus the
+// templates lived nowhere in the file. Restoring on a fresh machine showed
+// every session as "sem tipo" and lost every skeleton. The envelope carries
+// all four collections with a format version, and the restore reads both the
+// envelope and the legacy bare array.
+
+export const BACKUP_FORMAT = 1;
+
+export interface BackupEnvelope {
+  app: 'sessionmap';
+  format: number;
+  exportedAt: string;
+  clients: Client[];
+  maps: MindMap[];
+  modalities: Modality[];
+  templates: SessionTemplate[];
+}
+
+export async function buildFullBackup(): Promise<BackupEnvelope> {
+  const [clients, maps] = await Promise.all([getAllClients(), getAllMaps()]);
+  return {
+    app: 'sessionmap',
+    format: BACKUP_FORMAT,
+    exportedAt: new Date().toISOString(),
+    clients,
+    maps,
+    modalities: loadModalities(),
+    templates: loadTemplates(),
+  };
+}
+
+export interface RestoreCounts {
+  clients: number;
+  maps: number;
+  modalities: number;
+  templates: number;
+}
+
+/**
+ * Merges a backup file into this browser. Accepts the envelope and the
+ * legacy bare-array-of-sessions shape.
+ *
+ * Sessions and clients are restored by id (the file wins: it IS the restore
+ * point). Catalog entries are ADDITIVE — only ids this browser does not have
+ * are added, so a locally renamed kind is never renamed back by an old file.
+ * Unknown-kind sessions degrade to "sem tipo" on their own.
+ */
+export async function restoreFullBackup(data: unknown): Promise<RestoreCounts> {
+  const counts: RestoreCounts = { clients: 0, maps: 0, modalities: 0, templates: 0 };
+  let clients: Client[] = [];
+  let maps: MindMap[] = [];
+  let modalities: Modality[] = [];
+  let templates: SessionTemplate[] = [];
+
+  if (Array.isArray(data)) {
+    maps = data as MindMap[];
+  } else if (
+    data &&
+    typeof data === 'object' &&
+    (data as BackupEnvelope).app === 'sessionmap' &&
+    Array.isArray((data as BackupEnvelope).maps)
+  ) {
+    const env = data as BackupEnvelope;
+    clients = Array.isArray(env.clients) ? env.clients : [];
+    maps = env.maps;
+    modalities = Array.isArray(env.modalities) ? env.modalities : [];
+    templates = Array.isArray(env.templates) ? env.templates : [];
+  } else {
+    throw new Error('Formato de backup não reconhecido');
+  }
+
+  for (const c of clients) {
+    if (c && typeof c.id === 'string') {
+      await saveClient(c);
+      counts.clients += 1;
+    }
+  }
+  // Sessions imply their clients: a legacy file has no client rows, so
+  // ensure every referenced client exists before the maps land.
+  const knownClientIds = new Set((await getAllClients()).map((c) => c.id));
+  for (const m of maps) {
+    if (!m || typeof m.id !== 'string') continue;
+    if (m.clientId && !knownClientIds.has(m.clientId)) {
+      await saveClient({
+        id: m.clientId,
+        name: m.clientName || 'Cliente',
+        createdAt: m.createdAt || new Date().toISOString(),
+      });
+      knownClientIds.add(m.clientId);
+      counts.clients += 1;
+    }
+    // No stamp: a restore must not re-stamp every record (that would reorder
+    // the recency list AND hijack the active session via ACTIVE_MAP_KEY).
+    // The file's own updatedAt is the truth about recency.
+    await saveMap(m, { stamp: false });
+    counts.maps += 1;
+  }
+
+  if (modalities.length > 0) {
+    const have = new Set(loadModalities().map((m) => m.id));
+    const merged = [
+      ...loadModalities(),
+      ...modalities.filter((m) => m && typeof m.id === 'string' && !have.has(m.id)),
+    ];
+    counts.modalities = merged.length - have.size;
+    persistModalities(merged);
+  }
+  if (templates.length > 0) {
+    const have = new Set(loadTemplates().map((t) => t.id));
+    const merged = [
+      ...loadTemplates(),
+      ...templates.filter((t) => t && typeof t.id === 'string' && !have.has(t.id)),
+    ];
+    counts.templates = merged.length - have.size;
+    persistTemplates(merged);
+  }
+  return counts;
 }

@@ -12,6 +12,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@heyputer/puter.js": "^2.6.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/jszip": "^3.4.1",
     "@vitejs/plugin-react": "^6.1.1",

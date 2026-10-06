@@ -13,18 +13,18 @@ import {
   Archive,
   ArchiveRestore,
 } from 'lucide-react';
-import { MindMap } from '../../types';
+import { MindMap, Modality } from '../../types';
 import { countTotalNodes } from '../../utils/tree';
 import {
-  getAllMaps,
-  deleteMap,
-  saveMap,
   isArchived,
   unarchiveMap,
   unarchiveClient,
+  loadModalities,
+  buildFullBackup,
 } from '../../services/storage';
 import { downloadFile } from '../../utils/export';
 import { useDialogA11y, ConfirmDialog } from '../ui/Modal';
+import { ModalityBadge } from '../ui/ModalityBadge';
 
 interface MapListDrawerProps {
   isOpen: boolean;
@@ -60,6 +60,8 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [view, setView] = useState<'active' | 'archived'>('active');
+  const [modalityFilter, setModalityFilter] = useState<string>('all');
+  const [modalities, setModalities] = useState<Modality[]>(() => loadModalities());
   // Confirmation is a dialog, never window.confirm(): the default focus is the
   // safe answer and the dialog names exactly what is about to be removed.
   const [pendingArchive, setPendingArchive] = useState<MindMap | null>(null);
@@ -71,6 +73,14 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   // shared dialog hook. This drawer used to carry its own copy of all of it,
   // which had already drifted from Modal's (different focusable selectors, and
   // it silently dropped focus when the panel held none).
+  // Reloaded per open: kinds are edited in the admin panel.
+  React.useEffect(() => {
+    if (isOpen) {
+      setModalities(loadModalities());
+      setModalityFilter('all');
+    }
+  }, [isOpen]);
+
   const onKeyDown = useDialogA11y(panelRef, isOpen, onClose);
 
   // A drawer is not a Modal: the name "theme" is kept in the props for
@@ -83,14 +93,20 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   const archivedMaps = maps.filter((m) => isArchived(m));
   const scopedMaps = view === 'active' ? activeMaps : archivedMaps;
   const term = search.trim().toLowerCase();
+  const kindFiltered =
+    modalityFilter === 'all'
+      ? scopedMaps
+      : modalityFilter === 'none'
+        ? scopedMaps.filter((m) => !m.modalityId)
+        : scopedMaps.filter((m) => m.modalityId === modalityFilter);
   const filteredMaps = term
-    ? scopedMaps.filter(
+    ? kindFiltered.filter(
         (m) =>
           (m.title || '').toLowerCase().includes(term) ||
           (m.root?.text || '').toLowerCase().includes(term) ||
           (m.clientName || '').toLowerCase().includes(term)
       )
-    : scopedMaps;
+    : kindFiltered;
   const activeCount = activeMaps.length;
   const archivedCount = archivedMaps.length;
 
@@ -108,11 +124,13 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   };
 
   // The backup deliberately includes archived sessions: they are still clinical
-  // records, and a backup that silently dropped them would be lossy.
+  // records, and a backup that silently dropped them would be lossy. The
+  // envelope also carries clients, kinds and templates: without them a
+  // restore shows every session as "sem tipo" and loses every skeleton.
   const handleBackupAll = async () => {
-    const all = await getAllMaps();
+    const envelope = await buildFullBackup();
     downloadFile(
-      JSON.stringify(all, null, 2),
+      JSON.stringify(envelope, null, 2),
       `sessionmap_backup_completo_${new Date().toISOString().slice(0, 10)}.json`,
       'application/json'
     );
@@ -239,6 +257,28 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               className="w-full pl-9 pr-3 py-2 text-xs rounded-control border border-line bg-surface font-medium text-content placeholder:text-content-subtle"
             />
           </div>
+
+          {modalities.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="map-modality-filter" className="sr-only">
+                Filtrar por tipo
+              </label>
+              <select
+                id="map-modality-filter"
+                value={modalityFilter}
+                onChange={(e) => setModalityFilter(e.target.value)}
+                className="w-full h-9 px-2 text-xs rounded-control border border-line bg-surface font-bold text-content"
+              >
+                <option value="all">Todos os tipos</option>
+                {modalities.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+                <option value="none">Sem tipo</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Map List */}
@@ -296,6 +336,11 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       <p className="text-[11px] font-medium text-content-muted truncate mt-0.5">
                         Tema: {m.root.text}
                       </p>
+                      <div className="mt-1">
+                        <ModalityBadge
+                          modality={modalities.find((mod) => mod.id === m.modalityId) ?? null}
+                        />
+                      </div>
                     </button>
 
                     {/* Siblings of the selection button, never children:

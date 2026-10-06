@@ -10,7 +10,7 @@ import {
   Image,
   Upload,
 } from 'lucide-react';
-import { Modal } from '../ui/Modal';
+import { Modal, ConfirmDialog } from '../ui/Modal';
 import { Tabs, TabPanel, type TabItem } from '../ui/Tabs';
 import { SettingRow } from '../ui/Controls';
 import { Client, MindMap, MindMapNode } from '../../types';
@@ -30,7 +30,13 @@ import {
 } from '../../utils/export';
 import { parseMarkdownToTree } from '../../utils/tree';
 import { formatSessionTimestamp } from '../../utils/text';
-import { getAllClients, getAllMaps } from '../../services/storage';
+import {
+  getAllClients,
+  getAllMaps,
+  buildFullBackup,
+  restoreFullBackup,
+  type RestoreCounts,
+} from '../../services/storage';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -42,6 +48,8 @@ interface ExportModalProps {
   theme: 'papel' | 'noite';
   onImportMap: (importedMap: MindMap) => void;
   onUpdateCurrentMapRoot?: (newRoot: MindMapNode) => void;
+  /** Re-reads storage after a backup restore lands many records at once. */
+  onRestoreBackup?: () => void | Promise<void>;
 }
 
 type TabId = 'arquivo' | 'importar' | 'opml' | 'freemind' | 'json';
@@ -130,6 +138,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   theme,
   onImportMap,
   onUpdateCurrentMapRoot,
+  onRestoreBackup,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('arquivo');
   // Which format was copied, not a bare boolean: the success state used
@@ -144,8 +153,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Full-backup restore: parsed file waits for an explicit confirmation,
+  // because it overwrites sessions and clients by id. Nothing lands on the
+  // first click; the dialog names exactly what will change.
+  const [pendingRestore, setPendingRestore] = useState<{
+    counts: { clients: number; maps: number; modalities: number; templates: number };
+    payload: unknown;
+    legacy: boolean;
+  } | null>(null);
+  const [restoreStatus, setRestoreStatus] = useState('');
+  const restoreFileInputRef = useRef<HTMLInputElement | null>(null);
+
   const importTextId = useId();
   const importStatusId = useId();
+
+  // A confirmed or abandoned restore must not greet the next open.
+  const wasOpenRef = useRef(false);
+  if (isOpen && !wasOpenRef.current) {
+    wasOpenRef.current = true;
+    if (pendingRestore) setPendingRestore(null);
+    if (restoreStatus) setRestoreStatus('');
+  } else if (!isOpen && wasOpenRef.current) {
+    wasOpenRef.current = false;
+  }
 
   const markdownContent = useMemo(() => exportToMarkdown(map), [map]);
   const opmlContent = useMemo(() => exportToOPML(map), [map]);
@@ -211,13 +241,73 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     });
 
   const handleFullBackup = async () => {
-    const all = await getAllMaps();
-    const backupJson = JSON.stringify(all, null, 2);
+    const envelope = await buildFullBackup();
     downloadFile(
-      backupJson,
+      JSON.stringify(envelope, null, 2),
       `sessionmap_backup_${new Date().toISOString().slice(0, 10)}.json`,
       'application/json'
     );
+  };
+
+  // Restore 1: pick a backup file -> parse only, then ask. Restore 2 (the
+  // dialog confirm) writes. Splitting them is what keeps a mis-clicked file
+  // from overwriting the practice.
+  const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed: unknown = JSON.parse(String(event.target?.result ?? ''));
+        const legacy = Array.isArray(parsed);
+        const maps = legacy
+          ? (parsed as unknown[])
+          : ((parsed as { maps?: unknown }).maps as unknown);
+        if (!Array.isArray(maps)) throw new Error('sem sessões');
+        const env = parsed as {
+          clients?: unknown[];
+          modalities?: unknown[];
+          templates?: unknown[];
+        };
+        setPendingRestore({
+          counts: {
+            clients: Array.isArray(env.clients) ? env.clients.length : 0,
+            maps: maps.length,
+            modalities: Array.isArray(env.modalities) ? env.modalities.length : 0,
+            templates: Array.isArray(env.templates) ? env.templates.length : 0,
+          },
+          payload: parsed,
+          legacy,
+        });
+        setRestoreStatus('');
+      } catch {
+        setRestoreStatus('Esse arquivo não é um backup do SessionMap.');
+      }
+    };
+    reader.onerror = () => setRestoreStatus('Falha ao ler o arquivo selecionado.');
+    reader.readAsText(file);
+  };
+
+  const confirmRestore = async () => {
+    const target = pendingRestore;
+    setPendingRestore(null);
+    if (!target) return;
+    try {
+      setRestoreStatus('Restaurando…');
+      const counts: RestoreCounts = await restoreFullBackup(target.payload);
+      setRestoreStatus(
+        `Restaurado: ${counts.maps} ${counts.maps === 1 ? 'sessão' : 'sessões'}, ` +
+          `${counts.clients} ${counts.clients === 1 ? 'cliente' : 'clientes'}` +
+          (counts.modalities > 0 || counts.templates > 0
+            ? `, ${counts.modalities} tipos e ${counts.templates} roteiros novos`
+            : '') +
+          '.'
+      );
+      await onRestoreBackup?.();
+    } catch {
+      setRestoreStatus('Não foi possível restaurar esse arquivo.');
+    }
   };
 
   // File Upload handler
@@ -352,6 +442,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const clientLabel = map.clientName || 'o cliente';
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -702,8 +793,82 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </>
             }
           />
+
+          {/* Restore: the file is only PARSED here. The confirm dialog writes,
+              and names the counts first — a restore overwrites by id. */}
+          <div className="mt-4 p-4 rounded-panel border border-line bg-surface-sunken space-y-2">
+            <input
+              ref={restoreFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleRestoreFile}
+              className="hidden"
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-content">
+                  Restaurar backup (.json)
+                </h4>
+                <p className="text-[11px] text-content-muted font-medium">
+                  Vale para o backup completo atual e para os antigos (só sessões).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => restoreFileInputRef.current?.click()}
+                className="ctl text-xs font-bold"
+              >
+                <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Escolher arquivo…</span>
+              </button>
+            </div>
+            {restoreStatus && (
+              <p role="status" className="text-[11px] font-semibold text-content">
+                {restoreStatus}
+              </p>
+            )}
+          </div>
         </TabPanel>
       )}
-    </Modal>
+
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={pendingRestore !== null}
+        title="Restaurar este backup?"
+        confirmLabel="Restaurar backup"
+        cancelLabel="Cancelar"
+        onCancel={() => setPendingRestore(null)}
+        onConfirm={() => void confirmRestore()}
+        description={
+          pendingRestore ? (
+            <>
+              <p>
+                O arquivo contém <strong>{pendingRestore.counts.maps} sessões</strong>
+                {pendingRestore.counts.clients > 0 && (
+                  <>
+                    {' '}e <strong>{pendingRestore.counts.clients} clientes</strong>
+                  </>
+                )}
+                {pendingRestore.counts.modalities > 0 && (
+                  <> · {pendingRestore.counts.modalities} tipos</>
+                )}
+                {pendingRestore.counts.templates > 0 && (
+                  <> · {pendingRestore.counts.templates} roteiros</>
+                )}
+                {pendingRestore.legacy && ' (formato antigo: só sessões)'}.
+              </p>
+              <p className="mt-2 text-content-subtle">
+                Sessões e clientes com o mesmo id serão substituídos pelos do
+                arquivo. Tipos e roteiros novos são somados; os que você
+                renomeou aqui não mudam.
+              </p>
+            </>
+          ) : null
+        }
+      />
+    </>
   );
 };

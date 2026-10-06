@@ -5,13 +5,15 @@ import {
   Undo2,
   Redo2,
   Plus,
+  Cloud,
 } from 'lucide-react';
-import { Client, MindMap, MindMapNode, SelectReason, Settings } from '../types';
+import { Client, MindMap, MindMapNode, SelectReason, SessionTemplate, Settings, CloudBackupState } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { ShareGuideModal } from './modals/ShareGuideModal';
 import { ExportModal } from './modals/ExportModal';
 import { SettingsModal } from './modals/SettingsModal';
 import { MapListDrawer } from './modals/MapListDrawer';
+import { NewSessionDialog } from './modals/NewSessionDialog';
 import { AdminClientManager } from './admin/AdminClientManager';
 import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
@@ -22,6 +24,7 @@ import {
   getAllMaps,
   getAllClients,
   saveMap,
+  createNewSession,
   deleteMap,
   getSettings,
   saveSettings,
@@ -32,19 +35,57 @@ import {
   archiveMap,
   unarchiveMap,
   isArchived,
-  pruneEmptyLeaves,
   getMap,
   tidyOutline,
+  reconcilePendingRoot,
+  writePendingRoot,
 } from '../services/storage';
 import { syncService } from '../services/sync';
-import { findPathToNode, findNodeById, generateNodeId, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
-import { formatSessionTimestamp } from '../utils/text';
+import {
+  AUTO_BACKUP_IDLE_MS,
+  describeCloudStatus,
+  formatCloudAgo,
+  runAutoBackup,
+} from '../services/cloudBackup';
+import { findPathToNode, findNodeById, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
 import { isTextEntryTarget } from '../utils/keyboard';
 import {
   OUTLINE_MIN_PERCENT,
   OUTLINE_MAX_PERCENT,
   clampOutlineWidth,
 } from '../utils/layout';
+
+/**
+ * The footer mirror of the cloud section in Settings: one glanceable label,
+ * and a click target straight into the section. Rendered only while the
+ * feature is enabled, so the default offline product shows nothing new.
+ */
+const CloudBackupFooterBadge: React.FC<{
+  cloud: CloudBackupState;
+  onOpenSettings: () => void;
+}> = ({ cloud, onOpenSettings }) => {
+  const status = describeCloudStatus(cloud);
+  const label =
+    status.kind === 'locked'
+      ? 'nuvem: aguardando senha'
+      : status.kind === 'error'
+        ? 'nuvem: erro no último envio'
+        : status.kind === 'never'
+          ? 'nuvem: nunca enviado'
+          : `nuvem ${formatCloudAgo(Date.now(), status.lastBackupAt)}`;
+  return (
+    <button
+      type="button"
+      onClick={onOpenSettings}
+      title="Backup em nuvem — abrir configurações"
+      aria-label={`Backup em nuvem: ${label}. Abrir configurações.`}
+      className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
+    >
+      <Cloud className="w-3 h-3" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
+};
 
 export const TherapistView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -62,8 +103,28 @@ export const TherapistView: React.FC = () => {
   const [settings, setSettings] = useState<Settings>(() => getSettings());
 
   // Split view ratio. The floor and the ceiling live in utils/layout so they
-  // can be checked without mounting this.
-  const [outlineWidthPercent, setOutlineWidthPercent] = useState<number>(OUTLINE_MIN_PERCENT);
+  // can be checked without mounting this. Seeded from settings and persisted
+  // on every settled change: the comments always said "persisted", but the
+  // state used to ignore the stored value and the drag never wrote it back,
+  // so the split reset on every reload.
+  const [outlineWidthPercent, setOutlineWidthPercent] = useState<number>(
+    () => getSettings().outlineWidthPercent
+  );
+  /** Synchronous mirror, so the drag-end cleanup persists the landed value. */
+  const outlineWidthRef = useRef<number>(outlineWidthPercent);
+  const commitOutlineWidth = (next: number) => {
+    const clamped = clampOutlineWidth(next);
+    outlineWidthRef.current = clamped;
+    setOutlineWidthPercent(clamped);
+    try {
+      const s = getSettings();
+      if (s.outlineWidthPercent !== clamped) {
+        saveSettings({ ...s, outlineWidthPercent: clamped });
+      }
+    } catch {
+      // storage disabled: the split still works for this session
+    }
+  };
   const [isResizingOutline, setIsResizingOutline] = useState<boolean>(false);
   /** Removes the window listeners a drag in flight installed. */
   const resizeCleanupRef = useRef<(() => void) | null>(null);
@@ -160,6 +221,9 @@ export const TherapistView: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMapListOpen, setIsMapListOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  /** The client a new session is being started for (kind + template picker). */
+  const [pendingNewSessionClient, setPendingNewSessionClient] =
+    useState<Client | null>(null);
 
   // Undo/Redo history stack
   const historyRef = useRef<MindMapNode[]>([]);
@@ -169,6 +233,45 @@ export const TherapistView: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'salvo' | 'salvando'>('salvo');
   const autosaveTimerRef = useRef<number | null>(null);
 
+  // Cloud auto-backup: fires once the session has been quiet for a while.
+  // The timer resets on every committed change, so a typing session uploads
+  // once after stopping — not once per keystroke. The tick itself is
+  // conservative (see runAutoBackup): locked, offline, signed out, or
+  // disabled all skip silently.
+  const cloudAutoTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (cloudAutoTimerRef.current) {
+      window.clearTimeout(cloudAutoTimerRef.current);
+      cloudAutoTimerRef.current = null;
+    }
+    if (!settings.cloudBackup.enabled || !settings.cloudBackup.auto) return;
+    cloudAutoTimerRef.current = window.setTimeout(() => {
+      cloudAutoTimerRef.current = null;
+      void runAutoBackup().then((did) => {
+        if (did) setSettings(getSettings());
+      });
+    }, AUTO_BACKUP_IDLE_MS);
+    return () => {
+      if (cloudAutoTimerRef.current) {
+        window.clearTimeout(cloudAutoTimerRef.current);
+        cloudAutoTimerRef.current = null;
+      }
+    };
+  }, [activeMap?.updatedAt, settings.cloudBackup.enabled, settings.cloudBackup.auto]);
+
+  /**
+   * Commits the outline buffer synchronously and returns the parsed root.
+   * Registered by MarkdownOutline every render. The buffer parses on a
+   * 400ms debounce, so the last keystrokes before a session switch live
+   * only in the textarea DOM — without this, switching fast silently drops
+   * them: the session-change effect overwrites the buffer with the new
+   * session before the debounce fires.
+   */
+  const outlineFlushRef = useRef<(() => MindMapNode | null) | null>(null);
+  /** Mirrors activeMap for handlers that must prune the session being LEFT. */
+  const activeMapRef = useRef<MindMap | null>(null);
+  activeMapRef.current = activeMap;
+
   // 10s Delete Undo Toast
   const [deletedMapUndo, setDeletedMapUndo] = useState<MindMap | null>(null);
   const undoToastTimerRef = useRef<number | null>(null);
@@ -177,6 +280,13 @@ export const TherapistView: React.FC = () => {
   const clientWindowRef = useRef<Window | null>(null);
 
   const refreshAllData = useCallback(async () => {
+    // A tab closed mid-keystroke leaves a pending root behind (beforeunload
+    // below): reconcile it BEFORE reading, so the freshest text wins.
+    try {
+      await reconcilePendingRoot();
+    } catch {
+      // storage hiccup: the entry stays for the next load.
+    }
     const [loadedClients, allLoadedMaps] = await Promise.all([
       getAllClients(),
       getAllMaps(),
@@ -227,6 +337,28 @@ export const TherapistView: React.FC = () => {
       if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
     };
   }, [refreshAllData]);
+
+  // Last line of defense for a refresh/close mid-keystroke. The debounced
+  // autosave never fires inside beforeunload and async IndexedDB writes do
+  // not complete there — but a synchronous localStorage write does, and the
+  // next load reconciles it (see reconcilePendingRoot). Bound once: it reads
+  // only refs, so it never goes stale.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const current = activeMapRef.current;
+      if (!current) return;
+      let root = current.root;
+      try {
+        const flushed = outlineFlushRef.current?.();
+        if (flushed) root = flushed;
+      } catch {
+        // parse hiccup: fall back to the last committed tree
+      }
+      writePendingRoot(current.id, root);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Window A title. The client name IS shown here — see the ShareGuide
   // caveat below about screen-sharing the browser chrome.
@@ -445,7 +577,9 @@ export const TherapistView: React.FC = () => {
       // A zero width means the pane is not laid out yet, and dividing by it
       // would hand the state a NaN that no comparison can clamp.
       if (width <= 0) return;
-      setOutlineWidthPercent(clampOutlineWidth((ev.clientX / width) * 100));
+      const next = clampOutlineWidth((ev.clientX / width) * 100);
+      outlineWidthRef.current = next;
+      setOutlineWidthPercent(next);
     };
     const onUp = () => cleanup();
     // Escape abandons the drag AND puts the width back, so a mis-grab is one
@@ -454,7 +588,7 @@ export const TherapistView: React.FC = () => {
       if (ev.key !== 'Escape') return;
       ev.preventDefault();
       cleanup();
-      setOutlineWidthPercent(OUTLINE_MIN_PERCENT);
+      commitOutlineWidth(OUTLINE_MIN_PERCENT);
     };
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
@@ -463,6 +597,16 @@ export const TherapistView: React.FC = () => {
       window.removeEventListener('keydown', onKey, true);
       resizeCleanupRef.current = null;
       setIsResizingOutline(false);
+      // Persist once, on landing — not per pointermove, which would write
+      // localStorage dozens of times per drag.
+      try {
+        const s = getSettings();
+        if (s.outlineWidthPercent !== outlineWidthRef.current) {
+          saveSettings({ ...s, outlineWidthPercent: outlineWidthRef.current });
+        }
+      } catch {
+        // storage disabled: the split still works for this session
+      }
     }
 
     window.addEventListener('pointermove', onMove);
@@ -483,46 +627,93 @@ export const TherapistView: React.FC = () => {
    * to the same bounds the drag uses.
    */
   const nudgeOutlineWidth = (delta: number) => {
-    setOutlineWidthPercent((w) => clampOutlineWidth(w + delta));
+    commitOutlineWidth(outlineWidthRef.current + delta);
   };
 
-  // Switch Active Map
-  const handleSelectMap = (mapId: string) => {
-    const found = maps.find((m) => m.id === mapId);
-    if (found) {
-      setActiveMap(found);
-      setActiveMapId(found.id);
-      historyRef.current = [found.root];
-      historyIndexRef.current = 0;
-      setSelectedNodeId(null);
-      setDraft(null);
+  // Switch Active Map.
+  //
+  // Looks in the UNFILTERED list first: the drawer also lists archived
+  // sessions and the admin panel hands over objects directly, so an
+  // active-only lookup silently refused to open exactly those.
+  //
+  // flushPreviousSession is declared below and hoisted by closure: it only
+  // runs on user interaction, long after this render finished.
+  const handleSelectMapObject = useCallback((session: MindMap) => {
+    if (activeMapRef.current && activeMapRef.current.id !== session.id) {
+      void flushPreviousSession(session.id);
     }
+    setActiveMap(session);
+    setActiveMapId(session.id);
+    historyRef.current = [session.root];
+    historyIndexRef.current = 0;
+    setSelectedNodeId(null);
+    setDraft(null);
+  }, []);
 
-    // Commit point for the session being left: drop any row that was created
-    // but never typed into. The outline cancels these on blur, so this only
-    // catches a node whose input was never mounted or lost focus some other
-    // way (a tab switch that unmounted it, for instance).
-    //
-    // Deliberately NOT done in handleUpdateRoot: addChild/Enter create a blank
-    // row and immediately push it, so pruning on every update would delete
-    // the row before the user could type into it.
-    void commitPrunedRoot(mapId);
+  const handleSelectMap = (mapId: string) => {
+    const found =
+      allMaps.find((m) => m.id === mapId) || maps.find((m) => m.id === mapId);
+    if (found) {
+      handleSelectMapObject(found);
+      return;
+    }
+    // Newly created sessions are in storage but not yet in state: the
+    // refresh that fills the state is async, so the lookup above misses.
+    // Reading the record directly beats showing nothing.
+    void getMap(mapId).then((m) => {
+      if (m) handleSelectMapObject(m);
+    });
+    // The session being left still gets its commit point below, via the
+    // flush inside handleSelectMapObject once the record arrives. Until
+    // then nothing is discarded: the buffer stays mounted.
+    if (activeMapRef.current && activeMapRef.current.id !== mapId) {
+      void flushPreviousSession(mapId);
+    }
   };
 
-  const commitPrunedRoot = async (mapId: string) => {
+  /**
+   * Commit point for the session being LEFT: flushes the outline buffer
+   * (keystrokes newer than the parse debounce), drops rows that were
+   * created but never typed into, and writes the result — but only when it
+   * differs from what storage already holds, so merely opening a session
+   * does not re-stamp it and churn the recency order.
+   *
+   * The previous code pruned the TARGET map instead of the one being left,
+   * so blanks accumulated on every session that was typed in and switched
+   * away from.
+   */
+  const flushPreviousSession = async (exceptId: string) => {
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    const current = (await getMap(mapId)) ?? maps.find((m) => m.id === mapId);
-    if (!current) return;
-    const pruned = tidyOutline(current.root);
-    if (pruned === current.root) return;
-    await saveMap({ ...current, root: pruned, updatedAt: new Date().toISOString() });
-    await refreshAllData();
+    let flushed: MindMapNode | null = null;
+    try {
+      flushed = outlineFlushRef.current?.() ?? null;
+    } catch {
+      flushed = null;
+    }
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    const prev = activeMapRef.current;
+    if (!prev || prev.id === exceptId) return;
+    const root = flushed ?? prev.root;
+    const pruned = tidyOutline(root);
+    let stored: MindMap | null = null;
+    try {
+      stored = await getMap(prev.id);
+    } catch {
+      stored = null;
+    }
+    if (stored && JSON.stringify(stored.root) === JSON.stringify(pruned)) return;
+    await saveMap({ ...prev, root: pruned, updatedAt: new Date().toISOString() });
   };
 
-  // Create New Map (Quick from Drawer)
+  // Create New Map: opens the kind + template picker, which confirms into
+  // the numbered session below. The client in context is resolved HERE, not
+  // on confirm: the list could change under the open dialog.
   const handleCreateNewMap = async () => {
     // The session must belong to the client currently in context, not to
     // clients[0]. Picking the first client meant every new session landed on
@@ -539,35 +730,32 @@ export const TherapistView: React.FC = () => {
       inContext || clients.find((c) => !isArchived(c)) || clients[0] || null;
 
     if (!client) return;
+    setPendingNewSessionClient(client);
+  };
 
-    const newId = `m_${Date.now().toString(36)}`;
-    // Numbered per client, so two clients each start at "Sessão 1".
-    const clientSessionCount = maps.filter(
+  const handleConfirmNewSession = async (
+    modalityId: string | null,
+    template: SessionTemplate | null
+  ) => {
+    const client = pendingNewSessionClient;
+    setPendingNewSessionClient(null);
+    if (!client) return;
+
+    // Numbered per client over ALL sessions, archived included: counting
+    // only the active ones reused a number the moment its first holder was
+    // archived, and two "Sessão 2" for the same client is a filing error.
+    const clientSessionCount = allMaps.filter(
       (m) => m.clientId === client.id
     ).length;
-    const newMap: MindMap = {
-      schema: 1,
-      id: newId,
-      clientId: client.id,
-      clientName: client.name,
-      sessionDate: formatSessionTimestamp(),
+    const newMap = createNewSession(client.id, client.name, {
+      modalityId,
+      templateMarkdown: template?.markdown ?? null,
       title: `Sessão ${clientSessionCount + 1}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      root: {
-        id: generateNodeId(),
-        text: formatSessionTimestamp(),
-        // Same as createNewSession: no seeded first child, so the two
-        // creation paths produce the same empty session. A placeholder node
-        // that has to be replaced is a node that sometimes is not, and then it
-        // reaches the canvas and every export as a balloon nobody wrote.
-        children: [],
-      },
-    };
+    });
 
     await saveMap(newMap);
     await refreshAllData();
-    handleSelectMap(newMap.id);
+    handleSelectMapObject(newMap);
   };
 
   const handleDuplicateMap = async (target: MindMap) => {
@@ -766,6 +954,7 @@ export const TherapistView: React.FC = () => {
               theme={settings.theme}
               outlineFontScale={settings.outlineFontScale}
               maximizeOutline={maximizeOutline}
+              flushRef={outlineFlushRef}
               onToggleMaximize={() => {
                 const next = !maximizeOutline;
                 // Routed through the settings so the choice is persisted: a
@@ -819,7 +1008,7 @@ export const TherapistView: React.FC = () => {
                     nudgeOutlineWidth(e.shiftKey ? -10 : -2);
                   } else if (e.key === 'Home') {
                     e.preventDefault();
-                    setOutlineWidthPercent(OUTLINE_MIN_PERCENT);
+                    commitOutlineWidth(OUTLINE_MIN_PERCENT);
                   }
                 }}
                 /* w-11 with -mr-11px, NOT w-0. For an absolutely positioned box
@@ -970,6 +1159,15 @@ export const TherapistView: React.FC = () => {
           </span>
           <span aria-hidden="true" className="text-content-subtle">·</span>
           <span className="font-medium">100% offline & seguro</span>
+          {settings.cloudBackup.enabled && (
+            <>
+              <span aria-hidden="true" className="text-content-subtle">·</span>
+              <CloudBackupFooterBadge
+                cloud={settings.cloudBackup}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+              />
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
@@ -1015,7 +1213,7 @@ export const TherapistView: React.FC = () => {
         activeMapId={activeMap?.id || ''}
         activeClientId={activeMap?.clientId || null}
         onSelectSession={(session) => {
-          handleSelectMap(session.id);
+          handleSelectMapObject(session);
         }}
         onRefreshData={refreshAllData}
         theme={settings.theme}
@@ -1037,6 +1235,7 @@ export const TherapistView: React.FC = () => {
           maps={allMaps}
           svgRef={svgCanvasRef}
           theme={settings.theme}
+          onRestoreBackup={refreshAllData}
           onImportMap={(newMap) => {
             saveMap(newMap).then(async () => {
               await refreshAllData();
@@ -1054,12 +1253,27 @@ export const TherapistView: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
+        onCloudRestore={refreshAllData}
+      />
+
+      <NewSessionDialog
+        isOpen={pendingNewSessionClient !== null}
+        onClose={() => setPendingNewSessionClient(null)}
+        clientName={pendingNewSessionClient?.name ?? 'Cliente'}
+        defaultModalityId={
+          (pendingNewSessionClient &&
+            allMaps.find(
+              (m) => m.clientId === pendingNewSessionClient.id && m.modalityId
+            )?.modalityId) ??
+          null
+        }
+        onConfirm={handleConfirmNewSession}
       />
 
       <MapListDrawer
         isOpen={isMapListOpen}
         onClose={() => setIsMapListOpen(false)}
-        maps={maps}
+        maps={allMaps}
         activeMapId={activeMap?.id || ''}
         onSelectMap={handleSelectMap}
         onCreateNewMap={handleCreateNewMap}
