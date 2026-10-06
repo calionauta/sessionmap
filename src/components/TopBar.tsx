@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ChevronDown,
+  Cloud,
   Download,
   ExternalLink,
   Layers,
@@ -57,6 +58,18 @@ export interface TopBarProps {
    * pane cannot be pressed. The bar is the one surface that is always there.
    */
   narrowPane: 'outline' | 'map' | null;
+  /**
+   * Cloud backup status. Null while the feature is off — the default
+   * offline product shows nothing new. A status pill, never an action
+   * disguised as one: it reports, and its click goes to Settings.
+   */
+  cloud?: {
+    label: string;
+    hint: string;
+    /** 'disabled' never reaches here (the pill is null then); kept so the
+        caller passes the status kind straight through without casting. */
+    kind: 'ok' | 'locked' | 'error' | 'never' | 'disabled';
+  } | null;
 
   onOpenClients: () => void;
   onOpenClientWindow: () => void;
@@ -103,6 +116,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onRestoreSplit,
   narrowPane,
   onSwapPane,
+  cloud = null,
 }) => {
   /**
    * The one control that both reports the connection and acts on it.
@@ -240,6 +254,33 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* SESSION — the loop the therapist is actually in. Right, fixed width,
           so it never drifts away from the actions it belongs with. */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* Cloud backup status. Hidden below md: the client pill already
+            hides below lg, and two pills plus actions do not fit a phone.
+            The footer badge stays reachable everywhere regardless. */}
+        {cloud && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            title={cloud.hint}
+            aria-label={`Backup em nuvem: ${cloud.label}. Abrir configurações.`}
+            className="hidden md:flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content hover:border-line-muted cursor-pointer"
+          >
+            <Cloud className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                cloud.kind === 'ok'
+                  ? 'bg-positive'
+                  : cloud.kind === 'error'
+                    ? 'bg-negative'
+                    : cloud.kind === 'locked'
+                      ? 'bg-caution'
+                      : 'bg-content-subtle'
+              }`}
+              aria-hidden="true"
+            />
+            <span className="whitespace-nowrap">{cloud.label}</span>
+          </button>
+        )}
         {/* Status only. It was on `hidden lg:flex`, which meant that below 1024px
             the therapist could not pause the client's screen at all except by
             remembering Ctrl+.. The pill may still hide — it is supplementary —

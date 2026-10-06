@@ -94,3 +94,65 @@ describe('AdminClientManager modality wiring', () => {
     expect(selected).toBeNull();
   });
 });
+
+describe('AdminClientManager catalog tab', () => {
+  test('the catalog lives beside the clients, not inside one', () => {
+    renderAdmin();
+    // Default room: the client workflow, no global config in sight.
+    expect(screen.getAllByText('Ana M.').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Tipos de atendimento')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
+    expect(screen.getByText(/Tipos de atendimento/)).toBeTruthy();
+    expect(screen.getByText(/Roteiros iniciais/)).toBeTruthy();
+    // And the client list steps out of the way.
+    expect(screen.queryAllByText('Ana M.')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('tab', { name: /clientes/i }));
+    expect(screen.getAllByText('Ana M.').length).toBeGreaterThan(0);
+  });
+
+  test('adding a kind persists it to the catalog', () => {
+    renderAdmin();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
+    fireEvent.change(screen.getByLabelText('Nome do novo tipo'), {
+      target: { value: 'Supervisão' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tipo' }));
+    const stored = JSON.parse(String(localStorage.getItem('sessionmap_modalities')));
+    expect(stored.map((m: { name: string }) => m.name)).toContain('Supervisão');
+  });
+
+  test('deleting a kind confirms, then unclassifies its sessions', async () => {
+    const onRefreshData = mock(() => {});
+    renderAdmin({ onRefreshData });
+    fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir tipo Terapia' }));
+    await screen.findByText('Excluir este tipo?');
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir tipo' }));
+    await waitFor(() => expect(onRefreshData).toHaveBeenCalled());
+    const stored = JSON.parse(String(localStorage.getItem('sessionmap_modalities')));
+    expect(stored.map((m: { name: string }) => m.name)).not.toContain('Terapia');
+  });
+
+  test('adding a template files it under the picked kind', () => {
+    renderAdmin();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Roteiro' }));
+    fireEvent.change(screen.getByLabelText('Título do roteiro'), {
+      target: { value: 'Abertura' },
+    });
+    fireEvent.change(screen.getByLabelText('Tipo do roteiro'), {
+      target: { value: 'mod_terapia' },
+    });
+    fireEvent.change(screen.getByLabelText('Texto do roteiro em tópicos'), {
+      target: { value: '- Chegada' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar roteiro' }));
+    const stored = JSON.parse(String(localStorage.getItem('sessionmap_templates')));
+    const added = stored.find(
+      (t: { title: string }) => t.title === 'Abertura'
+    ) as { modalityId: string };
+    expect(added.modalityId).toBe('mod_terapia');
+  });
+});

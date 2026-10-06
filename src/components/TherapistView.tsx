@@ -43,8 +43,8 @@ import {
 import { syncService } from '../services/sync';
 import {
   AUTO_BACKUP_IDLE_MS,
+  cloudBadgeLabel,
   describeCloudStatus,
-  formatCloudAgo,
   runAutoBackup,
 } from '../services/cloudBackup';
 import { findPathToNode, findNodeById, toggleNodeCollapse, normalizeOutline } from '../utils/tree';
@@ -65,14 +65,7 @@ const CloudBackupFooterBadge: React.FC<{
   onOpenSettings: () => void;
 }> = ({ cloud, onOpenSettings }) => {
   const status = describeCloudStatus(cloud);
-  const label =
-    status.kind === 'locked'
-      ? 'nuvem: aguardando senha'
-      : status.kind === 'error'
-        ? 'nuvem: erro no último envio'
-        : status.kind === 'never'
-          ? 'nuvem: nunca enviado'
-          : `nuvem ${formatCloudAgo(Date.now(), status.lastBackupAt)}`;
+  const label = cloudBadgeLabel(status);
   return (
     <button
       type="button"
@@ -835,6 +828,29 @@ export const TherapistView: React.FC = () => {
   const isDark = settings.theme === 'noite';
   const highlightedPath = activeMap && selectedNodeId ? findPathToNode(activeMap.root, selectedNodeId) : null;
 
+  // Cloud pill for the top bar. Null while the feature is off, so the
+  // default offline product shows nothing new. The hint answers "is it
+  // automatic?" where the question arises: automatic uploads only while
+  // unlocked and online, ~1 min after saving; manual mode only sends on
+  // "Backup agora".
+  const cloudStatus = describeCloudStatus(settings.cloudBackup);
+  const cloudPill = settings.cloudBackup.enabled
+    ? {
+        label: cloudBadgeLabel(cloudStatus),
+        hint:
+          `Backup em nuvem: ${settings.cloudBackup.auto ? 'automático ligado' : 'manual'} · ` +
+          (cloudStatus.kind === 'ok'
+            ? `último envio ${cloudStatus.lastBackupAt ? new Date(cloudStatus.lastBackupAt).toLocaleString('pt-BR') : ''}`
+            : cloudStatus.kind === 'locked'
+              ? 'pausado, aguardando a senha'
+              : cloudStatus.kind === 'error'
+                ? `última tentativa falhou: ${cloudStatus.lastError ?? ''}`
+                : 'nenhum envio ainda') +
+          ' · abrir configurações',
+        kind: cloudStatus.kind,
+      }
+    : null;
+
   /**
    * The "what am I editing" mirror above the canvas.
    *
@@ -921,6 +937,7 @@ export const TherapistView: React.FC = () => {
         }
         onOpenSettings={() => setIsSettingsOpen(true)}
         onRestoreSplit={() => setIsMaximizedMap(false)}
+        cloud={cloudPill}
       />
 
       {/* 2. MAIN SPLIT VIEW */}

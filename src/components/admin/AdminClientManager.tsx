@@ -41,6 +41,7 @@ import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } f
 import { Modal, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
 import { NewSessionDialog } from '../modals/NewSessionDialog';
+import { CatalogPanel } from './CatalogPanel';
 
 /**
  * A session whose clientId matches no client row.
@@ -156,17 +157,17 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // open: the client row could change under the open dialog.
   const [pendingSessionFor, setPendingSessionFor] = useState<Client | null>(null);
 
+  // The panel has two rooms: the client workflow, and the global catalog.
+  // Kinds and templates belong to no client — filing them under one client's
+  // history is what made them undiscoverable — so they get a tab at the same
+  // level as the client list rather than a section inside one of its rows.
+  const [panelTab, setPanelTab] = useState<'clientes' | 'catalogo'>('clientes');
+
   // The catalog lives here (state) and in storage (persisted): the dialog and
   // the badges read this state, so an edit applies everywhere at once.
   const [modalities, setModalities] = useState<Modality[]>(() => loadModalities());
   const [templates, setTemplates] = useState<SessionTemplate[]>(() => loadTemplates());
-  const [showCatalog, setShowCatalog] = useState(false);
-  const [newModalityName, setNewModalityName] = useState('');
-  const [editingModalityId, setEditingModalityId] = useState<string | null>(null);
-  const [editingModalityName, setEditingModalityName] = useState('');
   const [pendingModalityDelete, setPendingModalityDelete] = useState<Modality | null>(null);
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
-  const [templateDraft, setTemplateDraft] = useState({ title: '', modalityId: '', markdown: '' });
   const [modalityFilter, setModalityFilter] = useState<string>('all');
 
   // The catalog has no live cross-tab sync by design (localStorage has no
@@ -346,35 +347,6 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     await onRefreshData();
   };
 
-  // ---- Catalog: kinds ----
-
-  const handleAddModality = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newModalityName.trim();
-    if (!name) return;
-    const next: Modality = {
-      id: `mod_${Date.now().toString(36)}`,
-      name,
-      color: null,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...modalities, next];
-    setModalities(updated);
-    persistModalities(updated);
-    setNewModalityName('');
-  };
-
-  const handleRenameModality = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingModalityId || !editingModalityName.trim()) return;
-    const updated = modalities.map((m) =>
-      m.id === editingModalityId ? { ...m, name: editingModalityName.trim() } : m
-    );
-    setModalities(updated);
-    persistModalities(updated);
-    setEditingModalityId(null);
-  };
-
   const confirmModalityDelete = async () => {
     const target = pendingModalityDelete;
     setPendingModalityDelete(null);
@@ -384,64 +356,6 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
     setModalities(loadModalities());
     if (modalityFilter === target.id) setModalityFilter('all');
     await onRefreshData();
-  };
-
-  // ---- Catalog: templates ----
-
-  const startNewTemplate = () => {
-    setEditingTemplateId('new');
-    setTemplateDraft({ title: '', modalityId: currentClient ? '' : '', markdown: '' });
-  };
-
-  const startEditTemplate = (t: SessionTemplate) => {
-    setEditingTemplateId(t.id);
-    setTemplateDraft({
-      title: t.title,
-      modalityId: t.modalityId ?? '',
-      markdown: t.markdown,
-    });
-  };
-
-  const handleSaveTemplate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!templateDraft.title.trim() || !templateDraft.markdown.trim()) return;
-    const now = new Date().toISOString();
-    let updated: SessionTemplate[];
-    if (editingTemplateId && editingTemplateId !== 'new') {
-      updated = templates.map((t) =>
-        t.id === editingTemplateId
-          ? {
-              ...t,
-              title: templateDraft.title.trim(),
-              modalityId: templateDraft.modalityId || null,
-              markdown: templateDraft.markdown,
-              updatedAt: now,
-            }
-          : t
-      );
-    } else {
-      updated = [
-        ...templates,
-        {
-          id: `tpl_${Date.now().toString(36)}`,
-          title: templateDraft.title.trim(),
-          modalityId: templateDraft.modalityId || null,
-          markdown: templateDraft.markdown,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
-    }
-    setTemplates(updated);
-    persistTemplates(updated);
-    setEditingTemplateId(null);
-  };
-
-  const handleDeleteTemplate = (id: string) => {
-    const updated = templates.filter((t) => t.id !== id);
-    setTemplates(updated);
-    persistTemplates(updated);
-    if (editingTemplateId === id) setEditingTemplateId(null);
   };
 
   // Rename client
@@ -591,7 +505,48 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             Stacking (rather than a drawer or a <select>) keeps search,
             rename and per-client delete reachable, which a collapsed
             picker would have to re-implement. */}
-        <div className="-m-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
+        {/* Two rooms, one panel: the client workflow, and the global catalog.
+            The catalog configures every client at once, so it sits beside
+            the client list rather than inside one client's history. */}
+        <div
+          className="-m-6 px-6 pt-4 pb-3 border-b border-line bg-surface"
+          role="tablist"
+          aria-label="Clientes ou catálogo global"
+        >
+          <div className="flex p-1 bg-surface-inset rounded-xl border border-line">
+            {(
+              [
+                { key: 'clientes' as const, label: `Clientes (${scopedClients.length})` },
+                { key: 'catalogo' as const, label: 'Tipos e roteiros' },
+              ]
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={panelTab === t.key}
+                tabIndex={panelTab === t.key ? 0 : -1}
+                onClick={() => setPanelTab(t.key)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setPanelTab(t.key === 'clientes' ? 'catalogo' : 'clientes');
+                  }
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                  panelTab === t.key
+                    ? 'bg-surface-raised text-content shadow-xs'
+                    : 'text-content-muted hover:text-content'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="-mx-6 -mb-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
+        {panelTab === 'clientes' && (
+          <>
           {/* Left Column: Client List */}
           <div className="w-full md:w-72 md:shrink-0 min-h-0 max-h-[40vh] md:max-h-none border-b md:border-b-0 md:border-r border-line flex flex-col bg-surface-sunken">
             {/* Search and + Client button */}
@@ -1143,284 +1098,6 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       </div>
                     </div>
                   )}
-                  {/* Catalog: kinds and starting skeletons, managed where they
-                      are used. Collapsed by default: it is configuration,
-                      not the daily workflow, and an always-open block would
-                      push the session history down on every open. */}
-                  <div className="pt-2 mt-2 border-t border-line">
-                    <button
-                      type="button"
-                      onClick={() => setShowCatalog((v) => !v)}
-                      aria-expanded={showCatalog}
-                      className="flex items-center gap-1.5 text-xs font-bold text-content-muted uppercase tracking-wider py-1"
-                    >
-                      <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-                      Tipos & roteiros ({modalities.length} tipos · {templates.length} roteiros)
-                    </button>
-
-                    {showCatalog && (
-                      <div className="mt-2 space-y-4">
-                        {/* Kinds */}
-                        <div className="space-y-2">
-                          {modalities.map((m) => {
-                            const inUse = maps.filter(
-                              (s) => s.modalityId === m.id
-                            ).length;
-                            return (
-                              <div
-                                key={m.id}
-                                className="flex items-center gap-1.5 p-1.5 rounded-panel border border-line bg-surface"
-                              >
-                                {editingModalityId === m.id ? (
-                                  <form
-                                    onSubmit={handleRenameModality}
-                                    className="flex-1 min-w-0 flex items-center gap-1"
-                                  >
-                                    <label htmlFor={`mod-rename-${m.id}`} className="sr-only">
-                                      Renomear {m.name}
-                                    </label>
-                                    <input
-                                      id={`mod-rename-${m.id}`}
-                                      autoFocus
-                                      type="text"
-                                      value={editingModalityName}
-                                      onChange={(e) => setEditingModalityName(e.target.value)}
-                                      className="flex-1 min-w-0 h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
-                                    />
-                                    <button
-                                      type="submit"
-                                      className="ctl ctl-primary w-10 px-0"
-                                      aria-label={`Confirmar novo nome de ${m.name}`}
-                                    >
-                                      <Check className="w-4 h-4" aria-hidden="true" />
-                                    </button>
-                                  </form>
-                                ) : (
-                                  <div className="flex-1 min-w-0 px-1">
-                                    <ModalityBadge modality={m} />
-                                    <div className="text-[11px] font-mono text-content-subtle mt-0.5">
-                                      {inUse} {inUse === 1 ? 'sessão' : 'sessões'}
-                                    </div>
-                                  </div>
-                                )}
-                                {editingModalityId !== m.id && (
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingModalityId(m.id);
-                                        setEditingModalityName(m.name);
-                                      }}
-                                      aria-label={`Renomear tipo ${m.name}`}
-                                      className="ctl w-10 px-0"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPendingModalityDelete(m)}
-                                      aria-label={`Excluir tipo ${m.name}`}
-                                      title="Excluir tipo (sessões viram “sem tipo”)"
-                                      className="ctl ctl-danger w-10 px-0"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                          <form onSubmit={handleAddModality} className="flex items-center gap-1.5">
-                            <label htmlFor="new-modality-name" className="sr-only">
-                              Nome do novo tipo
-                            </label>
-                            <input
-                              id="new-modality-name"
-                              type="text"
-                              value={newModalityName}
-                              onChange={(e) => setNewModalityName(e.target.value)}
-                              placeholder="Novo tipo… ex. Supervisão"
-                              className="flex-1 min-w-0 h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
-                            />
-                            <button
-                              type="submit"
-                              className="ctl ctl-primary h-10 px-3 text-xs font-bold"
-                            >
-                              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                              <span>Tipo</span>
-                            </button>
-                          </form>
-                        </div>
-
-                        {/* Templates */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <h4 className="text-[11px] font-bold text-content-muted uppercase tracking-wider">
-                              Roteiros ({templates.length})
-                            </h4>
-                            <button
-                              type="button"
-                              onClick={startNewTemplate}
-                              className="ctl h-9 px-2.5 text-[11px] font-bold"
-                            >
-                              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                              <span>Roteiro</span>
-                            </button>
-                          </div>
-                          {templates.map((t) => (
-                            <div
-                              key={t.id}
-                              className="p-2.5 rounded-panel border border-line bg-surface"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="text-xs font-bold text-content truncate">
-                                    {t.title}
-                                  </div>
-                                  <div className="mt-0.5">
-                                    <ModalityBadge
-                                      modality={modalities.find((m) => m.id === t.modalityId) ?? null}
-                                      fallbackLabel="Geral"
-                                    />
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditTemplate(t)}
-                                    aria-label={`Editar roteiro ${t.title}`}
-                                    className="ctl w-10 px-0"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteTemplate(t.id)}
-                                    aria-label={`Excluir roteiro ${t.title}`}
-                                    className="ctl ctl-danger w-10 px-0"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                                  </button>
-                                </div>
-                              </div>
-                              {editingTemplateId === t.id && (
-                                <form onSubmit={handleSaveTemplate} className="mt-2 space-y-2">
-                                  <input
-                                    type="text"
-                                    value={templateDraft.title}
-                                    onChange={(e) =>
-                                      setTemplateDraft((d) => ({ ...d, title: e.target.value }))
-                                    }
-                                    aria-label="Título do roteiro"
-                                    placeholder="Título do roteiro"
-                                    className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
-                                  />
-                                  <select
-                                    value={templateDraft.modalityId}
-                                    onChange={(e) =>
-                                      setTemplateDraft((d) => ({ ...d, modalityId: e.target.value }))
-                                    }
-                                    aria-label="Tipo do roteiro"
-                                    className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
-                                  >
-                                    <option value="">Geral (todos os tipos)</option>
-                                    {modalities.map((m) => (
-                                      <option key={m.id} value={m.id}>
-                                        {m.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <textarea
-                                    value={templateDraft.markdown}
-                                    onChange={(e) =>
-                                      setTemplateDraft((d) => ({ ...d, markdown: e.target.value }))
-                                    }
-                                    aria-label="Texto do roteiro em tópicos"
-                                    placeholder="- Primeiro tópico&#10;  - Subtópico"
-                                    rows={5}
-                                    className="w-full p-2.5 text-xs font-mono rounded-control border border-line bg-surface-raised text-content"
-                                  />
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingTemplateId(null)}
-                                      className="ctl h-9 px-3 text-[11px] font-bold"
-                                    >
-                                      Cancelar
-                                    </button>
-                                    <button
-                                      type="submit"
-                                      className="ctl ctl-primary h-9 px-3 text-[11px] font-bold"
-                                    >
-                                      Salvar roteiro
-                                    </button>
-                                  </div>
-                                </form>
-                              )}
-                            </div>
-                          ))}
-                          {editingTemplateId === 'new' && (
-                            <form
-                              onSubmit={handleSaveTemplate}
-                              className="p-2.5 rounded-panel border border-line bg-surface space-y-2"
-                            >
-                              <input
-                                type="text"
-                                autoFocus
-                                value={templateDraft.title}
-                                onChange={(e) =>
-                                  setTemplateDraft((d) => ({ ...d, title: e.target.value }))
-                                }
-                                aria-label="Título do novo roteiro"
-                                placeholder="Título do roteiro"
-                                className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
-                              />
-                              <select
-                                value={templateDraft.modalityId}
-                                onChange={(e) =>
-                                  setTemplateDraft((d) => ({ ...d, modalityId: e.target.value }))
-                                }
-                                aria-label="Tipo do novo roteiro"
-                                className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
-                              >
-                                <option value="">Geral (todos os tipos)</option>
-                                {modalities.map((m) => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <textarea
-                                value={templateDraft.markdown}
-                                onChange={(e) =>
-                                  setTemplateDraft((d) => ({ ...d, markdown: e.target.value }))
-                                }
-                                aria-label="Texto do novo roteiro em tópicos"
-                                placeholder="- Primeiro tópico&#10;  - Subtópico"
-                                rows={5}
-                                className="w-full p-2.5 text-xs font-mono rounded-control border border-line bg-surface-raised text-content"
-                              />
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingTemplateId(null)}
-                                  className="ctl h-9 px-3 text-[11px] font-bold"
-                                >
-                                  Cancelar
-                                </button>
-                                <button
-                                  type="submit"
-                                  className="ctl ctl-primary h-9 px-3 text-[11px] font-bold"
-                                >
-                                  Salvar roteiro
-                                </button>
-                              </div>
-                            </form>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
               </>
             ) : (
@@ -1465,7 +1142,27 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               </div>
             )}
           </div>
+            </>
+        )}
         </div>
+        {panelTab === 'catalogo' && (
+          <div className="-mx-6 -mb-6 flex flex-col md:h-[70vh] max-h-[70vh] md:max-h-none min-h-0 overflow-hidden">
+            <CatalogPanel
+              modalities={modalities}
+              templates={templates}
+              maps={maps}
+              onModalitiesChange={(next) => {
+                setModalities(next);
+                persistModalities(next);
+              }}
+              onTemplatesChange={(next) => {
+                setTemplates(next);
+                persistTemplates(next);
+              }}
+              onDeleteModalityRequest={setPendingModalityDelete}
+            />
+          </div>
+        )}
       </Modal>
 
       {/* Destructive confirmations replace window.confirm(): styled,

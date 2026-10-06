@@ -83,6 +83,30 @@ describe('footer labels', () => {
     expect(formatCloudAgo(now, '2026-10-03T12:00:00Z')).toBe('há 3d');
     expect(formatCloudAgo(now, '2026-09-20T12:00:00Z')).toBe('20/09');
   });
+
+  test('one shared label for footer and top bar', async () => {
+    const { cloudBadgeLabel, describeCloudStatus } = backup;
+    const label = (s: Parameters<typeof describeCloudStatus>[0]) =>
+      cloudBadgeLabel(describeCloudStatus(s));
+    // Locked outranks everything: without the passphrase there is no
+    // "never" and no "ok", only waiting.
+    expect(label({ ...base, enabled: true })).toBe('nuvem: aguardando senha');
+    unlock('frase secreta bem longa aqui');
+    try {
+      expect(label({ ...base, enabled: true })).toBe('nuvem: nunca enviado');
+      // Relative to the wall clock, never to a fixed date: the suite must
+      // pass in any year, not just the one it was written in.
+      const halfMinuteAgo = new Date(Date.now() - 30_000).toISOString();
+      expect(label({ ...base, enabled: true, lastBackupAt: halfMinuteAgo })).toBe(
+        'nuvem agora há pouco'
+      );
+      expect(label({ ...base, enabled: true, lastError: 'x' })).toBe(
+        'nuvem: erro no último envio'
+      );
+    } finally {
+      lock();
+    }
+  });
 });
 
 describe('outcome recording', () => {

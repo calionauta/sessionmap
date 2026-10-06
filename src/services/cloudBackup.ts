@@ -238,7 +238,24 @@ export function describeCloudStatus(state: CloudBackupState): CloudStatus {
   return { kind: 'ok', lastBackupAt: state.lastBackupAt, lastError: null, username: state.puterUsername };
 }
 
-/** Short human label for the footer indicator. */
+/** One label for every surface (footer badge, top-bar pill): two wordings
+ *  for the same state is how they disagree. */
+export function cloudBadgeLabel(status: CloudStatus): string {
+  switch (status.kind) {
+    case 'locked':
+      return 'nuvem: aguardando senha';
+    case 'error':
+      return 'nuvem: erro no último envio';
+    case 'never':
+      return 'nuvem: nunca enviado';
+    case 'ok':
+      return `nuvem ${formatCloudAgo(Date.now(), status.lastBackupAt)}`;
+    default:
+      return '';
+  }
+}
+
+/** Short human relative time for the cloud labels. */
 export function formatCloudAgo(nowMs: number, iso: string | null): string {
   if (!iso) return 'nunca';
   const diff = Math.max(0, nowMs - new Date(iso).getTime());

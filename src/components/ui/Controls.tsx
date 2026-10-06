@@ -34,7 +34,11 @@ export function Segmented<T extends string | number>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex items-center p-1 bg-surface-inset rounded-xl border border-line shrink-0"
+      /* Wraps instead of overflowing: five percentage options beside a long
+         label do not fit a 375px viewport side by side, and a row that
+         bleeds past the dialog reads as broken. Wrapped options are still
+         one group, one tab stop per option, no behavior change. */
+      className="flex flex-wrap items-center gap-1 p-1 bg-surface-inset rounded-xl border border-line max-w-full"
     >
       {options.map((opt) => {
         const selected = opt.value === value;
@@ -45,7 +49,7 @@ export function Segmented<T extends string | number>({
             role="radio"
             aria-checked={selected}
             onClick={() => onChange(opt.value)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 ${
               selected
                 ? 'bg-accent text-content-onaccent shadow-xs'
                 : 'text-content-muted hover:text-content'
@@ -139,6 +143,10 @@ interface SettingRowProps {
  * One row of the settings dialog: label, help text, control. Labels
  * previously used bare <label> with no `for` and no wrapping control,
  * so they contributed nothing to any accessible name.
+ *
+ * Stacks below `sm`: a side-by-side label plus a five-option group does
+ * not fit a phone, and the squeezed result is what read as "broken".
+ * From `sm` up it is the same row as before.
  */
 export function SettingRow({
   id,
@@ -149,8 +157,8 @@ export function SettingRow({
 }: SettingRowProps) {
   return (
     <div
-      className={`flex justify-between gap-4 ${
-        align === 'center' ? 'items-center' : 'items-start'
+      className={`flex flex-col gap-2 sm:flex-row sm:justify-between sm:gap-4 ${
+        align === 'center' ? 'sm:items-center' : 'sm:items-start'
       }`}
     >
       <div className="min-w-0">
@@ -166,7 +174,7 @@ export function SettingRow({
           </div>
         ) : null}
       </div>
-      {control}
+      <div className="shrink-0 sm:self-auto self-start">{control}</div>
     </div>
   );
 }
