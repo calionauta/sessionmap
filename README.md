@@ -24,7 +24,8 @@ cliente na aba — só o mapa.
 - Tudo fica no navegador (IndexedDB + `localStorage`); a sincronia entre as
   janelas usa `BroadcastChannel` local. Sem conta, sem servidor, sem tracking.
 - Notas do terapeuta sobre o cliente nunca são transmitidas.
-- O único dado que sai do navegador é o **backup em nuvem opt-in** (Puter),
+- O único dado que sai do navegador é o **backup em nuvem** ([Puter](https://puter.com)),
+  desligado por padrão — você liga quando quiser,
   sempre criptografado no navegador (AES-256-GCM) com senha que só existe na sua
   memória. Desligado por padrão.
 

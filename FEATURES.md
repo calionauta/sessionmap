@@ -89,7 +89,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 
 - **Offline-first:** IndexedDB + fallback em `localStorage`; persistência pedida
   ao navegador; funciona sem rede depois de carregado.
-- Nada sai do navegador exceto o backup em nuvem opt-in (criptografado).
+- Nada sai do navegador exceto o backup em nuvem (criptografado), que vem desligado.
 - Snapshots por sessão; migração segura do banco legado `narratips_db`.
 - Largura, tema, fontes e sessão ativa lembrados entre reloads.
 
