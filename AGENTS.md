@@ -49,6 +49,19 @@ no mesmo commit**:
 Mudança só interna (refactor, fix invisível, teste): docs não precisam mudar.
 Na dúvida, atualize o FEATURES.md — barato errar para esse lado.
 
+## REGRA DE PARIDADE PT/EN (obrigatória)
+
+Docs e site existem em dois idiomas, em pares. Alterar um arquivo de um
+idioma **exige traduzir a mesma alteração no par do outro idioma,
+no mesmo commit**:
+
+- `FEATURES.md` ↔ `FEATURES-en.md`
+- `README.pt-BR.md` ↔ `README.md`
+- `public/landing.html` ↔ `public/landing-en.html`
+
+Se os pares divergirem, o PT (`FEATURES.md`) é a fonte da verdade;
+o EN (`README.md`) é o padrão exibido no GitHub.
+
 ## Verificação de docs
 
 - Links da landing são relativos (`./`) para funcionar no Pages e local.

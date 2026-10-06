@@ -1,5 +1,7 @@
 # SessionMap — recursos
 
+[Read in English](FEATURES-en.md)
+
 Inventário completo do que o app faz. Este arquivo é a fonte da verdade
 para a [página pública](public/landing.html) e o [README](README.md):
 toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).

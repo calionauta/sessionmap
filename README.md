@@ -10,7 +10,7 @@ Free, open source, no install: open it in the browser and it works.
 
 - **Use it now:** <https://calionauta.github.io/sessionmap/>
 - **How it works:** [public page](https://calionauta.github.io/sessionmap/landing-en.html)
-- **Full features:** [FEATURES.md](FEATURES.md) (in Portuguese)
+- **Full features:** [FEATURES-en.md](FEATURES-en.md)
 
 ## How it works (30 seconds)
 
@@ -43,7 +43,7 @@ name in the tab — only the map.
   with a new one and the next upload replaces the unreadable file.
 - **Language:** Settings → Language, PT or EN for the whole interface;
   the public page detects the browser language on first visit
-  (details in [FEATURES.md](./FEATURES.md), in Portuguese).
+  (details in [FEATURES-en.md](./FEATURES-en.md)).
 
 ## Development
 
@@ -70,6 +70,6 @@ src/
 public/
   landing.html     # public page in Portuguese (copied to dist/ on build)
   landing-en.html  # public page in English (copied to dist/ on build)
-FEATURES.md        # full feature inventory (in Portuguese)
+FEATURES-en.md     # full feature inventory (in English)
 AGENTS.md          # agent instructions (includes docs-sync rule)
 ```
