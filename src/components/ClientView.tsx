@@ -60,7 +60,6 @@ export const ClientView: React.FC = () => {
     active: boolean;
   } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
   const [fontScale, setFontScale] = useState<number>(1.0);
   const [theme, setTheme] = useState<'papel' | 'noite'>('papel');
   const [liveTextMode, setLiveTextMode] = useState<'live' | 'confirm_only'>('live');
@@ -129,8 +128,6 @@ export const ClientView: React.FC = () => {
         }
       } else if (msg.type === 'select') {
         setSelectedNodeId(msg.selection.nodeId);
-      } else if (msg.type === 'pause') {
-        setIsPaused(msg.paused);
       } else if (msg.type === 'client_font_scale') {
         setFontScale(msg.scale);
       } else if (msg.type === 'focus_zoom_mode') {
@@ -245,31 +242,7 @@ export const ClientView: React.FC = () => {
       } bg-surface text-content`}
     >
       {/* Calm Pause Screen (RF-43) */}
-      {isPaused ? (
-        <div
-          role="status"
-          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-surface px-6 text-center text-content"
-        >
-          <div className="relative mb-6 shrink-0" aria-hidden="true">
-            {/* border-line at full opacity: 4.4:1 (papel) / 4.0:1 (noite).
-                The pulse already carries the motion; dimming the ring with
-                opacity dropped it to 1.38:1. */}
-            <div className="w-16 h-16 rounded-full border-2 border-line animate-ping" />
-            <div className="absolute inset-0 w-16 h-16 rounded-full bg-surface-inset flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-content-subtle animate-pulse" />
-            </div>
-          </div>
-          {/* Capped measure + balanced wrapping: at 375px, and at 200%
-              zoom on a 768px screen, the sentence reflows onto two lines
-              instead of being clipped by the window edge. */}
-          <div className="w-full max-w-xs">
-            <h1 className="text-balance text-xl font-light tracking-wide">Um momento</h1>
-            <p className="mt-1 text-pretty text-xs text-content-muted">
-              A visualização continuará em instantes…
-            </p>
-          </div>
-        </div>
-      ) : map ? (
+      {map ? (
         <>
           {/* Main SVG MindMap */}
           <MindMapCanvas

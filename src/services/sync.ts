@@ -114,8 +114,8 @@ class SyncService {
       // used to rewrite localStorage AND fire a storage event in every other
       // tab: the fallback exists for browsers without BroadcastChannel, not
       // as a second real-time channel. Heartbeats, drafts and selections go
-      // instantly over the channel and at most ~1/s over storage; snapshots,
-      // pause and view state always go immediately on both.
+      // instantly over the channel and at most ~1/s over storage; snapshots
+      // and view state always go immediately on both.
       const ephemeral =
         msg.type === 'draft' ||
         msg.type === 'select' ||

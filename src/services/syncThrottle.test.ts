@@ -13,7 +13,7 @@ const { createNewSession } = await import('./storage');
  * every other tab. The fallback exists for browsers without BroadcastChannel,
  * not as a second real-time channel: heartbeats, drafts and selections ride
  * the channel instantly and hit storage at most ~1/s, while snapshots and
- * pause state always go out on both immediately.
+ * view state always go out on both immediately.
  *
  * Time is frozen so the 800ms window is deterministic: wall-clock timing
  * would make this a coin flip on a fast machine.

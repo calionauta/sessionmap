@@ -10,8 +10,6 @@ import {
   Map,
   MonitorUp,
   Minimize2,
-  Pause,
-  Play,
   Share2,
   Sliders,
   Sun,
@@ -45,7 +43,6 @@ export interface TopBarProps {
   clientName: string;
   sessionLabel: string;
   isClientConnected: boolean;
-  isPaused: boolean;
   focusZoomOn: boolean;
   isDark: boolean;
   /** The outline is off screen, so the split has to be restorable from here. */
@@ -84,7 +81,6 @@ export interface TopBarProps {
    * not deserve a permanent control, so it lives in the overflow menu.
    */
   onFocusClientWindow: () => void;
-  onTogglePause: () => void;
   /** Close the shared window and mark the session as not shared. */
   onStopSharing: () => void;
   onOpenMapList: () => void;
@@ -101,14 +97,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   clientName,
   sessionLabel,
   isClientConnected,
-  isPaused,
   focusZoomOn,
   isDark,
   canRestoreSplit,
   onOpenClients,
   onOpenClientWindow,
   onFocusClientWindow,
-  onTogglePause,
   onStopSharing,
   onOpenMapList,
   onToggleFocusZoom,
@@ -122,13 +116,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   cloud = null,
 }) => {
   /**
-   * The share cluster: action and state are separate, like Meet/Zoom.
+   * The share cluster: one action, one read-only state.
    *
-   * The BUTTON is always an action in the same slot — `Apresentar` opens the
+   * The BUTTON is always the action in the same slot — `Apresentar` opens the
    * participant window, `Encerrar apresentação` closes it. The STATE lives in
-   * a non-interactive `Ao vivo` / `Pausado` indicator beside it, never in a
-   * button label. Pause stays its own icon button while live (plus `Ctrl+.`),
-   * so freezing and ending never share a label or a slot.
+   * a non-interactive `Ao vivo` indicator beside it, never in a button label.
    */
   const disconnected = !isClientConnected;
 
@@ -319,33 +311,10 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               <span
                 aria-hidden="true"
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  isPaused ? 'bg-caution' : 'bg-positive animate-pulse'
-                }`}
+                className="w-2 h-2 rounded-full shrink-0 bg-positive animate-pulse"
               />
-              <span className="whitespace-nowrap">{isPaused ? 'Pausado' : 'Ao vivo'}</span>
+              <span className="whitespace-nowrap">Ao vivo</span>
             </div>
-            <button
-              type="button"
-              onClick={onTogglePause}
-              title={
-                isPaused
-                  ? 'Retomar a tela do participante (Ctrl+.)'
-                  : 'Pausar a tela do participante (Ctrl+.)'
-              }
-              aria-label={
-                isPaused
-                  ? 'Retomar a tela do participante'
-                  : 'Pausar a tela do participante'
-              }
-              className="ctl w-9 h-9 !min-h-0 px-0"
-            >
-              {isPaused ? (
-                <Play className="w-4 h-4 fill-current" aria-hidden="true" />
-              ) : (
-                <Pause className="w-4 h-4 fill-current" aria-hidden="true" />
-              )}
-            </button>
             <button
               type="button"
               onClick={onStopSharing}

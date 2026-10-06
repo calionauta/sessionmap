@@ -12,7 +12,6 @@ let container: HTMLElement | null = null;
 
 type Overrides = Partial<{
   isClientConnected: boolean;
-  isPaused: boolean;
   focusZoomOn: boolean;
   isDark: boolean;
   canRestoreSplit: boolean;
@@ -30,7 +29,6 @@ function setup(overrides: Overrides = {}) {
       clientName: 'Maria',
       sessionLabel: '28/09/2026',
       isClientConnected: true,
-      isPaused: false,
       focusZoomOn: false,
       isDark: false,
       canRestoreSplit: false,
@@ -39,7 +37,6 @@ function setup(overrides: Overrides = {}) {
       onOpenClients: () => calls.push('clients'),
       onOpenClientWindow: () => calls.push('clientWindow'),
       onFocusClientWindow: () => calls.push('focusClient'),
-      onTogglePause: () => calls.push('pause'),
       onStopSharing: () => calls.push('stopSharing'),
       onOpenMapList: () => calls.push('mapList'),
       onToggleFocusZoom: () => calls.push('focusZoom'),
@@ -85,22 +82,19 @@ describe('the session bar', () => {
     expect(calls).toEqual(['clientWindow']);
   });
 
-  test('live, action and state are separate: pause acts, the dot reports', () => {
-    // Meet/Zoom pattern: the button is always an action in the same slot,
-    // the pulsing dot is read-only state beside it — never a button label.
-    setup({ isClientConnected: true, isPaused: false });
-    const pause = byLabel('Pausar a tela do participante');
-    act(() => {
-      fireEvent.click(pause);
-    });
-    expect(calls).toEqual(['pause']);
+  test('live, the dot reports and the action ends: no pause anywhere', () => {
+    // One action, one read-only state. No pause button, no shortcut, no
+    // paused state: ending and re-presenting covers everything.
+    setup({ isClientConnected: true });
+    expect(bar().querySelector('[aria-label*="Pausar"]')).toBeNull();
+    expect(bar().textContent).not.toContain('Pausado');
     const status = bar().querySelector('[role="status"]')!;
     expect(status.textContent).toContain('Ao vivo');
     expect(status.querySelector('button')).toBeNull();
   });
 
   test('live, ending the presentation stops it', () => {
-    setup({ isClientConnected: true, isPaused: false });
+    setup({ isClientConnected: true });
     const stop = buttons().find((b) =>
       (b.textContent ?? '').includes('Encerrar apresentação')
     )!;
@@ -109,18 +103,6 @@ describe('the session bar', () => {
       fireEvent.click(stop);
     });
     expect(calls).toEqual(['stopSharing']);
-  });
-
-  test('paused, the indicator says so and the icon offers resume', () => {
-    setup({ isClientConnected: true, isPaused: true });
-    expect(bar().querySelector('[role="status"]')!.textContent).toContain('Pausado');
-    expect(byLabel('Retomar a tela do participante')).not.toBeNull();
-  });
-
-  test('the pause action is never hidden, at any width', () => {
-    setup({ isClientConnected: true });
-    const action = byLabel('Pausar a tela do participante');
-    expect(action.className).not.toContain('hidden');
   });
 
   test('no state leaks into button labels', () => {
@@ -140,10 +122,11 @@ describe('the session bar', () => {
     expect(buttons()).toHaveLength(4);
   });
 
-  test('sharing adds exactly one control: pause plus end-sharing', () => {
+  test('sharing swaps one action for another: same four controls', () => {
     setup({ isClientConnected: true });
-    // 1 switcher, 1 pause, 1 end-sharing, 1 export, 1 menu trigger.
-    expect(buttons()).toHaveLength(5);
+    // 1 switcher, 1 end-presentation, 1 export, 1 menu trigger. The bar
+    // never dances: one slot, one action, whatever the state.
+    expect(buttons()).toHaveLength(4);
   });
 
   test('the secondary tools moved into the menu, still reachable', () => {
@@ -376,7 +359,7 @@ describe('the narrow-window pane switch', () => {
     // gains exactly one button, and the map switch is not hiding behind a menu:
     // it is the navigation between the only two surfaces there are.
     setup({ narrowPane: 'outline', isClientConnected: true });
-    expect(buttons()).toHaveLength(6);
+    expect(buttons()).toHaveLength(5);
     expect(byLabel('Mais ferramentas')).not.toBeNull();
   });
 });

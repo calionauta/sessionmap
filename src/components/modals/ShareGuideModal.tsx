@@ -70,8 +70,8 @@ const GUARANTEES = [
   },
   {
     icon: <ShieldCheck className="w-4 h-4 shrink-0" />,
-    title: 'Pausa Rápida (Ctrl+.)',
-    body: 'Pressione Ctrl+. para trocar instantaneamente o mapa por uma tela calma.',
+    title: 'Nada fica no ar',
+    body: 'Fechou a janela do participante? Nada mais é exibido — sem tela residual, sem estado pendente.',
   },
 ];
 

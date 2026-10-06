@@ -138,7 +138,6 @@ export const TherapistView: React.FC = () => {
 
   // Cross-window client status
   const [isClientConnected, setIsClientConnected] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
 
   // Live draft & selection
   const [draft, setDraft] = useState<{
@@ -417,15 +416,6 @@ export const TherapistView: React.FC = () => {
     []
   );
 
-  // Toggle pause (Ctrl+.)
-  const togglePause = useCallback(() => {
-    setIsPaused((prev) => {
-      const next = !prev;
-      syncService.send({ type: 'pause', paused: next });
-      return next;
-    });
-  }, []);
-
   // Open Client Window (Window B)
   const openClientWindow = () => {
     const clientUrl = `${window.location.origin}${window.location.pathname}?view=client`;
@@ -459,10 +449,6 @@ export const TherapistView: React.FC = () => {
     }
     clientWindowRef.current = null;
     setIsClientConnected(false);
-    setIsPaused((prev) => {
-      if (prev) syncService.send({ type: 'pause', paused: false });
-      return false;
-    });
   }, []);
 
   // Update map root with debounced autosave
@@ -535,17 +521,12 @@ export const TherapistView: React.FC = () => {
   //
   // Every one of these is suppressed while an overlay is open. The overlay
   // owns the keyboard at that point: Ctrl+E otherwise re-rendered the export
-  // dialog underneath whatever was on top, and Ctrl+. / Ctrl+Z acted on the
+  // dialog underneath whatever was on top, and Ctrl+Z acted on the
   // map behind a modal. Each overlay closes on its own Escape.
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (isOverlayOpenRef.current) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === '.') {
-        e.preventDefault();
-        togglePause();
-        return;
-      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         setIsExportOpen(true);
@@ -566,7 +547,7 @@ export const TherapistView: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [togglePause]);
+  }, []);
 
   /**
    * Widening the outline pane by dragging its right edge.
@@ -926,7 +907,6 @@ export const TherapistView: React.FC = () => {
         clientName={activeMap?.clientName || 'Participante'}
         sessionLabel={activeMap?.sessionDate || activeMap?.title || 'Sessão'}
         isClientConnected={isClientConnected}
-        isPaused={isPaused}
         focusZoomOn={settings.focusZoomMode}
         isDark={isDark}
         canRestoreSplit={isMaximizedMap && Boolean(activeMap)}
@@ -945,7 +925,6 @@ export const TherapistView: React.FC = () => {
           }
           openClientWindow();
         }}
-        onTogglePause={togglePause}
         onStopSharing={closeClientWindow}
         onOpenMapList={() => setIsMapListOpen(true)}
         onToggleFocusZoom={() =>
@@ -1236,8 +1215,6 @@ export const TherapistView: React.FC = () => {
             <Redo2 className="w-3 h-3" aria-hidden="true" />
             <span>Refazer</span>
           </button>
-          <span aria-hidden="true" className="text-content-subtle">·</span>
-          <span><strong className="text-content font-bold">Ctrl+.</strong> Pausa</span>
           <span aria-hidden="true" className="text-content-subtle">·</span>
           {/* The footer used to advertise Ctrl+Enter and Esc as if they were
               global shortcuts. Both are owned by the outline editor and only
