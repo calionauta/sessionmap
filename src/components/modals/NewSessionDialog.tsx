@@ -7,6 +7,8 @@ import {
   templatesFor,
 } from '../../services/storage';
 import { Modal } from '../ui/Modal';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface NewSessionDialogProps {
   isOpen: boolean;
@@ -22,8 +24,8 @@ interface NewSessionDialogProps {
  * Two selects, deliberately, not one combined list: the kind is a PROPERTY
  * of the session (it drives the badge, the filter and the client's union),
  * while the template is a ONE-TIME body. Merging them would couple "this
- * session is therapy" to "it started from the therapy skeleton", and a
- * therapy session started blank would then be unrepresentable.
+ * session is a consult" to "it started from the consult skeleton", and a
+ * consult session started blank would then be unrepresentable.
  */
 export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   isOpen,
@@ -49,19 +51,20 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
 
   if (!isOpen) return null;
 
+  const lang = useLang();
   const offered = templatesFor(templates, modalityId);
   const chosen: SessionTemplate | null =
-    offered.find((t) => t.id === templateId) ?? null;
+    offered.find((tpl) => tpl.id === templateId) ?? null;
 
   const modalityName =
-    modalities.find((m) => m.id === modalityId)?.name ?? 'Sem tipo';
+    modalities.find((m) => m.id === modalityId)?.name ?? t(lang, 'common.noType');
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Nova sessão · ${clientName}`}
-      description="Escolha o tipo de atendimento e, se quiser, um roteiro inicial"
+      title={t(lang, 'newsession.title').replace('{client}', clientName)}
+      description={t(lang, 'newsession.desc')}
       icon={<Play className="w-5 h-5" />}
       maxWidth="max-w-lg"
     >
@@ -71,7 +74,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             htmlFor="new-session-modality"
             className="block text-xs font-bold text-content uppercase tracking-wider mb-1.5"
           >
-            Tipo de atendimento
+            {t(lang, 'newsession.kind')}
           </label>
           <select
             id="new-session-modality"
@@ -82,7 +85,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             }}
             className="w-full h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content font-medium"
           >
-            <option value="">Sem tipo</option>
+            <option value="">{t(lang, 'common.noType')}</option>
             {modalities.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
@@ -90,7 +93,9 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             ))}
           </select>
           <p className="mt-1 text-[11px] text-content-muted font-medium">
-            A sessão entra para o histórico de {clientName} como {modalityName}.
+            {t(lang, 'newsession.historyNote')
+              .replace('{client}', clientName)
+              .replace('{modality}', modalityName)}
           </p>
         </div>
 
@@ -99,7 +104,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             htmlFor="new-session-template"
             className="block text-xs font-bold text-content uppercase tracking-wider mb-1.5"
           >
-            Roteiro inicial
+            {t(lang, 'newsession.script')}
           </label>
           <select
             id="new-session-template"
@@ -107,11 +112,11 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             onChange={(e) => setTemplateId(e.target.value || null)}
             className="w-full h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content font-medium"
           >
-            <option value="">Sessão em branco</option>
-            {offered.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-                {t.modalityId ? '' : ' (geral)'}
+            <option value="">{t(lang, 'newsession.blank')}</option>
+            {offered.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.title}
+                {tpl.modalityId ? '' : ` ${t(lang, 'newsession.general')}`}
               </option>
             ))}
           </select>
@@ -122,15 +127,15 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           ) : (
             <p className="mt-1 text-[11px] text-content-muted font-medium">
               {offered.length === 0
-                ? 'Nenhum roteiro para este tipo ainda — crie um em Participantes & Sessões.'
-                : 'Começa só com a data, como sempre.'}
+                ? t(lang, 'newsession.noScripts')
+                : t(lang, 'newsession.dateOnly')}
             </p>
           )}
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className="ctl">
-            Cancelar
+            {t(lang, 'common.cancel')}
           </button>
           <button
             type="button"
@@ -138,7 +143,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             className="ctl ctl-primary"
           >
             <Play className="w-4 h-4" aria-hidden="true" />
-            <span>Iniciar sessão</span>
+            <span>{t(lang, 'newsession.start')}</span>
           </button>
         </div>
       </div>

@@ -25,7 +25,7 @@ Teste de arquivo único: `bun test <path>`.
 
 ## Arquitetura (resumo)
 
-- `TherapistView` (privada) + `ClientView` (`?view=client`, só balões) via
+- `HostView` (privada) + `ClientView` (`?view=client`, só balões) via
   `services/sync.ts` (BroadcastChannel + fallback throttled).
 - Fonte da verdade local: IndexedDB (`services/storage.ts`) + `localStorage`.
 - Um parse do buffer por texto (`liveTree`), um commit (`commitBuffer`).

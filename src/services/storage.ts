@@ -19,6 +19,10 @@ const LOCAL_CLIENTS_KEY = 'sessionmap_clients';
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'papel',
+  // PT-first default, always: auto-detecting from the browser would flip
+  // seeded test environments (happy-dom reports en-US) and surprise a
+  // Brazilian product. EN is one tap away in Settings.
+  language: 'pt',
   liveTextMode: 'live',
   thinBarAlwaysVisible: false,
   autoFitOnAdd: true,

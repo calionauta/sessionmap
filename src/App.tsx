@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TherapistView } from './components/TherapistView';
+import { HostView } from './components/HostView';
 import { ClientView } from './components/ClientView';
 
 export default function App() {
@@ -37,5 +37,5 @@ export default function App() {
     return <ClientView />;
   }
 
-  return <TherapistView />;
+  return <HostView />;
 }

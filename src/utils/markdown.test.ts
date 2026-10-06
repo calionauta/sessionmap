@@ -9,7 +9,7 @@
  *      split into two topics.
  *   2. One canonical form out. Indented bullets, always. Promoting a topic
  *      must never rewrite its words.
- *   3. NOTHING THE THERAPIST WROTE DISAPPEARS. That is a property of the
+ *   3. NOTHING THE HOST WROTE DISAPPEARS. That is a property of the
  *      whole round trip, not of any one function, so it is checked against
  *      the words rather than against a shape.
  */

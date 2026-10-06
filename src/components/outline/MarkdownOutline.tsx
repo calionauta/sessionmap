@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HelpCircle, Info, PanelLeft, Minimize2 } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode, SelectReason } from '../../types';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 import { findNodeById, flattenTree, parseMarkdownToTree, treeToMarkdown } from '../../utils/tree';
 import { readLine, lineIndexAt, topicLines, parentTopicLine, BufferLine } from '../../utils/bufferLine';
 
@@ -100,6 +102,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   hidden = false,
   flushRef,
 }) => {
+  const lang = useLang();
   const isDark = theme === 'noite';
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -611,19 +614,19 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
       <div className="px-4 py-3 border-b border-line-muted shrink-0 bg-surface-inset text-content">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-bold tracking-tight">
           <span className="uppercase text-[11px] tracking-wider text-content-muted">
-            Tópicos da Sessão
+            {t(lang, 'outline.topics')}
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-bold text-content-muted">
-              {balloonCount} balões
+              {t(lang, balloonCount === 1 ? 'outline.count.one' : 'outline.count.many').replace('{n}', String(balloonCount))}
             </span>
             <button
               type="button"
               onClick={() => setShowHelp((v) => !v)}
               aria-expanded={showHelp}
               aria-controls="buffer-help"
-              aria-label="Como escrever e mover tópicos"
-              title="Como escrever e mover tópicos"
+              aria-label={t(lang, 'outline.help')}
+              title={t(lang, 'outline.help')}
               className="ctl w-7 h-7 !min-h-0 px-0"
             >
               <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
@@ -632,8 +635,8 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
               <button
                 type="button"
                 onClick={onToggleMaximize}
-                title={maximizeOutline ? 'Mostrar a prévia do mapa ao lado' : 'Expandir os tópicos para a tela inteira'}
-                aria-label={maximizeOutline ? 'Mostrar a prévia do mapa ao lado dos tópicos' : 'Expandir os tópicos para a tela inteira, ocultando o mapa'}
+                title={maximizeOutline ? t(lang, 'outline.maximize.showMap') : t(lang, 'outline.maximize.expand')}
+                aria-label={maximizeOutline ? t(lang, 'outline.maximize.showMapLong') : t(lang, 'outline.maximize.expandLong')}
                 aria-pressed={maximizeOutline}
                 className="ctl w-7 h-7 !min-h-0 px-0"
               >
@@ -650,10 +653,10 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             mattered. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-[11px] font-mono text-content-muted">
           <strong className="font-bold text-content">Tab</strong>
-          <span>indenta</span>
+          <span>{t(lang, 'outline.tabHint.indent')}</span>
           <span aria-hidden="true">·</span>
           <span>
-            <strong className="font-bold text-content">Esc</strong> solta o Tab
+            <strong className="font-bold text-content">Esc</strong> {t(lang, 'outline.tabHint.release')}
           </span>
         </div>
       </div>
@@ -665,38 +668,36 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         <div
           id="buffer-help"
           role="region"
-          aria-label="Como escrever e mover tópicos"
+          aria-label={t(lang, 'outline.help')}
           className="shrink-0 px-4 py-3 border-t border-line bg-surface-inset text-[11px] leading-relaxed text-content-muted"
         >
           <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-x-6">
             <p className="min-w-0">
-              <strong className="font-bold text-content">Escrever</strong>
+              <strong className="font-bold text-content">{t(lang, 'outline.help.write')}</strong>
             </p>
             <p className="min-w-0">
-              <strong className="font-bold text-content">Mover</strong>
+              <strong className="font-bold text-content">{t(lang, 'outline.help.move')}</strong>
             </p>
 
             <p className="min-w-0">
-              <code className="text-content">-</code> no começo da linha cria um tópico
+              <code className="text-content">-</code> {t(lang, 'outline.help.dash')}
             </p>
             <p className="min-w-0 sm:row-span-3">
-              Recorte um bloco e cole onde ele devia ficar. A{' '}
-              <strong className="font-bold text-content">indentação da primeira linha</strong>{' '}
-              decide quem é o pai — o lugar onde o cursor parou não decide nada.
+              {t(lang, 'outline.help.cutpaste')}{' '}
+              <strong className="font-bold text-content">{t(lang, 'outline.help.indentFirst')}</strong>{' '}
+              {t(lang, 'outline.help.decidesParent')}
             </p>
 
             <p className="min-w-0">
-              <strong className="font-bold text-content">Enter</strong> abre o próximo
-              tópico no mesmo nível
+              <strong className="font-bold text-content">Enter</strong> {t(lang, 'outline.help.enterA')}
             </p>
             <p className="min-w-0">
               <strong className="font-bold text-content">Tab</strong> /{' '}
-              <strong className="font-bold text-content">Shift+Tab</strong> aumenta /
-              diminui o nível
+              <strong className="font-bold text-content">Shift+Tab</strong> {t(lang, 'outline.help.tabShift')}
             </p>
             <p className="min-w-0">
-              Em <strong className="font-bold text-content">Esc</strong>, o bullet vazio
-              some
+              {t(lang, 'outline.help.emptyBullet')} <strong className="font-bold text-content">Esc</strong>
+              {t(lang, 'outline.help.emptyBulletB')}
             </p>
           </div>
         </div>
@@ -769,7 +770,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
             onSelectNode(null, 'clear');
           }}
           spellCheck={false}
-          aria-label="Tópicos da sessão em texto, com a hierarquia indicada por indentação"
+          aria-label={t(lang, 'outline.textarea')}
           className={`flex-1 min-h-0 w-full resize-none bg-transparent p-3 outline-none font-mono leading-relaxed text-content placeholder:text-content-subtle ${
             isDark ? 'text-white' : 'text-content'
           }`}

@@ -2,7 +2,7 @@
  * How the session window is split.
  *
  * Two numbers and one clamp, which is not much — but it was living inside
- * TherapistView as a bare `useState(38)` with the bounds nowhere, so "can this
+ * HostView as a bare `useState(38)` with the bounds nowhere, so "can this
  * pane be narrower than it opens at?" had no answer that could be checked
  * without mounting the whole app, storage and sync service included.
  */

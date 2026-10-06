@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sliders, Moon, Sun, Type, Eye } from 'lucide-react';
 import { Settings } from '../../types';
+import { t } from '../../i18n/strings';
 import { Modal } from '../ui/Modal';
 import { CloudBackupSection } from './CloudBackupSection';
 import {
@@ -29,33 +30,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     onUpdateSettings({ ...settings, [key]: value });
   };
+  const lang = settings.language;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Configurações da Sessão"
-      description="Ajuste a visualização e o ritmo de interação com o participante"
+      title={t(lang, 'settings.title')}
+      description={t(lang, 'settings.subtitle')}
       icon={<Sliders className="w-5 h-5" />}
       footer={
         <button type="button" onClick={onClose} className="ctl ctl-primary">
-          Concluir
+          {t(lang, 'settings.done')}
         </button>
       }
     >
       <div className="space-y-5 text-sm">
         <SettingRow
-          id="theme"
-          label="Tema Visual"
-          description="Papel suave (claro) ou Noite acolhedora (escuro)"
+          id="language"
+          label={t(lang, 'settings.language.label')}
+          description={t(lang, 'settings.language.description')}
           control={
             <Segmented
-              label="Tema visual"
+              label={t(lang, 'settings.language.label')}
+              value={settings.language}
+              onChange={(v) => update('language', v)}
+              options={[
+                { value: 'pt', label: t(lang, 'settings.language.pt') },
+                { value: 'en', label: t(lang, 'settings.language.en') },
+              ]}
+            />
+          }
+        />
+
+        <Divider />
+
+        <SettingRow
+          id="theme"
+          label={t(lang, 'settings.theme.label')}
+          description={t(lang, 'settings.theme.description')}
+          control={
+            <Segmented
+              label={t(lang, 'settings.theme.aria')}
               value={settings.theme}
               onChange={(v) => update('theme', v)}
               options={[
-                { value: 'papel', label: 'Papel', icon: <Sun className="w-3.5 h-3.5" /> },
-                { value: 'noite', label: 'Noite', icon: <Moon className="w-3.5 h-3.5" /> },
+                { value: 'papel', label: t(lang, 'settings.theme.paper'), icon: <Sun className="w-3.5 h-3.5" /> },
+                { value: 'noite', label: t(lang, 'settings.theme.night'), icon: <Moon className="w-3.5 h-3.5" /> },
               ]}
             />
           }
@@ -66,23 +87,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <SettingRow
           id="live-text"
           align="start"
-          label="Exibição da Digitação na Janela do Participante"
+          label={t(lang, 'settings.typing.label')}
           description={
             <>
-              <strong>Ao vivo:</strong> o participante acompanha cada letra em tempo real.
+              <strong>{t(lang, 'settings.typing.liveStrong')}</strong> {t(lang, 'settings.typing.liveText')}
               <br />
-              <strong>Só ao confirmar:</strong> mostra apenas &quot;digitando…&quot;
-              até você apertar Enter.
+              <strong>{t(lang, 'settings.typing.confirmStrong')}</strong> {t(lang, 'settings.typing.confirmText')}
             </>
           }
           control={
             <Segmented
-              label="Exibição da digitação"
+              label={t(lang, 'settings.typing.aria')}
               value={settings.liveTextMode}
               onChange={(v) => update('liveTextMode', v)}
               options={[
-                { value: 'live', label: 'Ao vivo' },
-                { value: 'confirm_only', label: 'Só ao Enter' },
+                { value: 'live', label: t(lang, 'settings.typing.live') },
+                { value: 'confirm_only', label: t(lang, 'settings.typing.confirm') },
               ]}
             />
           }
@@ -92,15 +112,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <SettingRow
           id="thin-bar"
-          label="Barra Fina no Rodapé"
+          label={t(lang, 'settings.thinbar.label')}
           description={
             settings.thinBarAlwaysVisible
-              ? 'Permanece sempre visível na tela'
-              : 'Recolhe suavemente após 4s sem digitação'
+              ? t(lang, 'settings.thinbar.on')
+              : t(lang, 'settings.thinbar.off')
           }
           control={
             <Switch
-              label="Barra fina sempre visível"
+              label={t(lang, 'settings.thinbar.aria')}
               checked={settings.thinBarAlwaysVisible}
               onChange={(v) => update('thinBarAlwaysVisible', v)}
             />
@@ -112,17 +132,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           label={
             <>
               <Eye className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Foco com Zoom no Nó (Pais e Filhos)</span>
+              <span>{t(lang, 'settings.focus.label')}</span>
             </>
           }
           description={
             settings.focusZoomMode
-              ? 'Aproxima com zoom no nó selecionado, mantendo visíveis seus pais e filhos'
-              : 'Mantém a visão panorâmica sem aproximar'
+              ? t(lang, 'settings.focus.on')
+              : t(lang, 'settings.focus.off')
           }
           control={
             <Switch
-              label="Foco com zoom no nó"
+              label={t(lang, 'settings.focus.aria')}
               checked={settings.focusZoomMode}
               onChange={(v) => update('focusZoomMode', v)}
             />
@@ -140,10 +160,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-2">
           <div className="font-bold text-xs text-content flex items-center gap-1.5">
             <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-            <span>Tamanho da Fonte dos Tópicos</span>
+            <span>{t(lang, 'settings.outlineFont.label')}</span>
           </div>
           <Segmented
-            label="Escala da fonte dos tópicos"
+            label={t(lang, 'settings.outlineFont.aria')}
             value={settings.outlineFontScale}
             onChange={(v) => update('outlineFontScale', v)}
             fluid
@@ -153,9 +173,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }))}
           />
           <p className="text-xs text-content-muted font-medium leading-relaxed">
-            Aumenta a letra com que você escreve e lê os tópicos na coluna da
-            esquerda. A altura das linhas e a indentação crescem junto, para a
-            hierarquia continuar legível.
+            {t(lang, 'settings.outlineFont.help')}
           </p>
         </div>
 
@@ -164,10 +182,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-2">
           <div className="font-bold text-xs text-content flex items-center gap-1.5">
             <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-            <span>Fonte das Anotações do Participante</span>
+            <span>{t(lang, 'settings.clientFont.label')}</span>
           </div>
           <Segmented
-            label="Escala da fonte das anotações do participante"
+            label={t(lang, 'settings.clientFont.aria')}
             value={settings.clientFontScale}
             onChange={(v) => update('clientFontScale', v)}
             fluid
@@ -177,10 +195,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }))}
           />
           <p className="text-xs text-content-muted font-medium leading-relaxed">
-            O tamanho dos balões que o <strong>participante</strong> lê na segunda tela —
-            ajuste para a distância da sala: quanto maior a sala, maior a fonte.
+            {t(lang, 'settings.clientFont.helpA')} <strong>{t(lang, 'settings.clientFont.helpB')}</strong>{' '}
+            {t(lang, 'settings.clientFont.helpC')}
             <br />
-            A prévia ao lado é o espelho dessa tela e acompanha o mesmo valor.
+            {t(lang, 'settings.clientFont.helpD')}
           </p>
         </div>
 

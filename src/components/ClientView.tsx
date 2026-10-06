@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MindMap, SyncMessage } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { syncService } from '../services/sync';
+import { applyDocumentLanguage, t } from '../i18n/strings';
+import { LanguageContext, useLang } from '../i18n/LanguageContext';
 import { getCachedActiveMap, getSettings } from '../services/storage';
 import { Maximize, Minimize } from 'lucide-react';
 import { TypingBar } from './ui/TypingBar';
@@ -60,6 +62,10 @@ export const ClientView: React.FC = () => {
     active: boolean;
   } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Read once at load: this window is a separate React root and settings
+  // changes from the host window do not re-render it (known limitation —
+  // reload the participant window after switching language).
+  const [language] = useState(() => getSettings().language);
   const [fontScale, setFontScale] = useState<number>(1.0);
   const [theme, setTheme] = useState<'papel' | 'noite'>('papel');
   const [liveTextMode, setLiveTextMode] = useState<'live' | 'confirm_only'>('live');
@@ -97,6 +103,7 @@ export const ClientView: React.FC = () => {
     syncService.initAsClient();
 
     const initialSettings = getSettings();
+    applyDocumentLanguage(initialSettings.language);
     setTheme(initialSettings.theme);
     setLiveTextMode(initialSettings.liveTextMode);
     setThinBarAlwaysVisible(initialSettings.thinBarAlwaysVisible);
@@ -218,30 +225,33 @@ export const ClientView: React.FC = () => {
         (draft.parentId === map.root.id
           ? map.root.text
           : (draft.parentId ? findNodeById(map.root, draft.parentId)?.text : map.root.text));
-      thinBarLabel = `Adicionando em ${parentName || 'Tópico'} › `;
+      thinBarLabel = t(language, 'client.addingIn').replace(
+        '{parent}',
+        parentName || t(language, 'client.topicFallback')
+      );
     } else {
-      thinBarLabel = 'Editando › ';
+      thinBarLabel = t(language, 'client.editing');
     }
   }
 
   const showThinBar = (barVisible || thinBarAlwaysVisible) && !!draft?.active;
 
   return (
-    /* `fixed inset-x-0 top-0 h-dvh`, not `w-screen h-screen`:
+    <LanguageContext.Provider value={language}>
+    {/* `fixed inset-x-0 top-0 h-dvh`, not `w-screen h-screen`:
        - `w-screen` is 100vw, which counts the classic vertical scrollbar
          and is the one thing that can put a horizontal scrollbar on a
          window that is supposed to be a picture, not a document.
        - `h-screen` is 100vh, which on a phone is the viewport *with the
          browser chrome hidden*, so the bottom of the map sits under the
          URL bar. `h-dvh` tracks the visible viewport.
-       Both are viewport-unit fixes, not breakpoints — no media query. */
+       Both are viewport-unit fixes, not breakpoints — no media query. */}
     <div
       onMouseMove={revealCursor}
       className={`no-select fixed inset-x-0 top-0 h-dvh overflow-hidden transition-colors duration-300 ${
         cursorHidden ? 'cursor-none' : 'cursor-default'
       } bg-surface text-content`}
     >
-      {/* Calm Pause Screen (RF-43) */}
       {map ? (
         <>
           {/* Main SVG MindMap */}
@@ -272,7 +282,7 @@ export const ClientView: React.FC = () => {
           className="flex h-full flex-col items-center justify-center px-8 text-center text-sm text-content-muted"
         >
           <h1 className="text-balance max-w-xs text-base font-medium tracking-tight">
-            Aguardando conexão com a sessão do anfitrião…
+            {t(language, 'client.waiting')}
           </h1>
         </div>
       )}
@@ -288,8 +298,8 @@ export const ClientView: React.FC = () => {
         type="button"
         onClick={toggleFullscreen}
         onPointerEnter={revealCursor}
-        title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-        aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+        title={isFullscreen ? t(language, 'client.fullscreen.exit') : t(language, 'client.fullscreen.enter')}
+        aria-label={isFullscreen ? t(language, 'client.fullscreen.exit') : t(language, 'client.fullscreen.enter')}
         className="absolute right-[calc(0.75rem+env(safe-area-inset-right))] top-[calc(0.75rem+env(safe-area-inset-top))] grid min-h-touch min-w-touch place-items-center rounded-control text-content-muted transition-colors hover:bg-surface-inset hover:text-content"
       >
         {isFullscreen ? (
@@ -299,5 +309,6 @@ export const ClientView: React.FC = () => {
         )}
       </button>
     </div>
+    </LanguageContext.Provider>
   );
 };

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 /**
  * Shared overlay shell.
@@ -142,6 +144,7 @@ export const Modal: React.FC<ModalProps> = ({
   footer,
   autoFocusSelector,
 }) => {
+  const lang = useLang();
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descId = useId();
@@ -190,7 +193,7 @@ export const Modal: React.FC<ModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label={`Fechar ${title}`}
+            aria-label={t(lang, 'modal.close').replace('{title}', title)}
             className="ctl w-9 h-9 !min-h-0 px-0 shrink-0"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -236,7 +239,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onCancel,
   isDestructive = false,
   cancelLabel,
-}) => (
+}) => {
+  const lang = useLang();
+  return (
   <Modal
     isOpen={isOpen}
     onClose={onCancel}
@@ -250,7 +255,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     footer={
       <>
         <button type="button" onClick={onCancel} data-autofocus className="ctl">
-          {cancelLabel ?? 'Cancelar'}
+          {cancelLabel ?? t(lang, 'common.cancel')}
         </button>
         <button
           type="button"
@@ -264,4 +269,5 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   >
     <div className="text-sm text-content-muted">{description}</div>
   </Modal>
-);
+  );
+};

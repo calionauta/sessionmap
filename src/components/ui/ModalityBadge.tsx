@@ -1,5 +1,7 @@
 import React from 'react';
 import { Modality } from '../../types';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 /**
  * The kind dot + name shown on client rows, session cards and the drawer.
@@ -11,7 +13,9 @@ import { Modality } from '../../types';
 export const ModalityBadge: React.FC<{
   modality: Modality | null;
   fallbackLabel?: string;
-}> = ({ modality, fallbackLabel = 'Sem tipo' }) => {
+}> = ({ modality, fallbackLabel }) => {
+  const lang = useLang();
+  const label = fallbackLabel ?? t(lang, 'common.noType');
   if (!modality) {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-content-subtle">
@@ -19,7 +23,7 @@ export const ModalityBadge: React.FC<{
           aria-hidden="true"
           className="w-2 h-2 rounded-full bg-content-subtle inline-block"
         />
-        {fallbackLabel}
+        {label}
       </span>
     );
   }

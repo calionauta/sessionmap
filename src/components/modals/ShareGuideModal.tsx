@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { ShieldCheck, CheckCircle2, EyeOff } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Tabs, TabPanel } from '../ui/Tabs';
+import { t, type Language } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface ShareGuideModalProps {
   isOpen: boolean;
@@ -18,60 +20,66 @@ const PLATFORM_ITEMS = [
   { value: 'teams' as const, label: 'Microsoft Teams' },
 ];
 
-const STEPS: Record<Platform, React.ReactNode> = {
+const buildSteps = (lang: Language): Record<Platform, React.ReactNode> => ({
   meet: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Clique no botão abaixo para abrir a <strong>Janela do Participante</strong>.</li>
-      <li>No Google Meet, clique no botão <strong>&quot;Apresentar agora&quot;</strong> (ícone de tela).</li>
+      <li>{t(lang, 'share.meet.s1')} <strong>{t(lang, 'share.windowName')}</strong>.</li>
+      <li>{t(lang, 'share.meet.s2a')} <strong>{t(lang, 'share.ui.meetPresent')}</strong> {t(lang, 'share.meet.s2b')}</li>
       <li>
-        Escolha a opção <strong>&quot;Uma janela&quot;</strong> (ou &quot;Uma guia&quot;).{' '}
-        <em>Nunca escolha &quot;A tela inteira&quot;.</em>
+        {t(lang, 'share.meet.s3a')} <strong>{t(lang, 'share.ui.meetWindow')}</strong> {t(lang, 'share.meet.s3b')}{' '}
+        <em>{t(lang, 'share.meet.s3c')}</em>
       </li>
-      <li>Selecione a janela com o nome <strong>&quot;Mapa&quot;</strong>.</li>
-      <li>Pronto! Você pode manter a sua janela privada em outro monitor ou lado a lado.</li>
+      <li>{t(lang, 'share.meet.s4')} <strong>&quot;Mapa&quot;</strong>.</li>
+      <li>{t(lang, 'share.meet.s5')}</li>
     </ol>
   ),
   zoom: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Abra a janela do participante no botão abaixo.</li>
-      <li>No Zoom, clique no botão verde <strong>&quot;Compartilhar Tela&quot; (Share Screen)</strong>.</li>
-      <li>Na aba <strong>Básico</strong>, escolha a janela que exibe apenas <strong>&quot;Mapa&quot;</strong>.</li>
-      <li>
-        Verifique o retângulo verde ao redor da janela do mapa confirmando que só ela
-        está visível ao participante.
-      </li>
+      <li>{t(lang, 'share.steps.openBelow')}</li>
+      <li>{t(lang, 'share.zoom.s2')} <strong>{t(lang, 'share.ui.zoomShare')}</strong>.</li>
+      <li>{t(lang, 'share.zoom.s3a')} <strong>{t(lang, 'share.ui.zoomBasic')}</strong>{t(lang, 'share.zoom.s3b')} <strong>&quot;Mapa&quot;</strong>.</li>
+      <li>{t(lang, 'share.zoom.s4')}</li>
     </ol>
   ),
   teams: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Abra a janela do participante no botão abaixo.</li>
-      <li>No Teams, clique em <strong>&quot;Compartilhar&quot;</strong> na barra superior.</li>
-      <li>Na seção <strong>Janela</strong>, selecione a janela <strong>&quot;Mapa&quot;</strong>.</li>
-      <li>Suas anotações privadas e outras abas permanecem 100% invisíveis ao participante.</li>
+      <li>{t(lang, 'share.steps.openBelow')}</li>
+      <li>{t(lang, 'share.teams.s2a')} <strong>{t(lang, 'share.ui.teamsShare')}</strong> {t(lang, 'share.teams.s2b')}</li>
+      <li>{t(lang, 'share.teams.s3a')} <strong>{t(lang, 'share.ui.teamsWindow')}</strong>{t(lang, 'share.teams.s3b')} <strong>&quot;Mapa&quot;</strong>.</li>
+      <li>{t(lang, 'share.teams.s4')}</li>
     </ol>
   ),
-};
+});
 
-const GUARANTEES = [
+interface Guarantee {
+  id: string;
+  icon: React.ReactNode;
+  title: string;
+  body: React.ReactNode;
+}
+
+const buildGuarantees = (lang: Language): Guarantee[] => [
   {
+    id: 'isolated',
     icon: <CheckCircle2 className="w-4 h-4 shrink-0" />,
-    title: 'Janela Isolada',
-    body: 'A janela do participante só contém o mapa em balões. Zero menus ou outlines.',
+    title: t(lang, 'share.g.isolated.t'),
+    body: t(lang, 'share.g.isolated.b'),
   },
   {
+    id: 'neutral',
     icon: <EyeOff className="w-4 h-4 shrink-0" />,
-    title: 'Título e URL Neutros',
+    title: t(lang, 'share.g.neutral.t'),
     body: (
       <>
-        O título é apenas <strong>&quot;Mapa&quot;</strong>. Nenhum nome do participante na aba
-        ou na barra de endereço.
+        {t(lang, 'share.g.neutral.b1')} <strong>&quot;Mapa&quot;</strong>. {t(lang, 'share.g.neutral.b2')}
       </>
     ),
   },
   {
+    id: 'clean',
     icon: <ShieldCheck className="w-4 h-4 shrink-0" />,
-    title: 'Nada fica no ar',
-    body: 'Fechou a janela do participante? Nada mais é exibido — sem tela residual, sem estado pendente.',
+    title: t(lang, 'share.g.clean.t'),
+    body: t(lang, 'share.g.clean.b'),
   },
 ];
 
@@ -81,22 +89,25 @@ export const ShareGuideModal: React.FC<ShareGuideModalProps> = ({
   onOpenClientWindow,
 }) => {
   const [activeTab, setActiveTab] = useState<Platform>('meet');
+  const lang = useLang();
+  const guarantees = buildGuarantees(lang);
+  const steps = buildSteps(lang);
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Guia: Compartilhamento Seguro"
-      description="Como mostrar apenas o mapa na chamada sem expor suas anotações privadas"
+      title={t(lang, 'share.title')}
+      description={t(lang, 'share.subtitle')}
       icon={<ShieldCheck className="w-5 h-5" />}
       maxWidth="max-w-2xl"
       footer={
         <>
           <span className="mr-auto text-xs text-content-subtle">
-            Dica: organize as duas janelas lado a lado se tiver um único monitor.
+            {t(lang, 'share.tip')}
           </span>
           <button type="button" onClick={onClose} className="ctl">
-            Entendi
+            {t(lang, 'share.understood')}
           </button>
           <button
             type="button"
@@ -106,16 +117,16 @@ export const ShareGuideModal: React.FC<ShareGuideModalProps> = ({
             }}
             className="ctl ctl-primary"
           >
-            Abrir Janela do Participante
+            {t(lang, 'share.open')}
           </button>
         </>
       }
     >
       <div className="space-y-6">
         <ul className="grid grid-cols-1 md:grid-cols-3 gap-3 list-none p-0 m-0">
-          {GUARANTEES.map((g) => (
+          {guarantees.map((g) => (
             <li
-              key={g.title}
+              key={g.id}
               className="p-3 rounded-panel border border-line bg-surface"
             >
               <div className="flex items-center gap-2 font-medium text-xs mb-1 text-positive">
@@ -130,7 +141,7 @@ export const ShareGuideModal: React.FC<ShareGuideModalProps> = ({
         <div>
           <Tabs
             idPrefix="share-platform"
-            label="Plataforma de videoconferência"
+            label={t(lang, 'share.tabs')}
             items={PLATFORM_ITEMS}
             value={activeTab}
             onChange={setActiveTab}
@@ -142,7 +153,7 @@ export const ShareGuideModal: React.FC<ShareGuideModalProps> = ({
             labelledBy={`share-platform-tab-${activeTab}`}
             className="p-4 rounded-panel border border-line bg-surface"
           >
-            {STEPS[activeTab]}
+            {steps[activeTab]}
           </TabPanel>
         </div>
       </div>

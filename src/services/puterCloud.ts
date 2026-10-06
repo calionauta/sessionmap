@@ -13,6 +13,7 @@
  */
 
 import type { Puter } from '@heyputer/puter.js';
+import type { Language } from '../i18n/strings';
 
 export type { Puter };
 
@@ -134,12 +135,13 @@ export async function getSpace(api: Puter): Promise<CloudSpace | null> {
 }
 
 /** Turns puter error objects into sentences a host can act on. */
-export function puterErrorMessage(err: unknown): string {
+export function puterErrorMessage(err: unknown, lang: Language = 'pt'): string {
+  const en = lang === 'en';
   // Offline first: a failed chunk import or fetch without connection is a
   // TypeError with no code, and "Failed to fetch" helps nobody.
   try {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      return 'Sem conexão. O backup local continua valendo.';
+      return en ? 'Offline. The local backup still holds.' : 'Sem conexão. O backup local continua valendo.';
     }
   } catch {
     // ignore
@@ -147,19 +149,31 @@ export function puterErrorMessage(err: unknown): string {
   const code =
     (err as { code?: unknown })?.code ?? (err as { error?: unknown })?.error ?? '';
   if (code === 'storage_limit_reached') {
-    return 'Espaço do Puter esgotado — apague arquivos ou amplie a conta.';
+    return en
+      ? 'Puter space exhausted — delete files or upgrade the account.'
+      : 'Espaço do Puter esgotado — apague arquivos ou amplie a conta.';
   }
   if (code === 'auth_window_closed' || code === 'popup_blocked') {
-    return 'Login cancelado. Tente de novo e conclua a janela do Puter.';
+    return en
+      ? 'Login cancelled. Try again and finish the Puter window.'
+      : 'Login cancelado. Tente de novo e conclua a janela do Puter.';
   }
   if (code === 'insufficient_funds' || code === 'subscription_required') {
-    return 'A conta Puter precisa de créditos para esta operação.';
+    return en
+      ? 'The Puter account needs credits for this operation.'
+      : 'A conta Puter precisa de créditos para esta operação.';
   }
   if (code === 'unsupported_origin') {
-    return 'O Puter não funciona em file:// — sirva o app por http://localhost.';
+    return en
+      ? 'Puter does not run on file:// — serve the app over http://localhost.'
+      : 'O Puter não funciona em file:// — sirva o app por http://localhost.';
   }
-  if (!navigator.onLine) return 'Sem conexão. O backup local continua valendo.';
+  if (!navigator.onLine) {
+    return en ? 'Offline. The local backup still holds.' : 'Sem conexão. O backup local continua valendo.';
+  }
   const message = (err as { message?: unknown })?.message;
   if (typeof message === 'string' && message.trim()) return message;
-  return 'Falha na nuvem. O backup local continua valendo — tente de novo.';
+  return en
+    ? 'Cloud failure. The local backup still holds — try again.'
+    : 'Falha na nuvem. O backup local continua valendo — tente de novo.';
 }

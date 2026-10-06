@@ -30,6 +30,8 @@ import {
 } from '../../utils/export';
 import { parseMarkdownToTree } from '../../utils/tree';
 import { formatSessionTimestamp } from '../../utils/text';
+import { t, type Language } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 import {
   getAllClients,
   getAllMaps,
@@ -55,35 +57,44 @@ interface ExportModalProps {
 type TabId = 'arquivo' | 'importar' | 'opml' | 'freemind' | 'json';
 type ImportTarget = 'current_session' | 'new_session' | 'append_current';
 
-const TAB_ITEMS: TabItem<TabId>[] = [
-  { value: 'arquivo', label: 'Arquivo' },
-  { value: 'importar', label: 'Importar' },
+const buildTabItems = (lang: Language): TabItem<TabId>[] => [
+  { value: 'arquivo', label: t(lang, 'export.tab.file') },
+  { value: 'importar', label: t(lang, 'export.tab.import') },
   { value: 'opml', label: 'OPML' },
   { value: 'freemind', label: 'FreeMind' },
   { value: 'json', label: 'JSON' },
 ];
 
-const IMPORT_TARGETS: {
+const buildImportTargets = (
+  lang: Language,
+  map: MindMap,
+): {
   value: ImportTarget;
   label: string;
-  describe: (map: MindMap) => string;
-}[] = [
-  {
-    value: 'current_session',
-    label: 'Na Sessão Atual',
-    describe: (map) => `Substitui os tópicos da sessão atual (${map.sessionDate || map.title})`,
-  },
-  {
-    value: 'new_session',
-    label: 'Como Nova Sessão',
-    describe: (map) => `Cria nova sessão datada para ${map.clientName || 'o participante'}`,
-  },
-  {
-    value: 'append_current',
-    label: 'Anexar ao Final',
-    describe: () => 'Mantém os tópicos atuais e adiciona os novos abaixo',
-  },
-];
+  describe: string;
+}[] => {
+  const client = map.clientName || t(lang, 'export.fallback.participant');
+  return [
+    {
+      value: 'current_session',
+      label: t(lang, 'export.import.target.current'),
+      describe: t(lang, 'export.import.target.currentDesc').replace(
+        '{session}',
+        map.sessionDate || map.title
+      ),
+    },
+    {
+      value: 'new_session',
+      label: t(lang, 'export.import.target.new'),
+      describe: t(lang, 'export.import.target.newDesc').replace('{client}', client),
+    },
+    {
+      value: 'append_current',
+      label: t(lang, 'export.import.target.append'),
+      describe: t(lang, 'export.import.target.appendDesc'),
+    },
+  ];
+};
 
 interface PreviewProps {
   title: string;
@@ -100,6 +111,7 @@ interface PreviewProps {
  * caption, the payload and the download action.
  */
 function Preview({ title, content, copied, onCopy, download }: PreviewProps) {
+  const lang = useLang();
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -115,7 +127,7 @@ function Preview({ title, content, copied, onCopy, download }: PreviewProps) {
             ) : (
               <Copy className="w-3.5 h-3.5" aria-hidden="true" />
             )}
-            {copied ? 'Copiado!' : 'Copiar'}
+            {copied ? t(lang, 'export.copied') : t(lang, 'export.copy')}
           </button>
         </div>
       </div>
@@ -166,6 +178,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const importTextId = useId();
   const importStatusId = useId();
+  const lang = useLang();
+  const tabItems = buildTabItems(lang);
+  const importTargets = buildImportTargets(lang, map);
 
   // A confirmed or abandoned restore must not greet the next open.
   const wasOpenRef = useRef(false);
@@ -210,13 +225,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const handleRunZip = async (run: () => Promise<void>) => {
-    setExportStatus('Compactando o arquivo .zip…');
+    setExportStatus(t(lang, 'export.zip.busy'));
     setIsExportingZip(true);
     try {
       await run();
-      setExportStatus('Arquivo .zip pronto.');
+      setExportStatus(t(lang, 'export.zip.ready'));
     } catch {
-      setExportStatus('Não foi possível gerar o arquivo .zip. Tente novamente.');
+      setExportStatus(t(lang, 'export.zip.fail'));
     } finally {
       setIsExportingZip(false);
     }
@@ -227,7 +242,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     handleRunZip(async () => {
       const allMaps = initialMaps && initialMaps.length > 0 ? initialMaps : await getAllMaps();
       const clientSessions = allMaps.filter((m) => m.clientId === map.clientId || m.clientName === map.clientName);
-      await exportClientSessionsZip(map.clientName || 'Participante', clientSessions.length > 0 ? clientSessions : [map]);
+      await exportClientSessionsZip(map.clientName || t(lang, 'export.fallback.participantName'), clientSessions.length > 0 ? clientSessions : [map]);
     });
 
   // Export 3: All sessions of all clients zipped
@@ -264,7 +279,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const maps = legacy
           ? (parsed as unknown[])
           : ((parsed as { maps?: unknown }).maps as unknown);
-        if (!Array.isArray(maps)) throw new Error('sem sessões');
+        if (!Array.isArray(maps)) throw new Error(t(lang, 'export.restore.emptyFile'));
         const env = parsed as {
           clients?: unknown[];
           modalities?: unknown[];
@@ -282,10 +297,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         });
         setRestoreStatus('');
       } catch {
-        setRestoreStatus('Esse arquivo não é um backup do SessionMap.');
+        setRestoreStatus(t(lang, 'export.restore.notBackup'));
       }
     };
-    reader.onerror = () => setRestoreStatus('Falha ao ler o arquivo selecionado.');
+    reader.onerror = () => setRestoreStatus(t(lang, 'export.restore.readFail'));
     reader.readAsText(file);
   };
 
@@ -294,19 +309,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setPendingRestore(null);
     if (!target) return;
     try {
-      setRestoreStatus('Restaurando…');
+      setRestoreStatus(t(lang, 'export.restore.working'));
       const counts: RestoreCounts = await restoreFullBackup(target.payload);
+      const mapsPart = t(
+        lang,
+        counts.maps === 1 ? 'export.restore.maps.one' : 'export.restore.maps.many'
+      ).replace('{n}', String(counts.maps));
+      const clientsPart = t(
+        lang,
+        counts.clients === 1 ? 'export.restore.clients.one' : 'export.restore.clients.many'
+      ).replace('{n}', String(counts.clients));
+      const extra =
+        counts.modalities > 0 || counts.templates > 0
+          ? t(lang, 'export.restore.extra')
+              .replace('{t}', String(counts.modalities))
+              .replace('{r}', String(counts.templates))
+          : '';
       setRestoreStatus(
-        `Restaurado: ${counts.maps} ${counts.maps === 1 ? 'sessão' : 'sessões'}, ` +
-          `${counts.clients} ${counts.clients === 1 ? 'participante' : 'participantes'}` +
-          (counts.modalities > 0 || counts.templates > 0
-            ? `, ${counts.modalities} tipos e ${counts.templates} roteiros novos`
-            : '') +
-          '.'
+        t(lang, 'export.restore.done').replace('{summary}', `${mapsPart}, ${clientsPart}${extra}`)
       );
       await onRestoreBackup?.();
     } catch {
-      setRestoreStatus('Não foi possível restaurar esse arquivo.');
+      setRestoreStatus(t(lang, 'export.restore.fail'));
     }
   };
 
@@ -322,14 +346,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         setImportText(content);
         setImportStatus({
           type: 'success',
-          message: `Arquivo "${file.name}" carregado (${content.length} caracteres). Pronto para importar.`,
+          message: t(lang, 'export.import.fileLoaded')
+            .replace('{name}', file.name)
+            .replace('{n}', String(content.length)),
         });
       }
     };
     reader.onerror = () => {
       setImportStatus({
         type: 'error',
-        message: 'Falha ao ler o arquivo selecionado.',
+        message: t(lang, 'export.import.fileFail'),
       });
     };
     reader.readAsText(file);
@@ -347,27 +373,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         if (parsed.root) {
           if (importTarget === 'current_session' && onUpdateCurrentMapRoot) {
             onUpdateCurrentMapRoot(parsed.root);
-            setImportStatus({ type: 'success', message: 'Sessão atual atualizada com sucesso!' });
+            setImportStatus({ type: 'success', message: t(lang, 'export.import.okCurrent') });
           } else {
             onImportMap(parsed as MindMap);
-            setImportStatus({ type: 'success', message: 'Novo mapa importado com sucesso!' });
+            setImportStatus({ type: 'success', message: t(lang, 'export.import.okNewMap') });
           }
           setTimeout(onClose, 1000);
           return;
         }
       } else if (trimmed.includes('<opml') || trimmed.includes('<outline')) {
         // OPML format
-        const rootNode = parseOPML(trimmed, map.title || 'Sessão Importada');
+        const rootNode = parseOPML(trimmed, map.title || t(lang, 'export.fallback.importedSession'));
         if (importTarget === 'current_session' && onUpdateCurrentMapRoot) {
           onUpdateCurrentMapRoot(rootNode);
-          setImportStatus({ type: 'success', message: 'Conteúdo OPML aplicado à sessão atual!' });
+          setImportStatus({ type: 'success', message: t(lang, 'export.import.okOpmlCurrent') });
         } else {
           const timestamp = formatSessionTimestamp();
           const newMap: MindMap = {
             schema: 1,
             id: `m_${Date.now().toString(36)}`,
             clientId: map.clientId || 'c_default',
-            clientName: map.clientName || 'Participante',
+            clientName: map.clientName || t(lang, 'export.fallback.participantName'),
             sessionDate: timestamp,
             title: rootNode.text || timestamp,
             createdAt: new Date().toISOString(),
@@ -375,13 +401,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             root: rootNode,
           };
           onImportMap(newMap);
-          setImportStatus({ type: 'success', message: 'Nova sessão OPML criada com sucesso!' });
+          setImportStatus({ type: 'success', message: t(lang, 'export.import.okOpmlNew') });
         }
         setTimeout(onClose, 1000);
         return;
       } else {
         // Markdown outline (# Raiz ou listas - com recuo)
-        const parsedNode = parseMarkdownToTree(trimmed, map.sessionDate || map.title || 'Sessão Importada');
+        const parsedNode = parseMarkdownToTree(trimmed, map.sessionDate || map.title || t(lang, 'export.fallback.importedSession'));
 
         if (importTarget === 'current_session') {
           if (onUpdateCurrentMapRoot) {
@@ -393,7 +419,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               updatedAt: new Date().toISOString(),
             });
           }
-          setImportStatus({ type: 'success', message: 'Tópicos de Markdown aplicados à sessão atual!' });
+          setImportStatus({ type: 'success', message: t(lang, 'export.import.okMdCurrent') });
         } else if (importTarget === 'append_current') {
           const existingChildren = map.root.children || [];
           const importedChildren = parsedNode.children || [];
@@ -410,7 +436,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               updatedAt: new Date().toISOString(),
             });
           }
-          setImportStatus({ type: 'success', message: 'Tópicos anexados ao final da sessão atual!' });
+          setImportStatus({ type: 'success', message: t(lang, 'export.import.okMdAppend') });
         } else {
           // 'new_session'
           const timestamp = formatSessionTimestamp();
@@ -418,7 +444,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             schema: 1,
             id: `m_${Date.now().toString(36)}`,
             clientId: map.clientId || 'c_default',
-            clientName: map.clientName || 'Participante',
+            clientName: map.clientName || t(lang, 'export.fallback.participantName'),
             sessionDate: timestamp,
             title: parsedNode.text || timestamp,
             createdAt: new Date().toISOString(),
@@ -426,7 +452,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             root: parsedNode,
           };
           onImportMap(newMap);
-          setImportStatus({ type: 'success', message: `Nova sessão criada para ${map.clientName || 'o participante'}!` });
+          setImportStatus({ type: 'success', message: t(lang, 'export.import.okMdNew').replace('{client}', map.clientName || t(lang, 'export.fallback.participant')) });
         }
         setTimeout(onClose, 1200);
         return;
@@ -434,25 +460,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     } catch {
       setImportStatus({
         type: 'error',
-        message: 'Erro ao interpretar o conteúdo. Certifique-se de que o texto está em Markdown (# Raiz, - item), OPML ou JSON.',
+        message: t(lang, 'export.import.parseFail'),
       });
     }
   };
 
-  const clientLabel = map.clientName || 'o participante';
+  const clientLabel = map.clientName || t(lang, 'export.fallback.participant');
 
   return (
     <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Exportar & Importar Sessões"
-      description={`Participante: ${map.clientName || 'Participante'} · Sessão: ${map.sessionDate || map.title}`}
+      title={t(lang, 'export.title')}
+      description={t(lang, 'export.subtitle')
+        .replace('{client}', map.clientName || t(lang, 'export.fallback.participantName'))
+        .replace('{session}', map.sessionDate || map.title)}
       maxWidth="max-w-3xl"
     >
       <Tabs
-        label="Formato de exportação e importação"
-        items={TAB_ITEMS}
+        label={t(lang, 'export.tabs')}
+        items={tabItems}
         value={activeTab}
         onChange={setActiveTab}
         idPrefix="export"
@@ -483,14 +511,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <FileText className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Sessão atual
+                    {t(lang, 'export.md.title')}
                   </>
                 }
-                description={<>Arquivo <code>.md</code> individual, formatado para leitura.</>}
+                description={<>{t(lang, 'export.md.descA')} <code>.md</code> {t(lang, 'export.md.descB')}</>}
                 control={
                   <button type="button" onClick={handleExportSingleSession} className="ctl ctl-primary shrink-0">
                     <Download className="w-4 h-4" aria-hidden="true" />
-                    Baixar .md
+                    {t(lang, 'export.md.button')}
                   </button>
                 }
               />
@@ -503,10 +531,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <Archive className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Todas as sessões de {clientLabel}
+                    {t(lang, 'export.clientZip.title').replace('{client}', clientLabel)}
                   </>
                 }
-                description={<>Arquivo <code>.zip</code> com todas as sessões em Markdown deste participante.</>}
+                description={<>{t(lang, 'export.clientZip.descA')} <code>.zip</code> {t(lang, 'export.clientZip.descB')}</>}
                 control={
                   <button
                     type="button"
@@ -515,7 +543,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     className="ctl shrink-0"
                   >
                     <Archive className="w-4 h-4" aria-hidden="true" />
-                    {isExportingZip ? 'Compactando…' : 'Baixar .zip'}
+                    {isExportingZip ? t(lang, 'export.zip.working') : t(lang, 'export.zip.button')}
                   </button>
                 }
               />
@@ -528,10 +556,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <FolderArchive className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Todos os participantes
+                    {t(lang, 'export.allZip.title')}
                   </>
                 }
-                description={<>Arquivo <code>.zip</code> completo, com uma pasta por participante.</>}
+                description={<>{t(lang, 'export.allZip.descA')} <code>.zip</code> {t(lang, 'export.allZip.descB')}</>}
                 control={
                   <button
                     type="button"
@@ -540,7 +568,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     className="ctl shrink-0"
                   >
                     <FolderArchive className="w-4 h-4" aria-hidden="true" />
-                    {isExportingZip ? 'Compactando…' : 'Baixar .zip'}
+                    {isExportingZip ? t(lang, 'export.zip.working') : t(lang, 'export.zip.button')}
                   </button>
                 }
               />
@@ -553,14 +581,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <Image className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Imagem PNG (2×)
+                    {t(lang, 'export.png.title')}
                   </>
                 }
-                description="Rasteriza o mapa atual em alta resolução, com fundo neutro do tema atual."
+                description={t(lang, 'export.png.desc')}
                 control={
                   <button type="button" onClick={handleDownloadPNG} className="ctl shrink-0">
                     <Download className="w-4 h-4" aria-hidden="true" />
-                    Baixar PNG
+                    {t(lang, 'export.png.button')}
                   </button>
                 }
               />
@@ -573,14 +601,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <Code className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Vetor SVG
+                    {t(lang, 'export.svg.title')}
                   </>
                 }
-                description="Arquivo vetorial escalável do mapa atual."
+                description={t(lang, 'export.svg.desc')}
                 control={
                   <button type="button" onClick={handleDownloadSVG} className="ctl shrink-0">
                     <Download className="w-4 h-4" aria-hidden="true" />
-                    Baixar SVG
+                    {t(lang, 'export.svg.button')}
                   </button>
                 }
               />
@@ -593,7 +621,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </p>
 
           <Preview
-            title="Prévia do conteúdo da sessão atual"
+            title={t(lang, 'export.preview.md')}
             content={markdownContent}
             copied={copiedTab === 'arquivo'}
             onCopy={() => handleCopy(markdownContent, 'arquivo')}
@@ -605,10 +633,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <TabPanel id="export-panel-importar" labelledBy="export-tab-importar" className="space-y-5">
           <fieldset>
             <legend className="text-xs font-bold text-content uppercase tracking-wide mb-2">
-              1. Escolha o destino da importação
+              {t(lang, 'export.import.step1')}
             </legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-              {IMPORT_TARGETS.map((target) => {
+              {importTargets.map((target) => {
                 const selected = importTarget === target.value;
                 return (
                   <label
@@ -630,7 +658,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <span className="min-w-0">
                       <span className="block font-extrabold">{target.label}</span>
                       <span className="block text-xs font-normal mt-0.5">
-                        {target.describe(map)}
+                        {target.describe}
                       </span>
                     </span>
                   </label>
@@ -641,7 +669,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           <fieldset>
             <legend className="text-xs font-bold text-content uppercase tracking-wide mb-2">
-              2. Arquivo Markdown (.md) ou texto colado
+              {t(lang, 'export.import.step2')}
             </legend>
             <div className="mb-2">
               <button
@@ -650,7 +678,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="ctl max-sm:w-full"
               >
                 <Upload className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                Selecionar arquivo .md / .txt
+                {t(lang, 'export.import.pickFile')}
               </button>
               <input
                 ref={fileInputRef}
@@ -662,7 +690,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
 
             <label htmlFor={importTextId} className="sr-only">
-              Conteúdo Markdown, OPML ou JSON para importar
+              {t(lang, 'export.import.textLabel')}
             </label>
             <textarea
               id={importTextId}
@@ -670,7 +698,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               aria-describedby={importStatus ? importStatusId : undefined}
-              placeholder={`# Tópico Principal\n- Ponto 1\n  - Subponto A\n  - Subponto B\n- Ponto 2\n  - Subponto C`}
+              placeholder={t(lang, 'export.import.placeholder')}
               className="w-full p-3.5 rounded-control font-mono text-xs leading-relaxed bg-surface-sunken border border-line text-content placeholder:text-content-subtle"
             />
           </fieldset>
@@ -698,7 +726,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               375px dialog. */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <button type="button" onClick={onClose} className="ctl w-full sm:w-auto">
-              Cancelar
+              {t(lang, 'export.import.cancel')}
             </button>
             <button
               type="button"
@@ -707,7 +735,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               className="ctl ctl-primary w-full sm:w-auto"
             >
               <Upload className="w-4 h-4" aria-hidden="true" />
-              Confirmar importação
+              {t(lang, 'export.import.confirm')}
             </button>
           </div>
         </TabPanel>
@@ -716,7 +744,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       {activeTab === 'opml' && (
         <TabPanel id="export-panel-opml" labelledBy="export-tab-opml">
           <Preview
-            title="Formato padrão OPML 2.0 para outline e mapas"
+            title={t(lang, 'export.preview.opml')}
             content={opmlContent}
             copied={copiedTab === 'opml'}
             onCopy={() => handleCopy(opmlContent, 'opml')}
@@ -729,7 +757,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="ctl ctl-primary"
               >
                 <Download className="w-4 h-4" aria-hidden="true" />
-                Baixar .opml
+                {t(lang, 'export.opml.button')}
               </button>
             }
           />
@@ -739,7 +767,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       {activeTab === 'freemind' && (
         <TabPanel id="export-panel-freemind" labelledBy="export-tab-freemind">
           <Preview
-            title="Formato compatível com FreeMind (.mm)"
+            title={t(lang, 'export.preview.freemind')}
             content={freeMindContent}
             copied={copiedTab === 'freemind'}
             onCopy={() => handleCopy(freeMindContent, 'freemind')}
@@ -756,7 +784,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="ctl ctl-primary"
               >
                 <Download className="w-4 h-4" aria-hidden="true" />
-                Baixar .mm
+                {t(lang, 'export.freemind.button')}
               </button>
             }
           />
@@ -766,7 +794,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       {activeTab === 'json' && (
         <TabPanel id="export-panel-json" labelledBy="export-tab-json">
           <Preview
-            title="Backup completo ou mapa único em JSON"
+            title={t(lang, 'export.preview.json')}
             content={jsonContent}
             copied={copiedTab === 'json'}
             onCopy={() => handleCopy(jsonContent, 'json')}
@@ -774,7 +802,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <>
                 <button type="button" onClick={handleFullBackup} className="ctl">
                   <Download className="w-4 h-4" aria-hidden="true" />
-                  Backup de todos os mapas
+                  {t(lang, 'export.json.full')}
                 </button>
                 <button
                   type="button"
@@ -788,7 +816,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   className="ctl ctl-primary"
                 >
                   <Download className="w-4 h-4" aria-hidden="true" />
-                  Baixar este mapa
+                  {t(lang, 'export.json.one')}
                 </button>
               </>
             }
@@ -809,10 +837,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
                 <h4 className="text-xs font-bold text-content">
-                  Restaurar backup (.json)
+                  {t(lang, 'export.restore.title')}
                 </h4>
                 <p className="text-[11px] text-content-muted font-medium">
-                  Vale para o backup completo atual e para os antigos (só sessões).
+                  {t(lang, 'export.restore.desc')}
                 </p>
               </div>
               <button
@@ -821,7 +849,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="ctl text-xs font-bold"
               >
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Escolher arquivo…</span>
+                <span>{t(lang, 'export.restore.pick')}</span>
               </button>
             </div>
             {restoreStatus && (
@@ -837,33 +865,47 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       <ConfirmDialog
         isOpen={pendingRestore !== null}
-        title="Restaurar este backup?"
-        confirmLabel="Restaurar backup"
-        cancelLabel="Cancelar"
+        title={t(lang, 'export.restore.confirmTitle')}
+        confirmLabel={t(lang, 'export.restore.confirmButton')}
+        cancelLabel={t(lang, 'export.import.cancel')}
         onCancel={() => setPendingRestore(null)}
         onConfirm={() => void confirmRestore()}
         description={
           pendingRestore ? (
             <>
               <p>
-                O arquivo contém <strong>{pendingRestore.counts.maps} sessões</strong>
+                {t(lang, 'export.restore.fileHas')}{' '}
+                <strong>
+                  {t(
+                    lang,
+                    pendingRestore.counts.maps === 1
+                      ? 'export.restore.maps.one'
+                      : 'export.restore.maps.many'
+                  ).replace('{n}', String(pendingRestore.counts.maps))}
+                </strong>
                 {pendingRestore.counts.clients > 0 && (
                   <>
-                    {' '}e <strong>{pendingRestore.counts.clients} participantes</strong>
+                    {' '}{t(lang, 'export.restore.and')}{' '}
+                    <strong>
+                      {t(
+                        lang,
+                        pendingRestore.counts.clients === 1
+                          ? 'export.restore.clients.one'
+                          : 'export.restore.clients.many'
+                      ).replace('{n}', String(pendingRestore.counts.clients))}
+                    </strong>
                   </>
                 )}
                 {pendingRestore.counts.modalities > 0 && (
-                  <> · {pendingRestore.counts.modalities} tipos</>
+                  <> · {t(lang, 'export.restore.typesCount').replace('{n}', String(pendingRestore.counts.modalities))}</>
                 )}
                 {pendingRestore.counts.templates > 0 && (
-                  <> · {pendingRestore.counts.templates} roteiros</>
+                  <> · {t(lang, 'export.restore.scriptsCount').replace('{n}', String(pendingRestore.counts.templates))}</>
                 )}
-                {pendingRestore.legacy && ' (formato antigo: só sessões)'}.
+                {pendingRestore.legacy && ` ${t(lang, 'export.restore.legacy')}`}.
               </p>
               <p className="mt-2 text-content-subtle">
-                Sessões e participantes com o mesmo id serão substituídos pelos do
-                arquivo. Tipos e roteiros novos são somados; os que você
-                renomeou aqui não mudam.
+                {t(lang, 'export.restore.overwrite')}
               </p>
             </>
           ) : null

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Check, Edit2, Layers, Plus, Trash2 } from 'lucide-react';
 import { Modality, SessionTemplate } from '../../types';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface CatalogPanelProps {
   modalities: Modality[];
@@ -41,6 +43,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
   const [editingModalityId, setEditingModalityId] = useState<string | null>(null);
   const [editingModalityName, setEditingModalityName] = useState('');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const lang = useLang();
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft>({
     title: '',
     modalityId: '',
@@ -74,11 +77,11 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
     setEditingModalityId(null);
   };
 
-  const startTemplateDraft = (t: SessionTemplate | null) => {
-    setEditingTemplateId(t ? t.id : 'new');
+  const startTemplateDraft = (tpl: SessionTemplate | null) => {
+    setEditingTemplateId(tpl ? tpl.id : 'new');
     setTemplateDraft(
-      t
-        ? { title: t.title, modalityId: t.modalityId ?? '', markdown: t.markdown }
+      tpl
+        ? { title: tpl.title, modalityId: tpl.modalityId ?? '', markdown: tpl.markdown }
         : { title: '', modalityId: '', markdown: '' }
     );
   };
@@ -89,16 +92,16 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
     const now = new Date().toISOString();
     if (editingTemplateId && editingTemplateId !== 'new') {
       onTemplatesChange(
-        templates.map((t) =>
-          t.id === editingTemplateId
+        templates.map((tpl) =>
+          tpl.id === editingTemplateId
             ? {
-                ...t,
+                ...tpl,
                 title: templateDraft.title.trim(),
                 modalityId: templateDraft.modalityId || null,
                 markdown: templateDraft.markdown,
                 updatedAt: now,
               }
-            : t
+            : tpl
         )
       );
     } else {
@@ -118,20 +121,19 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
   };
 
   const handleDeleteTemplate = (id: string) => {
-    onTemplatesChange(templates.filter((t) => t.id !== id));
+    onTemplatesChange(templates.filter((tpl) => tpl.id !== id));
     if (editingTemplateId === id) setEditingTemplateId(null);
   };
 
   return (
     <div className="space-y-6">
       {/* Kinds */}
-      <section aria-label="Tipos de atendimento">
+      <section aria-label={t(lang, 'catalog.types.aria')}>
         <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
-          Tipos de atendimento ({modalities.length})
+          {t(lang, 'catalog.types.title').replace('{n}', String(modalities.length))}
         </h3>
         <p className="mt-1 text-[11px] text-content-muted font-medium">
-          Valem para todas as sessões, de qualquer participante. Cada sessão tem um
-          tipo; cada participante pode ter vários.
+          {t(lang, 'catalog.types.desc')}
         </p>
         <div className="mt-3 space-y-2">
           {modalities.map((m) => {
@@ -147,7 +149,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                     className="flex-1 min-w-0 flex items-center gap-1"
                   >
                     <label htmlFor={`catalog-rename-${m.id}`} className="sr-only">
-                      Renomear {m.name}
+                      {t(lang, 'catalog.types.renameOf').replace('{name}', m.name)}
                     </label>
                     <input
                       id={`catalog-rename-${m.id}`}
@@ -160,7 +162,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                     <button
                       type="submit"
                       className="ctl ctl-primary w-10 px-0"
-                      aria-label={`Confirmar novo nome de ${m.name}`}
+                      aria-label={t(lang, 'catalog.types.confirmRenameOf').replace('{name}', m.name)}
                     >
                       <Check className="w-4 h-4" aria-hidden="true" />
                     </button>
@@ -169,7 +171,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                   <div className="flex-1 min-w-0 px-1">
                     <ModalityBadge modality={m} />
                     <div className="text-[11px] font-mono text-content-subtle mt-0.5">
-                      {inUse} {inUse === 1 ? 'sessão' : 'sessões'}
+                      {t(lang, inUse === 1 ? 'catalog.types.usage.one' : 'catalog.types.usage.many').replace('{n}', String(inUse))}
                     </div>
                   </div>
                 )}
@@ -181,7 +183,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                         setEditingModalityId(m.id);
                         setEditingModalityName(m.name);
                       }}
-                      aria-label={`Renomear tipo ${m.name}`}
+                      aria-label={t(lang, 'catalog.types.renameType').replace('{name}', m.name)}
                       className="ctl w-10 px-0"
                     >
                       <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -189,8 +191,8 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteModalityRequest(m)}
-                      aria-label={`Excluir tipo ${m.name}`}
-                      title="Excluir tipo (sessões viram “sem tipo”)"
+                      aria-label={t(lang, 'catalog.types.deleteType').replace('{name}', m.name)}
+                      title={t(lang, 'catalog.types.deleteTitle')}
                       className="ctl ctl-danger w-10 px-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -202,14 +204,14 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
           })}
           <form onSubmit={handleAddModality} className="flex items-center gap-1.5">
             <label htmlFor="catalog-new-modality-name" className="sr-only">
-              Nome do novo tipo
+              {t(lang, 'catalog.types.newName')}
             </label>
             <input
               id="catalog-new-modality-name"
               type="text"
               value={newModalityName}
               onChange={(e) => setNewModalityName(e.target.value)}
-              placeholder="Novo tipo… ex. Supervisão"
+              placeholder={t(lang, 'catalog.types.newPlaceholder')}
               className="flex-1 min-w-0 h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
             />
             <button
@@ -217,17 +219,17 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
               className="ctl ctl-primary h-10 px-3 text-xs font-bold"
             >
               <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Tipo</span>
+              <span>{t(lang, 'catalog.types.add')}</span>
             </button>
           </form>
         </div>
       </section>
 
       {/* Templates */}
-      <section aria-label="Roteiros iniciais">
+      <section aria-label={t(lang, 'catalog.scripts.aria')}>
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
-            Roteiros iniciais ({templates.length})
+            {t(lang, 'catalog.scripts.title').replace('{n}', String(templates.length))}
           </h3>
           <button
             type="button"
@@ -235,51 +237,50 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
             className="ctl h-9 px-2.5 text-[11px] font-bold"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Roteiro</span>
+            <span>{t(lang, 'catalog.scripts.add')}</span>
           </button>
         </div>
         <p className="mt-1 text-[11px] text-content-muted font-medium">
-          Esqueletos oferecidos ao iniciar uma sessão. Um roteiro de um tipo
-          aparece só para aquele tipo; o geral aparece em todos.
+          {t(lang, 'catalog.scripts.desc')}
         </p>
         <div className="mt-3 space-y-2">
-          {templates.map((t) => (
-            <div key={t.id} className="p-2.5 rounded-panel border border-line bg-surface">
+          {templates.map((tpl) => (
+            <div key={tpl.id} className="p-2.5 rounded-panel border border-line bg-surface">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-content truncate">{t.title}</div>
+                  <div className="text-xs font-bold text-content truncate">{tpl.title}</div>
                   <div className="mt-0.5">
                     <ModalityBadge
-                      modality={modalities.find((m) => m.id === t.modalityId) ?? null}
-                      fallbackLabel="Geral"
+                      modality={modalities.find((m) => m.id === tpl.modalityId) ?? null}
+                      fallbackLabel={t(lang, 'catalog.scripts.general')}
                     />
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
-                    onClick={() => startTemplateDraft(t)}
-                    aria-label={`Editar roteiro ${t.title}`}
+                    onClick={() => startTemplateDraft(tpl)}
+                    aria-label={t(lang, 'catalog.scripts.edit').replace('{title}', tpl.title)}
                     className="ctl w-10 px-0"
                   >
                     <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDeleteTemplate(t.id)}
-                    aria-label={`Excluir roteiro ${t.title}`}
+                    onClick={() => handleDeleteTemplate(tpl.id)}
+                    aria-label={t(lang, 'catalog.scripts.delete').replace('{title}', tpl.title)}
                     className="ctl ctl-danger w-10 px-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
-              {editingTemplateId === t.id && (
+              {editingTemplateId === tpl.id && (
                 <TemplateForm
                   draft={templateDraft}
                   onDraftChange={setTemplateDraft}
                   modalities={modalities}
-                  submitLabel="Salvar roteiro"
+                  submitLabel={t(lang, 'catalog.scripts.save')}
                   onSubmit={handleSaveTemplate}
                   onCancel={() => setEditingTemplateId(null)}
                 />
@@ -292,7 +293,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                 draft={templateDraft}
                 onDraftChange={setTemplateDraft}
                 modalities={modalities}
-                submitLabel="Salvar roteiro"
+                submitLabel={t(lang, 'catalog.scripts.save')}
                 onSubmit={handleSaveTemplate}
                 onCancel={() => setEditingTemplateId(null)}
                 autoFocus
@@ -302,7 +303,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
           {templates.length === 0 && editingTemplateId === null && (
             <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel flex items-center justify-center gap-1.5">
               <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-              Nenhum roteiro. Crie o primeiro acima.
+              {t(lang, 'catalog.scripts.empty')}
             </p>
           )}
         </div>
@@ -333,27 +334,28 @@ function TemplateForm({
   onCancel: () => void;
   autoFocus?: boolean;
 }) {
+  const lang = useLang();
   return (
     <form onSubmit={onSubmit} className="mt-2 space-y-2">
       <label className="block">
-        <span className="sr-only">Título do roteiro</span>
+        <span className="sr-only">{t(lang, 'catalog.form.title')}</span>
         <input
           type="text"
           autoFocus={autoFocus}
           value={draft.title}
           onChange={(e) => onDraftChange({ ...draft, title: e.target.value })}
-          placeholder="Título do roteiro"
+          placeholder={t(lang, 'catalog.form.titlePlaceholder')}
           className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content"
         />
       </label>
       <label className="block">
-        <span className="sr-only">Tipo do roteiro</span>
+        <span className="sr-only">{t(lang, 'catalog.form.kind')}</span>
         <select
           value={draft.modalityId}
           onChange={(e) => onDraftChange({ ...draft, modalityId: e.target.value })}
           className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
         >
-          <option value="">Geral (todos os tipos)</option>
+          <option value="">{t(lang, 'catalog.form.generalAll')}</option>
           {modalities.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
@@ -362,11 +364,11 @@ function TemplateForm({
         </select>
       </label>
       <label className="block">
-        <span className="sr-only">Texto do roteiro em tópicos</span>
+        <span className="sr-only">{t(lang, 'catalog.form.text')}</span>
         <textarea
           value={draft.markdown}
           onChange={(e) => onDraftChange({ ...draft, markdown: e.target.value })}
-          placeholder={'- Primeiro tópico\n  - Subtópico'}
+          placeholder={t(lang, 'catalog.form.textPlaceholder')}
           rows={5}
           className="w-full p-2.5 text-xs font-mono rounded-control border border-line bg-surface-raised text-content"
         />
@@ -377,7 +379,7 @@ function TemplateForm({
           onClick={onCancel}
           className="ctl h-9 px-3 text-[11px] font-bold"
         >
-          Cancelar
+          {t(lang, 'catalog.form.cancel')}
         </button>
         <button type="submit" className="ctl ctl-primary h-9 px-3 text-[11px] font-bold">
           {submitLabel}

@@ -1,6 +1,8 @@
 import React from 'react';
 import { BRANCH_PALETTE, LayoutNode, themeColor } from './useMindMapLayout';
 import { displayTextFor, measureBalloon } from './balloonText';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface BalloonNodeProps {
   layoutNode: LayoutNode;
@@ -47,6 +49,7 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
   onNodeClick,
   onToggleCollapse,
 }) => {
+  const lang = useLang();
   const { x, y, width, height, text, color, collapsed, hasChildren, childCount } = layoutNode;
   const isDark = theme === 'noite';
 
@@ -174,9 +177,15 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
         isGhost
           ? undefined
           : collapsed && hasChildren
-            ? `${displayText} (recolhido, ${childCount} ${
-                childCount === 1 ? 'ponto oculto' : 'pontos ocultos'
-              })`
+            ? t(lang, 'balloon.collapsed')
+                .replace('{text}', displayText)
+                .replace(
+                  '{detail}',
+                  t(lang, childCount === 1 ? 'balloon.hidden.one' : 'balloon.hidden.many').replace(
+                    '{n}',
+                    String(childCount)
+                  )
+                )
             : displayText
       }
       aria-hidden={isGhost ? true : undefined}

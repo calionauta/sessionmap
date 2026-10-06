@@ -19,11 +19,13 @@ import {
   X,
 } from 'lucide-react';
 import { OverflowMenu, MenuEntry } from './ui/OverflowMenu';
+import { t } from '../i18n/strings';
+import { useLang } from '../i18n/LanguageContext';
 
 /**
  * The session bar.
  *
- * It was 215 lines of JSX inline in TherapistView, which is the component
+ * It was 215 lines of JSX inline in HostView, which is the component
  * architecture problem before it is a design one: a view that cannot be read
  * on its own cannot be reviewed on its own, and every piece of state it needed
  * arrived as a prop of a thousand-line parent. It is its own component now, and
@@ -115,6 +117,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSwapPane,
   cloud = null,
 }) => {
+  const lang = useLang();
   /**
    * The share cluster: one action, one read-only state.
    *
@@ -135,7 +138,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   if (isClientConnected) {
     entries.push({
       key: 'focusClient',
-      label: 'Trazer a tela compartilhada para a frente',
+      label: t(lang, 'topbar.menu.focusClient'),
       icon: <MonitorUp className="w-3.5 h-3.5" />,
       onSelect: onFocusClientWindow,
     });
@@ -144,32 +147,32 @@ export const TopBar: React.FC<TopBarProps> = ({
   entries.push(
     {
       key: 'maps',
-      label: 'Mapas e sessões',
+      label: t(lang, 'topbar.menu.maps'),
       icon: <Layers className="w-3.5 h-3.5" />,
       onSelect: onOpenMapList,
     },
     {
       key: 'zoom',
-      label: 'Zoom no foco',
+      label: t(lang, 'topbar.menu.zoom'),
       icon: <Target className="w-3.5 h-3.5" />,
       onSelect: onToggleFocusZoom,
       checked: focusZoomOn,
     },
     {
       key: 'share',
-      label: 'Guia de compartilhamento',
+      label: t(lang, 'topbar.menu.share'),
       icon: <Share2 className="w-3.5 h-3.5" />,
       onSelect: onOpenShareGuide,
     },
     {
       key: 'settings',
-      label: 'Configurações',
+      label: t(lang, 'topbar.menu.settings'),
       icon: <Sliders className="w-3.5 h-3.5" />,
       onSelect: onOpenSettings,
     },
     {
       key: 'theme',
-      label: isDark ? 'Tema claro' : 'Tema escuro',
+      label: isDark ? t(lang, 'topbar.menu.themeLight') : t(lang, 'topbar.menu.themeDark'),
       icon: isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />,
       onSelect: onToggleTheme,
     }
@@ -182,7 +185,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   if (canRestoreSplit) {
     entries.push({
       key: 'split',
-      label: 'Restaurar a divisão com os tópicos',
+      label: t(lang, 'topbar.menu.split'),
       icon: <Minimize2 className="w-3.5 h-3.5" />,
       onSelect: onRestoreSplit,
     });
@@ -207,8 +210,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               mouse. */}
           <span
             role="img"
-            aria-label="Privado: nada é enviado para fora deste navegador"
-            title="Tudo fica neste navegador. Nada é enviado para lugar nenhum."
+            aria-label={t(lang, 'topbar.privacy.label')}
+            title={t(lang, 'topbar.privacy.title')}
             className="shrink-0"
           >
             <Lock className="w-3 h-3 text-content-subtle" aria-hidden="true" />
@@ -223,8 +226,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onOpenClients}
-          title="Gerenciar participantes e sessões"
-          aria-label="Gerenciar participantes e sessões"
+          title={t(lang, 'topbar.clients')}
+          aria-label={t(lang, 'topbar.clients')}
           className="ctl !min-h-0 h-9 px-2.5 sm:px-3 !gap-2 text-xs font-semibold min-w-0"
         >
           <Users className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
@@ -250,7 +253,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onOpenSettings}
             title={cloud.hint}
-            aria-label={`Backup em nuvem: ${cloud.label}. Abrir configurações.`}
+            aria-label={`${t(lang, 'topbar.cloud.name')}: ${cloud.label}. ${t(lang, 'topbar.cloud.open')}.`}
             className="hidden md:flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content hover:border-line-muted cursor-pointer"
           >
             <Cloud className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
@@ -277,8 +280,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onSwapPane}
-            title={narrowPane === 'outline' ? 'Ver o mapa' : 'Ver os tópicos'}
-            aria-label={narrowPane === 'outline' ? 'Ver o mapa da sessão' : 'Ver os tópicos da sessão'}
+            title={narrowPane === 'outline' ? t(lang, 'topbar.narrow.map') : t(lang, 'topbar.narrow.topics')}
+            aria-label={narrowPane === 'outline' ? t(lang, 'topbar.narrow.map') : t(lang, 'topbar.narrow.topics')}
             className="ctl w-9 h-9 !min-h-0 px-0"
           >
             {narrowPane === 'outline' ? (
@@ -293,13 +296,13 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onOpenClientWindow}
-            title="Abre a tela do participante em nova janela"
-            aria-label="Apresentar: abre a tela do participante em nova janela"
+            title={t(lang, 'topbar.present.title')}
+            aria-label={t(lang, 'topbar.present.label')}
             className="ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ctl-primary"
           >
             <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            <span className="hidden sm:inline">Apresentar</span>
-            <span className="sr-only sm:hidden">Apresentar</span>
+            <span className="hidden sm:inline">{t(lang, 'topbar.present.short')}</span>
+            <span className="sr-only sm:hidden">{t(lang, 'topbar.present.short')}</span>
           </button>
         ) : (
           <>
@@ -313,18 +316,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                 aria-hidden="true"
                 className="w-2 h-2 rounded-full shrink-0 bg-positive animate-pulse"
               />
-              <span className="whitespace-nowrap">Ao vivo</span>
+              <span className="whitespace-nowrap">{t(lang, 'topbar.live')}</span>
             </div>
             <button
               type="button"
               onClick={onStopSharing}
-              title="Encerrar a apresentação e fechar a tela do participante"
-              aria-label="Encerrar apresentação"
+              title={t(lang, 'topbar.stop.title')}
+              aria-label={t(lang, 'topbar.stop.label')}
               className="ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ctl-danger"
             >
               <X className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span className="hidden sm:inline">Encerrar apresentação</span>
-              <span className="sr-only sm:hidden">Encerrar apresentação</span>
+              <span className="hidden sm:inline">{t(lang, 'topbar.stop.short')}</span>
+              <span className="sr-only sm:hidden">{t(lang, 'topbar.stop.short')}</span>
             </button>
           </>
         )}
@@ -338,14 +341,14 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onOpenExport}
-          title="Exportar mapa (Ctrl+E)"
-          aria-label="Exportar mapa"
+          title={`${t(lang, 'topbar.export')} (Ctrl+E)`}
+          aria-label={t(lang, 'topbar.export')}
           className="ctl w-9 h-9 !min-h-0 px-0"
         >
           <Download className="w-4 h-4" aria-hidden="true" />
         </button>
 
-        <OverflowMenu entries={entries} label="Mais ferramentas" />
+        <OverflowMenu entries={entries} label={t(lang, 'topbar.menu')} />
       </div>
     </header>
   );

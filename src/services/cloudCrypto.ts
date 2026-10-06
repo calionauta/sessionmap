@@ -19,6 +19,8 @@
  *     whoever reads the disk both the lock and the key.
  */
 
+import type { Language } from '../i18n/strings';
+
 export const CLOUD_CRYPTO_ALG = 'pbkdf2-sha256-600000/aes-gcm-256';
 export const MIN_PASSPHRASE_LENGTH = 12;
 
@@ -49,9 +51,11 @@ export function isCryptoAvailable(): boolean {
 }
 
 /** Returns why a passphrase is unacceptable, or null when it is fine. */
-export function validatePassphrase(passphrase: string): string | null {
+export function validatePassphrase(passphrase: string, lang: Language = 'pt'): string | null {
   if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
-    return `Use pelo menos ${MIN_PASSPHRASE_LENGTH} caracteres — uma frase que só você saiba.`;
+    return lang === 'en'
+      ? `Use at least ${MIN_PASSPHRASE_LENGTH} characters — a sentence only you know.`
+      : `Use pelo menos ${MIN_PASSPHRASE_LENGTH} caracteres — uma frase que só você saiba.`;
   }
   return null;
 }

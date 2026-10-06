@@ -12,7 +12,7 @@
  * True when the keystroke belongs to a field the BROWSER is editing.
  *
  * Ctrl+Z is the browser's undo, not ours, wherever there is a text field with
- * its own history. The window handler in TherapistView was calling
+ * its own history. The window handler in HostView was calling
  * preventDefault() and applying a TREE undo — and the tree history has no entry
  * for "typed this" or "deleted this", because typing is recorded with reason
  * 'typing' and deliberately never enters it. A host who selected the whole

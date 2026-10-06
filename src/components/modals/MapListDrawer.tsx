@@ -25,6 +25,8 @@ import {
 import { downloadFile } from '../../utils/export';
 import { useDialogA11y, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface MapListDrawerProps {
   isOpen: boolean;
@@ -82,6 +84,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
   }, [isOpen]);
 
   const onKeyDown = useDialogA11y(panelRef, isOpen, onClose);
+  const lang = useLang();
 
   // A drawer is not a Modal: the name "theme" is kept in the props for
   // API compatibility but the shell now reads tokens from index.css.
@@ -172,16 +175,16 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               id="map-drawer-title"
               className="text-base font-extrabold text-content"
             >
-              Mapas &amp; Sessões
+              {t(lang, 'maplist.title')}
             </h2>
             <p className="text-xs text-content-muted font-medium">
-              {maps.length} {maps.length === 1 ? 'mapa salvo' : 'mapas salvos'} neste navegador
+              {t(lang, maps.length === 1 ? 'maplist.count.one' : 'maplist.count.many').replace('{n}', String(maps.length))}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fechar Mapas e Sessões"
+            aria-label={t(lang, 'maplist.close')}
             className="ctl w-9 h-9 !min-h-0 px-0 shrink-0"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -199,27 +202,27 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
             className="ctl ctl-primary w-full"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
-            <span>Novo Mapa</span>
+            <span>{t(lang, 'maplist.new')}</span>
           </button>
 
           {/* Active / Archived switch. Archived sessions are excluded from the
               working list entirely — including the map picker and the session
               exports — so a finished case never competes with a live one. */}
-          <div role="tablist" aria-label="Sessões ativas ou arquivadas" className="flex p-1 bg-surface-inset rounded-xl border border-line">
+          <div role="tablist" aria-label={t(lang, 'maplist.tabs')} className="flex p-1 bg-surface-inset rounded-xl border border-line">
             {(
               [
-                { key: 'active' as const, label: 'Ativas' },
-                { key: 'archived' as const, label: 'Arquivadas' },
+                { key: 'active' as const, label: t(lang, 'maplist.tab.active') },
+                { key: 'archived' as const, label: t(lang, 'maplist.tab.archived') },
               ]
-            ).map((t) => (
+            ).map((tab) => (
               <button
-                key={t.key}
+                key={tab.key}
                 type="button"
                 role="tab"
-                aria-selected={view === t.key}
+                aria-selected={view === tab.key}
                 aria-controls="map-list-panel"
-                tabIndex={view === t.key ? 0 : -1}
-                onClick={() => setView(t.key)}
+                tabIndex={view === tab.key ? 0 : -1}
+                onClick={() => setView(tab.key)}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
@@ -227,14 +230,14 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                   }
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                  view === t.key
+                  view === tab.key
                     ? 'bg-surface-raised text-content shadow-xs'
                     : 'text-content-muted hover:text-content'
                 }`}
               >
-                {t.label}
+                {tab.label}
                 <span className="ml-1.5 font-mono text-[10px] opacity-70">
-                  {t.key === 'active' ? activeCount : archivedCount}
+                  {tab.key === 'active' ? activeCount : archivedCount}
                 </span>
               </button>
             ))}
@@ -246,14 +249,14 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               aria-hidden="true"
             />
             <label htmlFor="map-search" className="sr-only">
-              Buscar mapa por participante ou anotação
+              {t(lang, 'maplist.search.label')}
             </label>
             <input
               id="map-search"
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por participante ou anotação…"
+              placeholder={t(lang, 'maplist.search.placeholder')}
               className="w-full pl-9 pr-3 py-2 text-xs rounded-control border border-line bg-surface font-medium text-content placeholder:text-content-subtle"
             />
           </div>
@@ -261,7 +264,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
           {modalities.length > 0 && (
             <div className="flex items-center gap-1.5">
               <label htmlFor="map-modality-filter" className="sr-only">
-                Filtrar por tipo
+                {t(lang, 'maplist.filter.label')}
               </label>
               <select
                 id="map-modality-filter"
@@ -269,13 +272,13 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                 onChange={(e) => setModalityFilter(e.target.value)}
                 className="w-full h-9 px-2 text-xs rounded-control border border-line bg-surface font-bold text-content"
               >
-                <option value="all">Todos os tipos</option>
+                <option value="all">{t(lang, 'maplist.filter.all')}</option>
                 {modalities.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
                 ))}
-                <option value="none">Sem tipo</option>
+                <option value="none">{t(lang, 'common.noType')}</option>
               </select>
             </div>
           )}
@@ -287,22 +290,24 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
             <div className="py-12 text-center text-xs font-medium text-content-muted">
               {search ? (
                 <>
-                  Nenhum mapa encontrado para <strong>&quot;{search}&quot;</strong>.
+                  {t(lang, 'maplist.empty.foundA')} <strong>&quot;{search}&quot;</strong>.
                   <br />
-                  Tente outro termo.
+                  {t(lang, 'maplist.empty.tryOther')}
                 </>
               ) : (
-                'Nenhum mapa salvo ainda. Crie o primeiro para começar.'
+                t(lang, 'maplist.empty.none')
               )}
             </div>
           ) : (
             filteredMaps.map((m) => {
               const isActive = m.id === activeMapId;
               const nodeCount = countTotalNodes(m.root);
-              const formattedDate = new Date(m.updatedAt).toLocaleDateString('pt-BR', {
+              const formattedDate = new Date(m.updatedAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', {
                 day: '2-digit',
                 month: 'short',
               });
+              const untitled = m.title || t(lang, 'maplist.untitled');
+              const untitledAria = m.title || t(lang, 'maplist.untitledAria');
 
               return (
                 <div
@@ -325,16 +330,16 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                     >
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold truncate text-content">
-                          {m.title || 'Sem título'}
+                          {m.title || t(lang, 'maplist.untitled')}
                         </h4>
                         {isActive && (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded bg-accent text-content-onaccent uppercase tracking-wide">
-                            ativo
+                            {t(lang, 'maplist.activeBadge')}
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] font-medium text-content-muted truncate mt-0.5">
-                        Tema: {m.root.text}
+                        {t(lang, 'maplist.theme').replace('{t}', m.root.text)}
                       </p>
                       <div className="mt-1">
                         <ModalityBadge
@@ -351,7 +356,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => startRename(m.id, m.title)}
-                        aria-label={`Renomear ${m.title || 'mapa sem título'}`}
+                        aria-label={t(lang, 'maplist.rename').replace('{t}', untitledAria)}
                         className="ctl w-8 h-8 !min-h-0 px-0"
                       >
                         <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -359,7 +364,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => onDuplicateMap(m)}
-                        aria-label={`Duplicar ${m.title || 'mapa sem título'}`}
+                        aria-label={t(lang, 'maplist.duplicate').replace('{t}', untitledAria)}
                         className="ctl w-8 h-8 !min-h-0 px-0"
                       >
                         <Copy className="w-3.5 h-3.5" aria-hidden="true" />
@@ -369,8 +374,8 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => onArchiveMap(m, false)}
-                            aria-label={`Restaurar ${m.title || 'mapa sem título'}`}
-                            title="Restaurar para ativas"
+                            aria-label={t(lang, 'maplist.restore').replace('{t}', untitledAria)}
+                            title={t(lang, 'maplist.restoreTitle')}
                             className="ctl w-8 h-8 !min-h-0 px-0"
                           >
                             <ArchiveRestore className="w-3.5 h-3.5" aria-hidden="true" />
@@ -378,8 +383,8 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => setPendingDelete(m)}
-                            aria-label={`Excluir definitivamente ${m.title || 'mapa sem título'}`}
-                            title="Excluir definitivamente"
+                            aria-label={t(lang, 'maplist.deleteForever').replace('{t}', untitledAria)}
+                            title={t(lang, 'maplist.deleteForeverTitle')}
                             className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -390,8 +395,8 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => setPendingArchive(m)}
-                            aria-label={`Arquivar ${m.title || 'mapa sem título'}`}
-                            title="Arquivar sessão"
+                            aria-label={t(lang, 'maplist.archive').replace('{t}', untitledAria)}
+                            title={t(lang, 'maplist.archiveTitle')}
                             className="ctl w-8 h-8 !min-h-0 px-0"
                           >
                             <Archive className="w-3.5 h-3.5" aria-hidden="true" />
@@ -402,7 +407,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => onDeleteMapWithUndo(m)}
-                            aria-label={`Excluir ${m.title || 'mapa sem título'}`}
+                            aria-label={t(lang, 'maplist.delete').replace('{t}', untitledAria)}
                             className="ctl ctl-danger w-8 h-8 !min-h-0 px-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -418,14 +423,14 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       <>
                         <span className="flex items-center gap-1 uppercase tracking-wide text-caution">
                           <Archive className="w-3 h-3" aria-hidden="true" />
-                          <span>arquivada</span>
+                          <span>{t(lang, 'maplist.archivedBadge')}</span>
                         </span>
                         <span aria-hidden="true">·</span>
                       </>
                     )}
                     <span className="flex items-center gap-1 font-mono">
                       <Layers className="w-3 h-3 text-accent-text" aria-hidden="true" />
-                      <span>{nodeCount} balões</span>
+                      <span>{t(lang, 'maplist.nodes').replace('{n}', String(nodeCount))}</span>
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="flex items-center gap-1 font-mono">
@@ -440,7 +445,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       className="flex items-center gap-1.5 mt-2 pt-2 border-t border-line"
                     >
                       <label htmlFor={`rename-${m.id}`} className="sr-only">
-                        Novo nome do mapa
+                        {t(lang, 'maplist.renameLabel')}
                       </label>
                       <input
                         id={`rename-${m.id}`}
@@ -455,7 +460,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                       />
                       <button
                         type="submit"
-                        aria-label="Confirmar novo nome"
+                        aria-label={t(lang, 'maplist.renameConfirm')}
                         className="ctl ctl-primary w-8 h-8 !min-h-0 px-0"
                       >
                         <Check className="w-3.5 h-3.5" aria-hidden="true" />
@@ -472,7 +477,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
         <div className="p-4 border-t border-line bg-surface flex items-center justify-between shrink-0">
           <button type="button" onClick={handleBackupAll} className="ctl">
             <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Fazer Backup Completo (JSON)</span>
+            <span>{t(lang, 'maplist.backup')}</span>
           </button>
           <button
             type="button"
@@ -481,12 +486,12 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
             disabled={archivedCount === 0}
             title={
               archivedCount === 0
-                ? 'Nenhuma sessão arquivada para restaurar'
-                : 'Restaurar todas as sessões arquivadas'
+                ? t(lang, 'maplist.restoreNone')
+                : t(lang, 'maplist.restoreAll')
             }
           >
             <ArchiveRestore className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Restaurar arquivadas ({archivedCount})</span>
+            <span>{t(lang, 'maplist.restoreArchived').replace('{n}', String(archivedCount))}</span>
           </button>
         </div>
       </div>
@@ -495,9 +500,9 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
           would sit within the drawer's own focus trap and be unreachable. */}
       <ConfirmDialog
         isOpen={pendingArchive !== null}
-        title="Arquivar esta sessão?"
-        confirmLabel="Arquivar sessão"
-        cancelLabel="Manter ativa"
+        title={t(lang, 'maplist.archiveTitle2')}
+        confirmLabel={t(lang, 'maplist.archiveConfirm')}
+        cancelLabel={t(lang, 'maplist.archiveKeep')}
         onCancel={() => setPendingArchive(null)}
         onConfirm={() => {
           if (pendingArchive) onArchiveMap(pendingArchive, true);
@@ -507,13 +512,13 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
           pendingArchive ? (
             <>
               <p>
-                A sessão de <strong>{pendingArchive.clientName}</strong> em{' '}
+                {t(lang, 'maplist.sessionOf')} <strong>{pendingArchive.clientName}</strong>{' '}
+                {t(lang, 'maplist.sessionOn')}{' '}
                 <strong>{pendingArchive.sessionDate || pendingArchive.title}</strong>{' '}
-                sai da lista de ativas e passa para Arquivadas.
+                {t(lang, 'maplist.archiveMoves')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Nada é apagado: você continua podendo consultar, restaurar ou
-                excluir em &quot;Arquivadas&quot;.
+                {t(lang, 'maplist.archiveNothingLost')}
               </p>
             </>
           ) : null
@@ -522,10 +527,10 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
 
       <ConfirmDialog
         isOpen={pendingDelete !== null}
-        title="Excluir definitivamente?"
+        title={t(lang, 'maplist.deleteTitle')}
         isDestructive
-        confirmLabel="Excluir para sempre"
-        cancelLabel="Manter arquivada"
+        confirmLabel={t(lang, 'maplist.deleteConfirm')}
+        cancelLabel={t(lang, 'maplist.deleteKeep')}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
           if (pendingDelete) onDeleteMapWithUndo(pendingDelete);
@@ -535,13 +540,13 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
           pendingDelete ? (
             <>
               <p>
-                A sessão de <strong>{pendingDelete.clientName}</strong> em{' '}
+                {t(lang, 'maplist.sessionOf')} <strong>{pendingDelete.clientName}</strong>{' '}
+                {t(lang, 'maplist.sessionOn')}{' '}
                 <strong>{pendingDelete.sessionDate || pendingDelete.title}</strong>{' '}
-                será removida deste navegador.
+                {t(lang, 'maplist.deleteRemoved')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Esta ação é definitiva e não há servidor: o apagamento é local.
-                Arquivar em vez de excluir deixa o registro recuperável.
+                {t(lang, 'maplist.deleteFinal')}
               </p>
             </>
           ) : null

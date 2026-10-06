@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { Maximize2, Minus, Plus, RotateCcw, Target } from "lucide-react";
 import { MindMapNode } from "../../types";
+import { t } from "../../i18n/strings";
+import { useLang } from "../../i18n/LanguageContext";
 import { useMindMapLayout } from "./useMindMapLayout";
 import { BalloonNode } from "./BalloonNode";
 import { findPathToNode } from "../../utils/tree";
@@ -43,7 +45,7 @@ interface MindMapCanvasProps {
    * canvas. The floating "what am I editing" mirror uses it to stay out of the
    * way: the canvas already shows the target by highlighting and (with focus
    * zoom) centring it, so the mirror only earns its space when the target is
-   * off-screen. See TherapistView for the collision this removes.
+   * off-screen. See HostView for the collision this removes.
    */
   svgRef?: React.RefObject<SVGSVGElement | null>;
 }
@@ -65,6 +67,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   onToggleCollapse,
   svgRef: externalSvgRef,
 }) => {
+  const lang = useLang();
   const localSvgRef = useRef<SVGSVGElement | null>(null);
   const svgRef = externalSvgRef || localSvgRef;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -541,8 +544,10 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   const highlightStroke = "var(--accent-text)";
 
   const mapLabel = clientName
-    ? `Mapa mental da sessão com ${clientName}${sessionDate ? `, ${sessionDate}` : ""}`
-    : "Mapa mental da sessão";
+    ? t(lang, 'canvas.mapWith')
+        .replace('{client}', clientName)
+        .replace('{date}', sessionDate ? `, ${sessionDate}` : '')
+    : t(lang, 'canvas.mapGeneric');
 
   return (
     <div
@@ -572,8 +577,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           a screen-reader user on every focus. */}
       <p id="mapa-teclas" className="sr-only">
         {onToggleCollapse
-          ? "Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis, a seta para a direita abre ou entra no primeiro filho, a seta para a esquerda fecha ou volta ao pai, e Enter ou Espaço selecionam o ponto em modo edição. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo."
-          : "Use Tab para entrar no mapa. Com um ponto selecionado, as setas para cima e para baixo movem entre os pontos visíveis e Enter ou Espaço selecionam o ponto. Com o mapa selecionado, use mais e menos para ajustar o zoom, as setas para deslocar e Ctrl+0 para enquadrar tudo."}
+          ? t(lang, 'canvas.keys.full')
+          : t(lang, 'canvas.keys.readonly')}
       </p>
 
       <svg
@@ -770,11 +775,11 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
               type="button"
               onClick={onToggleFocusZoomMode}
               aria-pressed={focusZoomMode}
-              aria-label="Zoom no Foco"
+              aria-label={t(lang, 'canvas.zoomFocus')}
               title={
                 focusZoomMode
-                  ? "Foco com Zoom ATIVADO (aproxima o nó, pais e filhos ao navegar no outline)"
-                  : "Ativar Foco com Zoom (aproxima nó + pais + filhos ao navegar)"
+                  ? t(lang, 'canvas.zoomFocus.on')
+                  : t(lang, 'canvas.zoomFocus.off')
               }
               className={`flex min-h-touch min-w-touch items-center justify-center gap-1 rounded-control px-2.5 text-xs font-semibold transition-colors @min-[24rem]:px-3 ${
                 focusZoomMode
@@ -784,7 +789,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
             >
               <Target className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span className="hidden whitespace-nowrap @min-[24rem]:inline">
-                Zoom no Foco
+                {t(lang, 'canvas.zoomFocus')}
               </span>
             </button>
             <div
@@ -798,8 +803,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           type="button"
           onClick={() => zoomBy(ZOOM_STEP)}
           disabled={transform.k >= MAX_ZOOM}
-          aria-label="Aumentar zoom"
-          title="Aumentar zoom (+)"
+          aria-label={t(lang, 'canvas.zoomIn')}
+          title={`${t(lang, 'canvas.zoomIn')} (+)`}
           className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
         >
           <Plus className="w-4 h-4" aria-hidden="true" />
@@ -808,8 +813,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           type="button"
           onClick={() => zoomBy(1 / ZOOM_STEP)}
           disabled={transform.k <= MIN_ZOOM}
-          aria-label="Diminuir zoom"
-          title="Diminuir zoom (-)"
+          aria-label={t(lang, 'canvas.zoomOut')}
+          title={`${t(lang, 'canvas.zoomOut')} (-)`}
           className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
         >
           <Minus className="w-4 h-4" aria-hidden="true" />
@@ -821,8 +826,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         <button
           type="button"
           onClick={fitToScreen}
-          aria-label="Ajustar mapa à tela"
-          title="Ajustar mapa à tela (Ctrl+0)"
+          aria-label={t(lang, 'canvas.fit')}
+          title={`${t(lang, 'canvas.fit')} (Ctrl+0)`}
           className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 transition-colors"
         >
           <Maximize2 className="w-4 h-4" aria-hidden="true" />
@@ -830,8 +835,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         <button
           type="button"
           onClick={resetZoom}
-          aria-label="Resetar zoom para 100%"
-          title="Resetar zoom para 100%"
+          aria-label={t(lang, 'canvas.reset')}
+          title={t(lang, 'canvas.reset')}
           className="flex min-h-touch min-w-touch items-center justify-center rounded-control hover:bg-content/10 transition-colors"
         >
           <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />

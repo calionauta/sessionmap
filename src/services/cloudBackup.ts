@@ -14,6 +14,7 @@
  */
 
 import { CloudBackupState } from '../types';
+import type { Language } from '../i18n/strings';
 import {
   buildFullBackup,
   restoreFullBackup,
@@ -92,11 +93,13 @@ export function clearBackupError(): CloudBackupState {
 
 /** Proves a passphrase by sealing and opening a probe: no network, no
  *  side effects. Used when enabling, before anything is trusted. */
-export async function provePassphrase(passphrase: string): Promise<void> {
+export async function provePassphrase(passphrase: string, lang: Language = 'pt'): Promise<void> {
   const probe = `sessionmap-probe:${Date.now()}`;
   const enc = await encryptBackup(probe, passphrase);
   const back = await decryptBackup(enc, passphrase);
-  if (back !== probe) throw new Error('Falha na verificação da senha.');
+  if (back !== probe) {
+    throw new Error(lang === 'en' ? 'Password verification failed.' : 'Falha na verificação da senha.');
+  }
 }
 
 export interface BackupResult {
@@ -108,8 +111,12 @@ export interface BackupResult {
  * Full manual backup: sign in (inside the click gesture), seal, upload,
  * record. Throws with a human sentence on any failure.
  */
-export async function backupNow(api: Puter, passphrase: string): Promise<BackupResult> {  if (!isCryptoAvailable()) {
-    throw new Error('Sem Web Crypto aqui (HTTP sem localhost?) — backup em nuvem indisponível.');
+export async function backupNow(api: Puter, passphrase: string, lang: Language = 'pt'): Promise<BackupResult> {  if (!isCryptoAvailable()) {
+    throw new Error(
+      lang === 'en'
+        ? 'No Web Crypto here (HTTP without localhost?) — cloud backup unavailable.'
+        : 'Sem Web Crypto aqui (HTTP sem localhost?) — backup em nuvem indisponível.'
+    );
   }
   if (!isSignedIn(api)) await signIn(api);
   const envelope = await buildFullBackup();
@@ -118,7 +125,7 @@ export async function backupNow(api: Puter, passphrase: string): Promise<BackupR
   try {
     await writeBackup(api, text);
   } catch (err) {
-    throw new Error(puterErrorMessage(err));
+    throw new Error(puterErrorMessage(err), { cause: err });
   }
   return { bytes: text.length, username: await getUsername(api) };
 }
@@ -140,7 +147,7 @@ export async function backupWithCachedPassphrase(api: Puter): Promise<BackupResu
   try {
     await writeBackup(api, text);
   } catch (err) {
-    throw new Error(puterErrorMessage(err));
+    throw new Error(puterErrorMessage(err), { cause: err });
   }
   return { bytes: text.length, username: await getUsername(api) };
 }
@@ -155,18 +162,20 @@ export interface RestorePreview {
 
 /** Downloads + decrypts + COUNTS, without writing a single record. The
  *  caller confirms the counts, then calls applyRestore. */
-export async function previewRestore(api: Puter, passphrase: string): Promise<RestorePreview> {
+export async function previewRestore(api: Puter, passphrase: string, lang: Language = 'pt'): Promise<RestorePreview> {
   let text: string;
   try {
     text = await readBackup(api);
   } catch (err) {
-    throw new Error(puterErrorMessage(err));
+    throw new Error(puterErrorMessage(err), { cause: err });
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error('O arquivo na nuvem não é um backup válido.');
+    throw new Error(
+      lang === 'en' ? 'The cloud file is not a valid backup.' : 'O arquivo na nuvem não é um backup válido.'
+    );
   }
   let json: string;
   try {
@@ -213,7 +222,7 @@ export async function listRemoteFiles(api: Puter): Promise<CloudFile[]> {
   try {
     return await listBackupFiles(api);
   } catch (err) {
-    throw new Error(puterErrorMessage(err));
+    throw new Error(puterErrorMessage(err), { cause: err });
   }
 }
 
@@ -247,33 +256,34 @@ export function describeCloudStatus(state: CloudBackupState): CloudStatus {
 
 /** One label for every surface (footer badge, top-bar pill): two wordings
  *  for the same state is how they disagree. */
-export function cloudBadgeLabel(status: CloudStatus): string {
+export function cloudBadgeLabel(status: CloudStatus, lang: Language = 'pt'): string {
+  const ago = (iso: string | null) => formatCloudAgo(Date.now(), iso, lang);
   switch (status.kind) {
     case 'locked':
-      return 'nuvem: aguardando senha';
+      return lang === 'en' ? 'cloud: waiting for password' : 'nuvem: aguardando senha';
     case 'error':
-      return 'nuvem: erro no último envio';
+      return lang === 'en' ? 'cloud: last upload failed' : 'nuvem: erro no último envio';
     case 'never':
-      return 'nuvem: nunca enviado';
+      return lang === 'en' ? 'cloud: never uploaded' : 'nuvem: nunca enviado';
     case 'ok':
-      return `nuvem ${formatCloudAgo(Date.now(), status.lastBackupAt)}`;
+      return lang === 'en' ? `cloud ${ago(status.lastBackupAt)}` : `nuvem ${ago(status.lastBackupAt)}`;
     default:
       return '';
   }
 }
 
 /** Short human relative time for the cloud labels. */
-export function formatCloudAgo(nowMs: number, iso: string | null): string {
-  if (!iso) return 'nunca';
+export function formatCloudAgo(nowMs: number, iso: string | null, lang: Language = 'pt'): string {
+  if (!iso) return lang === 'en' ? 'never' : 'nunca';
   const diff = Math.max(0, nowMs - new Date(iso).getTime());
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return 'agora há pouco';
-  if (min < 60) return `há ${min}min`;
+  if (min < 1) return lang === 'en' ? 'just now' : 'agora há pouco';
+  if (min < 60) return lang === 'en' ? `${min}m ago` : `há ${min}min`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `há ${h}h`;
+  if (h < 24) return lang === 'en' ? `${h}h ago` : `há ${h}h`;
   const d = Math.floor(h / 24);
-  if (d < 7) return `há ${d}d`;
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  if (d < 7) return lang === 'en' ? `${d}d ago` : `há ${d}d`;
+  return new Date(iso).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
 /**

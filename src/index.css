@@ -220,7 +220,7 @@
 /* ------------------------------------------------------------------
    SC 2.3.3 / 2.2.2 — reduced motion
    The app runs 11 infinite animate-ping/animate-pulse instances and
-   86 transitions. A therapy session is long, so that content moves
+   86 transitions. A session is long, so that content moves
    for far longer than 5s. Kill it wholesale, then re-enable only the
    transitions that convey state rather than motion.
    ------------------------------------------------------------------ */

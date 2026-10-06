@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Modal } from './Modal';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 interface TypeToConfirmDialogProps {
   isOpen: boolean;
@@ -28,10 +30,11 @@ export const TypeToConfirmDialog: React.FC<TypeToConfirmDialogProps> = ({
   description,
   requireWord = 'APAGAR',
   confirmLabel,
-  cancelLabel = 'Cancelar',
+  cancelLabel,
   onConfirm,
   onCancel,
 }) => {
+  const lang = useLang();
   const [typed, setTyped] = useState('');
 
   // Fresh ritual every open: a word typed for yesterday's deletion must not
@@ -47,13 +50,13 @@ export const TypeToConfirmDialog: React.FC<TypeToConfirmDialogProps> = ({
       isOpen={isOpen}
       onClose={onCancel}
       title={title}
-      description="Sem desfazer: digite para confirmar"
+      description={t(lang, 'confirm.noUndo')}
       icon={<AlertTriangle className="w-5 h-5" />}
       maxWidth="max-w-md"
       footer={
         <>
           <button type="button" onClick={onCancel} className="ctl">
-            {cancelLabel}
+            {cancelLabel ?? t(lang, 'common.cancel')}
           </button>
           <button
             type="button"
@@ -73,7 +76,9 @@ export const TypeToConfirmDialog: React.FC<TypeToConfirmDialogProps> = ({
             htmlFor="type-to-confirm-input"
             className="block text-xs font-bold text-content uppercase tracking-wider mb-1.5"
           >
-            Digite <code className="font-mono">{requireWord}</code> para confirmar
+            {t(lang, 'confirm.typeToConfirm').split('{word}')[0]}
+            <code className="font-mono">{requireWord}</code>
+            {t(lang, 'confirm.typeToConfirm').split('{word}')[1]}
           </label>
           <input
             id="type-to-confirm-input"

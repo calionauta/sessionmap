@@ -41,6 +41,9 @@ import {
   writePendingRoot,
 } from '../services/storage';
 import { syncService } from '../services/sync';
+import { applyDocumentLanguage } from '../i18n/strings';
+import { LanguageContext, useLang } from '../i18n/LanguageContext';
+import { t } from '../i18n/strings';
 import {
   AUTO_BACKUP_IDLE_MS,
   AUTO_BACKUP_MAX_WAIT_MS,
@@ -66,13 +69,14 @@ const CloudBackupFooterBadge: React.FC<{
   onOpenSettings: () => void;
 }> = ({ cloud, onOpenSettings }) => {
   const status = describeCloudStatus(cloud);
-  const label = cloudBadgeLabel(status);
+  const lang = useLang();
+  const label = cloudBadgeLabel(status, lang);
   return (
     <button
       type="button"
       onClick={onOpenSettings}
-      title="Backup em nuvem — abrir configurações"
-      aria-label={`Backup em nuvem: ${label}. Abrir configurações.`}
+      title={`${t(lang, 'topbar.cloud.name')} — ${t(lang, 'topbar.cloud.open')}`}
+      aria-label={`${t(lang, 'topbar.cloud.name')}: ${label}. ${t(lang, 'topbar.cloud.open')}.`}
       className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
     >
       <Cloud className="w-3 h-3" aria-hidden="true" />
@@ -81,7 +85,7 @@ const CloudBackupFooterBadge: React.FC<{
   );
 };
 
-export const TherapistView: React.FC = () => {
+export const HostView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [maps, setMaps] = useState<MindMap[]>([]);
   /** Every session, archived included. Only the archive views read this. */
@@ -442,11 +446,14 @@ export const TherapistView: React.FC = () => {
   // Window A title. The client name IS shown here — see the ShareGuide
   // caveat below about screen-sharing the browser chrome.
   useEffect(() => {
+    const lang = settings.language;
     const title = activeMap
-      ? `PRIVADO · ${activeMap.clientName || 'Participante'} (${activeMap.sessionDate || activeMap.title})`
-      : 'PRIVADO · SessionMap';
+      ? t(lang, 'host.docTitle')
+          .replace('{client}', activeMap.clientName || t(lang, 'admin.detail.fallbackName'))
+          .replace('{session}', activeMap.sessionDate || activeMap.title)
+      : t(lang, 'host.docTitleFallback');
     document.title = title;
-  }, [activeMap]);
+  }, [activeMap, settings.language]);
 
   // Sync theme class to document.documentElement for consistent system-wide CSS & Tailwind dark mode
   useEffect(() => {
@@ -456,6 +463,11 @@ export const TherapistView: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
   }, [settings.theme]);
+
+  // Sync document language for assistive tech and translators.
+  useEffect(() => {
+    applyDocumentLanguage(settings.language);
+  }, [settings.language]);
 
   // Synchronize active map to client window
   useEffect(() => {
@@ -831,7 +843,7 @@ export const TherapistView: React.FC = () => {
     const newMap = createNewSession(client.id, client.name, {
       modalityId,
       templateMarkdown: template?.markdown ?? null,
-      title: `Sessão ${clientSessionCount + 1}`,
+      title: t(settings.language, 'host.newSessionTitle').replace('{n}', String(clientSessionCount + 1)),
     });
 
     await saveMap(newMap);
@@ -843,7 +855,7 @@ export const TherapistView: React.FC = () => {
     const newMap: MindMap = {
       ...target,
       id: `m_${Date.now().toString(36)}`,
-      title: `${target.title} (Cópia)`,
+      title: `${target.title} ${t(settings.language, 'host.copySuffix')}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -919,22 +931,22 @@ export const TherapistView: React.FC = () => {
   // Cloud pill for the top bar. Null while the feature is off, so the
   // default offline product shows nothing new. The hint answers "is it
   // automatic?" where the question arises: automatic uploads only while
-  // unlocked and online, ~1 min after saving; manual mode only sends on
-  // "Backup agora".
+  // unlocked and online, ~1 min after quiet (5 min ceiling) with a flush on
+  // tab hide; manual mode only sends on demand.
   const cloudStatus = describeCloudStatus(settings.cloudBackup);
   const cloudPill = settings.cloudBackup.enabled
     ? {
-        label: cloudBadgeLabel(cloudStatus),
+        label: cloudBadgeLabel(cloudStatus, settings.language),
         hint:
-          `Backup em nuvem: ${settings.cloudBackup.auto ? 'automático ligado' : 'manual'} · ` +
+          `${t(settings.language, 'topbar.cloud.name')}: ${settings.cloudBackup.auto ? t(settings.language, 'cloud.pill.auto') : t(settings.language, 'cloud.pill.manual')} · ` +
           (cloudStatus.kind === 'ok'
-            ? `último envio ${cloudStatus.lastBackupAt ? new Date(cloudStatus.lastBackupAt).toLocaleString('pt-BR') : ''}`
+            ? t(settings.language, 'cloud.pill.lastUpload').replace('{date}', cloudStatus.lastBackupAt ? new Date(cloudStatus.lastBackupAt).toLocaleString(settings.language === 'en' ? 'en-US' : 'pt-BR') : '')
             : cloudStatus.kind === 'locked'
-              ? 'pausado, aguardando a senha'
+              ? t(settings.language, 'cloud.pill.pausedLocked')
               : cloudStatus.kind === 'error'
-                ? `última tentativa falhou: ${cloudStatus.lastError ?? ''}`
-                : 'nenhum envio ainda') +
-          ' · abrir configurações',
+                ? t(settings.language, 'cloud.pill.lastFail').replace('{err}', cloudStatus.lastError ?? '')
+                : t(settings.language, 'cloud.pill.never')) +
+          ` · ${t(settings.language, 'cloud.pill.openSettings')}`,
         kind: cloudStatus.kind,
       }
     : null;
@@ -972,11 +984,12 @@ export const TherapistView: React.FC = () => {
       draftParentLabel =
         findNodeById(activeMap.root, draft.parentId)?.text?.trim() ?? '';
     }
-    if (!draftParentLabel) draftParentLabel = 'Tópico raiz';
-    draftVerb = draft.mode === 'add' ? 'Novo subitem em' : 'Em';
+    if (!draftParentLabel) draftParentLabel = t(settings.language, 'host.rootTopic');
+    draftVerb = draft.mode === 'add' ? t(settings.language, 'host.verb.add') : t(settings.language, 'host.verb.edit');
   }
 
   return (
+    <LanguageContext.Provider value={settings.language}>
     <div
       className="flex flex-col w-screen h-screen overflow-hidden bg-surface text-content"
     >
@@ -1038,7 +1051,7 @@ export const TherapistView: React.FC = () => {
             surface — which would be an empty screen mid-session. */}
         {showOutlinePane && activeMap && (
           <section
-            aria-label="Tópicos da sessão"
+            aria-label={t(settings.language, 'outline.section')}
             className="border-r border-line flex flex-col h-full relative"
             style={{ width: outlineFull ? '100%' : `${outlineWidthPercent}%` }}
           >
@@ -1075,7 +1088,7 @@ export const TherapistView: React.FC = () => {
                 takes the whole pane instead. */}
             <ClientNotesPanel
               clientId={activeMap.clientId}
-              clientName={activeMap.clientName || 'Participante'}
+              clientName={activeMap.clientName || t(settings.language, 'admin.detail.fallbackName')}
               expanded={notesExpanded}
               onExpandedChange={setNotesExpanded}
             />
@@ -1096,7 +1109,7 @@ export const TherapistView: React.FC = () => {
             {!maximizeOutline && (
               <div
                 role="separator"
-                aria-label="Largura dos tópicos"
+                aria-label={t(settings.language, 'host.splitter')}
                 aria-orientation="vertical"
                 aria-valuenow={Math.round(outlineWidthPercent)}
                 aria-valuemin={OUTLINE_MIN_PERCENT}
@@ -1149,11 +1162,11 @@ export const TherapistView: React.FC = () => {
             second screen — and a 62% pane of canvas is a large piece of the
             display doing nothing. */}
         {showMap && (
-        <section aria-label="Prévia do mapa" className="flex-1 flex flex-col h-full relative overflow-hidden">
+        <section aria-label={t(settings.language, 'host.mapPreview')} className="flex-1 flex flex-col h-full relative overflow-hidden">
           {/* Header Tag / Preview info */}
           <div className="absolute top-3 right-4 z-10 flex items-center gap-2 pointer-events-auto">
             <span className="text-[11px] font-bold text-content bg-surface-raised px-2.5 py-1 rounded-md border border-line shadow-2xs">
-              Prévia do Mapa (Espelho da Janela B)
+              {t(settings.language, 'host.mapPreviewBadge')}
             </span>
             <button
               type="button"
@@ -1167,8 +1180,8 @@ export const TherapistView: React.FC = () => {
                   handleUpdateSettings({ ...settings, maximizeOutline: false });
                 }
               }}
-              title="Maximizar prévia do mapa"
-              aria-label="Maximizar prévia do mapa, ocultando os tópicos"
+              title={t(settings.language, 'host.previewMax')}
+              aria-label={t(settings.language, 'host.previewMaxLong')}
               className="ctl w-9 h-9 !min-h-0 px-0"
             >
               <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -1210,7 +1223,7 @@ export const TherapistView: React.FC = () => {
                nearly unreachable and said nothing actionable when it was. */
             <div className="flex flex-col items-center justify-center gap-3 h-full p-6 text-center">
               <p className="text-content-muted text-xs font-medium">
-                Nenhuma sessão ativa neste navegador.
+                {t(settings.language, 'host.empty')}
               </p>
               {/* With no participants there is nobody to start a session for:
                   opening the picker would silently do nothing, which reads as
@@ -1225,7 +1238,7 @@ export const TherapistView: React.FC = () => {
                 className="ctl ctl-primary"
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>{clients.length === 0 ? 'Adicionar participante' : 'Nova sessão'}</span>
+                <span>{clients.length === 0 ? t(settings.language, 'host.addParticipant') : t(settings.language, 'host.newSession')}</span>
               </button>
             </div>
           )}
@@ -1265,11 +1278,11 @@ export const TherapistView: React.FC = () => {
               aria-live="polite"
               className="font-bold text-content"
             >
-              {saveStatus === 'salvando' ? 'Gravando…' : 'Salvo localmente'}
+              {saveStatus === 'salvando' ? t(settings.language, 'host.saving') : t(settings.language, 'host.savedLocal')}
             </span>
           </span>
           <span aria-hidden="true" className="text-content-subtle">·</span>
-          <span className="font-medium">100% offline & seguro</span>
+          <span className="font-medium">{t(settings.language, 'host.offlineSafe')}</span>
           {settings.cloudBackup.enabled && (
             <>
               <span aria-hidden="true" className="text-content-subtle">·</span>
@@ -1285,29 +1298,29 @@ export const TherapistView: React.FC = () => {
           <button
             type="button"
             onClick={handleUndo}
-            title="Desfazer (Ctrl+Z)"
-            aria-label="Desfazer"
+            title={t(settings.language, 'host.undoTitle')}
+            aria-label={t(settings.language, 'host.undo')}
             className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
           >
             <Undo2 className="w-3 h-3" aria-hidden="true" />
-            <span>Desfazer</span>
+            <span>{t(settings.language, 'host.undo')}</span>
           </button>
           <button
             type="button"
             onClick={handleRedo}
-            title="Refazer (Ctrl+Shift+Z)"
-            aria-label="Refazer"
+            title={t(settings.language, 'host.redoTitle')}
+            aria-label={t(settings.language, 'host.redo')}
             className="flex items-center gap-1 text-content hover:text-content-subtle cursor-pointer font-sans"
           >
             <Redo2 className="w-3 h-3" aria-hidden="true" />
-            <span>Refazer</span>
+            <span>{t(settings.language, 'host.redo')}</span>
           </button>
           <span aria-hidden="true" className="text-content-subtle">·</span>
           {/* The footer used to advertise Ctrl+Enter and Esc as if they were
               global shortcuts. Both are owned by the outline editor and only
               fire when focus is inside it, so the hint now says where they
               apply instead of promising a shortcut the app does not deliver. */}
-          <span><strong className="text-content font-bold">Ctrl+Enter</strong> / <strong className="text-content font-bold">Esc</strong> no outline</span>
+          <span><strong className="text-content font-bold">Ctrl+Enter</strong> / <strong className="text-content font-bold">Esc</strong> {t(settings.language, 'host.inOutline')}</span>
         </div>
       </footer>
 
@@ -1368,7 +1381,7 @@ export const TherapistView: React.FC = () => {
       <NewSessionDialog
         isOpen={pendingNewSessionClient !== null}
         onClose={() => setPendingNewSessionClient(null)}
-        clientName={pendingNewSessionClient?.name ?? 'Participante'}
+        clientName={pendingNewSessionClient?.name ?? t(settings.language, 'admin.detail.fallbackName')}
         defaultModalityId={
           (pendingNewSessionClient &&
             allMaps.find(
@@ -1403,16 +1416,17 @@ export const TherapistView: React.FC = () => {
           aria-live="polite"
           className="fixed bottom-10 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-raised border border-line text-content shadow-2xl text-xs"
         >
-          <span>Sessão "{deletedMapUndo.sessionDate || deletedMapUndo.title}" excluída.</span>
+          <span>{t(settings.language, 'admin.toast.sessionDeleted')} &quot;{deletedMapUndo.sessionDate || deletedMapUndo.title}&quot; {t(settings.language, 'admin.toast.deletedF')}</span>
           <button
             type="button"
             onClick={handleRestoreDeletedMap}
             className="font-bold text-accent-text hover:underline"
           >
-            Desfazer
+            {t(settings.language, 'admin.toast.undo')}
           </button>
         </div>
       )}
     </div>
+    </LanguageContext.Provider>
   );
 };

@@ -15,9 +15,9 @@ Grátis, open source, sem instalar: abre no navegador e funciona.
 
 1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
    tipo e, se quiser, um roteiro inicial).
-2. Abra a **Janela do Participante** e projete/compartilhe só ela.
+2. Clique em **Apresentar** e projete/compartilhe só a janela do participante.
 3. Digite os tópicos: cada linha vira um balão no mapa do participante, ao vivo.
-4. `Ctrl+.` pausa a tela do participante a qualquer momento.
+4. **Encerrar apresentação** fecha a janela; apresentar de novo reabre de onde parou.
 
 A janela do participante nunca mostra menus, outline, notas privadas nem o nome do
 participante na aba — só o mapa.
@@ -37,16 +37,18 @@ participante na aba — só o mapa.
 - **Local:** backup JSON completo (sessões, participantes, tipos, roteiros) com
   restore, além de Markdown/OPML/FreeMind/PNG/SVG e ZIPs por participante ou geral.
 - **Nuvem:** em Configurações → Backup em nuvem: conectar ao Puter, definir a
-  senha, enviar manual ou automático (~1 min após salvar). Apagar tudo exige
+  senha, enviar manual ou automático (~1 min após parar, teto de 5 min). Apagar tudo exige
   digitar `APAGAR`. Perdeu a senha? O local está intacto — recomece com uma
   nova que o próximo envio substitui o arquivo ilegível.
+- **Idioma:** Configurações → Idioma, PT ou EN para toda a interface
+  (detalhes em [FEATURES.md](./FEATURES.md)).
 
 ## Desenvolvimento
 
 ```bash
 bun install
 bun run dev      # http://localhost:3000
-bun test         # 265 testes
+bun test         # 276 testes
 bun run lint     # tsc --noEmit
 bun run build    # dist/ (publicado no GitHub Pages pela main)
 ```
@@ -59,7 +61,7 @@ bun run build    # dist/ (publicado no GitHub Pages pela main)
 
 ```
 src/
-  components/   # TherapistView, ClientView, mindmap, outline, modals, admin, ui
+  components/   # HostView, ClientView, mindmap, outline, modals, admin, ui
   services/     # storage (IDB), sync, export, cloudCrypto, puterCloud, cloudBackup
   utils/        # parser Markdown, árvore, layout, export
   types/        # MindMap, Client, Modality, SessionTemplate, Settings

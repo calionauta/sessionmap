@@ -1,4 +1,6 @@
 import React from 'react';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 
 /**
  * The bar that says what the host is typing right now.
@@ -36,7 +38,9 @@ export const TypingBar: React.FC<TypingBarProps> = ({
   visible,
   liveTextMode,
   className = '',
-}) => (
+}) => {
+  const lang = useLang();
+  return (
   /* Edge-anchored band with a 1rem gutter and a centred max-width, so its width
      is min(100% - 2rem, 36rem) at every viewport — fluid, not a breakpoint. It
      was `fixed bottom-6 left-1/2` with a `shrink-0` label, which at 375px could
@@ -65,7 +69,7 @@ export const TypingBar: React.FC<TypingBarProps> = ({
           renders. `min-w-0` is what lets the clamp engage inside a flex row. */}
       <div className="flex w-full min-w-0 items-baseline gap-1 sm:w-auto sm:flex-1">
         <span className="min-w-0 line-clamp-2 text-sm font-semibold tracking-tight sm:line-clamp-1">
-          {liveTextMode === 'confirm_only' ? 'digitando…' : text || '…'}
+          {liveTextMode === 'confirm_only' ? t(lang, 'typing.ellipsis') : text || '…'}
         </span>
         {liveTextMode === 'live' && (
           <span aria-hidden="true" className="shrink-0 animate-ping font-mono text-accent-text text-xs">
@@ -75,4 +79,5 @@ export const TypingBar: React.FC<TypingBarProps> = ({
       </div>
     </div>
   </div>
-);
+  );
+};

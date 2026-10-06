@@ -6,6 +6,7 @@ registerDom();
 const { render, fireEvent, cleanup, act, within } = await import('@testing-library/react');
 const React = await import('react');
 const { TopBar } = await import('./TopBar');
+const { LanguageContext } = await import('../i18n/LanguageContext');
 const { OverflowMenu } = await import('./ui/OverflowMenu');
 
 let container: HTMLElement | null = null;
@@ -361,5 +362,63 @@ describe('the narrow-window pane switch', () => {
     setup({ narrowPane: 'outline', isClientConnected: true });
     expect(buttons()).toHaveLength(5);
     expect(byLabel('Mais ferramentas')).not.toBeNull();
+  });
+});
+
+describe('the session bar in English', () => {
+  function setupEn(overrides: Overrides = {}) {
+    calls.length = 0;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    render(
+      React.createElement(
+        LanguageContext.Provider,
+        { value: 'en' },
+        React.createElement(TopBar, {
+          clientName: 'Maria',
+          sessionLabel: '28/09/2026',
+          isClientConnected: true,
+          focusZoomOn: false,
+          isDark: false,
+          canRestoreSplit: false,
+          narrowPane: null,
+          onSwapPane: () => calls.push('swapPane'),
+          onOpenClients: () => calls.push('clients'),
+          onOpenClientWindow: () => calls.push('clientWindow'),
+          onFocusClientWindow: () => calls.push('focusClient'),
+          onStopSharing: () => calls.push('stopSharing'),
+          onOpenMapList: () => calls.push('mapList'),
+          onToggleFocusZoom: () => calls.push('focusZoom'),
+          onOpenShareGuide: () => calls.push('share'),
+          onOpenExport: () => calls.push('export'),
+          onToggleTheme: () => calls.push('theme'),
+          onOpenSettings: () => calls.push('settings'),
+          onRestoreSplit: () => calls.push('restoreSplit'),
+          ...overrides,
+        })
+      ),
+      { container }
+    );
+  }
+
+  test('the share cluster speaks English', () => {
+    setupEn({ isClientConnected: false });
+    const present = buttons().find((b) => (b.textContent ?? '').includes('Present'))!;
+    expect(present.className).toContain('ctl-primary');
+    setupEn({ isClientConnected: true });
+    expect(bar().textContent).toContain('Live');
+    expect(bar().textContent).toContain('End presentation');
+    expect(bar().textContent).not.toContain('Apresentar');
+  });
+
+  test('the menu speaks English', () => {
+    setupEn();
+    act(() => {
+      fireEvent.click(byLabel('More tools'));
+    });
+    const text = bar().querySelector('[role="menu"]')!.textContent ?? '';
+    for (const label of ['Maps and sessions', 'Focus zoom', 'Sharing guide', 'Settings']) {
+      expect(text).toContain(label);
+    }
   });
 });

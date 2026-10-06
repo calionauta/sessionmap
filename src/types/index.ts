@@ -107,6 +107,9 @@ export interface CloudBackupState {
 
 export interface Settings {
   theme: 'papel' | 'noite';
+  /** UI language. PT-first product; EN is opt-in via Settings. Seeds and
+      user-authored templates stay in the language they were written. */
+  language: 'pt' | 'en';
   liveTextMode: 'live' | 'confirm_only';
   thinBarAlwaysVisible: boolean;
   autoFitOnAdd: boolean;

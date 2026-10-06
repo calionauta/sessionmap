@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 import {
   NotebookPen,
   ChevronUp,
@@ -46,6 +48,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
   expanded,
   onExpandedChange,
 }) => {
+  const lang = useLang();
   /**
    * Three states, because one boolean could not express what the notes are
    * for.
@@ -197,7 +200,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             <ChevronUp className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           )}
           <NotebookPen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          <span className="shrink-0">Anotações</span>
+          <span className="shrink-0">{t(lang, 'notes.title')}</span>
           <span className="min-w-0 truncate text-content-subtle">
             {clientName}
           </span>
@@ -213,12 +216,12 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           {state === 'saving' ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
-              <span className="sr-only">Salvando anotações</span>
+              <span className="sr-only">{t(lang, 'notes.saving')}</span>
             </>
           ) : state === 'saved' ? (
             <>
               <Check className="w-3 h-3 text-positive" aria-hidden="true" />
-              <span className="sr-only">Anotações salvas</span>
+              <span className="sr-only">{t(lang, 'notes.saved')}</span>
             </>
           ) : null}
         </span>
@@ -230,8 +233,8 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           <button
             type="button"
             onClick={() => setMode((m) => (m === 'expanded' ? 'panel' : 'expanded'))}
-            aria-label={isExpanded ? 'Reduzir anotações' : 'Expandir anotações para todo o espaço'}
-            title={isExpanded ? 'Reduzir' : 'Expandir para todo o espaço'}
+            aria-label={isExpanded ? t(lang, 'notes.collapse') : t(lang, 'notes.expand')}
+            title={isExpanded ? t(lang, 'notes.collapseShort') : t(lang, 'notes.expandShort')}
             className="ctl w-7 h-7 !min-h-0 px-0 shrink-0"
           >
             {isExpanded ? (
@@ -256,7 +259,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           }`}
         >
           <label htmlFor="client-notes-textarea" className="sr-only">
-            Anotações livres sobre {clientName}. Não aparecem para o participante.
+            {t(lang, 'notes.label').replace('{name}', clientName)}
           </label>
           <textarea
             id="client-notes-textarea"
@@ -275,8 +278,8 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             disabled={!clientId || loading}
             placeholder={
               clientId
-                ? 'Observações sobre este participante: contexto, histórico, pontos de atenção. Ficam guardadas com ele e somem se ele for excluído. Não aparecem para o participante.'
-                : 'Abra uma sessão para ter um participante associado.'
+                ? t(lang, 'notes.placeholderClient')
+                : t(lang, 'notes.placeholderNone')
             }
             /* Both open states fill the box they are given, so resize-none: a
                manual drag on top of a flex-fill box fights the layout and
@@ -287,7 +290,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             }`}
           />
           <p className="mt-1 shrink-0 text-[10px] text-content-subtle">
-            Visível só para você. Não é compartilhado com a janela do participante.
+            {t(lang, 'notes.footnote')}
           </p>
         </div>
       )}

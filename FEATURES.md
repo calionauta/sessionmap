@@ -97,6 +97,8 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 ## Personalização
 
 - Temas **papel/noite** aplicados antes da primeira pintura (sem flash claro).
+- **Idioma PT/EN** em Configurações (PT padrão); vale para toda a interface e
+  sincroniza `document.lang`. Sementes e roteiros ficam no idioma em que foram escritos.
 - Escala de fonte dos tópicos e dos balões separadas; modos ao-vivo/só-ao-Enter;
   barra fina sempre visível ou temporária.
 
@@ -104,7 +106,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 
 | Onde | Teclas |
 |---|---|
-| Global | `Ctrl+.` pausa · `Ctrl+E` exportar · `Ctrl+Z` / `Ctrl+Shift+Z` desfazer/refazer (fora de texto) |
+| Global | `Ctrl+E` exportar · `Ctrl+Z` / `Ctrl+Shift+Z` desfazer/refazer (fora de texto) |
 | Outline | `Enter` novo tópico · `Shift+Enter` quebra suave · `Tab`/`Shift+Tab` nível · `Esc` solta |
 | Mapa | `+`/`-` zoom · setas pan/navegação · `Ctrl+0` enquadrar · `Enter`/`Espaço` selecionar |
 | Painel | `Home` largura mínima · `Esc` fecha diálogos |

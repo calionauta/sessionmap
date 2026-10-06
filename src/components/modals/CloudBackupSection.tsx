@@ -49,6 +49,7 @@ import {
 import { Divider } from '../ui/Controls';
 import { ConfirmDialog } from '../ui/Modal';
 import { TypeToConfirmDialog } from '../ui/TypeToConfirmDialog';
+import { t } from '../../i18n/strings';
 
 interface CloudBackupSectionProps {
   settings: Settings;
@@ -72,7 +73,15 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
   onCloudRestore,
 }) => {
   const cloud = settings.cloudBackup;
+  const lang = settings.language;
   const status = describeCloudStatus(cloud);
+
+  /** Maps through the original error when a service wrapped it, so the
+      sentence renders in the current language instead of the wrapped one. */
+  const uiError = (e: unknown): string => {
+    const cause = (e as { cause?: unknown } | null)?.cause;
+    return puterErrorMessage(cause ?? e, lang);
+  };
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,12 +119,10 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       <div className="p-4 rounded-panel border border-caution/40 bg-surface-sunken text-xs">
         <h3 className="font-bold text-content flex items-center gap-1.5">
           <CloudOff className="w-4 h-4" aria-hidden="true" />
-          Backup em nuvem indisponível aqui
+          {t(lang, 'cloud.unavailable.title')}
         </h3>
         <p className="mt-1 font-medium text-content-muted">
-          A cifragem exige Web Crypto, que só existe em HTTPS ou localhost. Por
-          HTTP na rede local o backup em nuvem fica desligado — de propósito:
-          sem cripto, nada sobe.
+          {t(lang, 'cloud.unavailable.body')}
         </p>
       </div>
     );
@@ -126,9 +133,9 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
 
   const fail = (e: unknown) => {
     // Everything funnels through puterErrorMessage: our own Errors carry
-    // Portuguese sentences that pass through untouched, coded rejections
-    // get mapped, and offline surfaces first.
-    const message = puterErrorMessage(e);
+    // sentences that pass through untouched, coded rejections get mapped,
+    // and offline surfaces first.
+    const message = uiError(e);
     recordBackupError(message);
     syncSettings();
     setError(message);
@@ -156,10 +163,12 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       });
       await refreshRemote(api);
       setNotice(
-        username ? `Conectado como ${username}.` : 'Conectado ao Puter.'
+        username
+          ? t(lang, 'cloud.connect.connectedAs').replace('{user}', username)
+          : t(lang, 'cloud.connect.connected')
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : puterErrorMessage(e));
+      setError(uiError(e));
     } finally {
       setBusy(null);
     }
@@ -182,13 +191,13 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
   };
 
   const handleEnable = async () => {
-    const problem = validatePassphrase(password);
+    const problem = validatePassphrase(password, lang);
     if (problem) {
       setError(problem);
       return;
     }
     if (password !== passwordConfirm) {
-      setError('As duas senhas não conferem.');
+      setError(t(lang, 'cloud.pw.mismatch'));
       return;
     }
     setBusy('enable');
@@ -196,12 +205,12 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     setNotice(null);
     try {
       // Prove the passphrase seals AND opens before anything is trusted.
-      await provePassphrase(password);
+      await provePassphrase(password, lang);
       const api = apiRef.current ?? (await loadPuter());
       apiRef.current = api;
       if (!isSignedIn(api)) await signIn(api);
       const username = await getUsername(api);
-      await backupNow(api, password);
+      await backupNow(api, password, lang);
       unlock(password);
       recordBackupSuccess(username);
       onUpdateSettings({
@@ -210,7 +219,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       });
       setAccount(username);
       await refreshRemote(api);
-      setNotice('Backup em nuvem ativado: primeiro envio já cifrado e guardado.');
+      setNotice(t(lang, 'cloud.enable.done'));
     } catch (e) {
       fail(e);
     } finally {
@@ -221,7 +230,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
   const handleUnlock = async () => {
     const pw = needPassword();
     if (!pw) {
-      setError('Digite a senha do backup para desbloquear.');
+      setError(t(lang, 'cloud.unlock.needPassword'));
       return;
     }
     setBusy('unlock');
@@ -236,18 +245,18 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       if (remote.length > 0) {
         // A remote file exists: trial-decrypt proves the password. Wrong
         // password (or tampering) rejects here, before anything is trusted.
-        await previewRestore(api, pw);
+        await previewRestore(api, pw, lang);
       }
       unlock(pw);
       clearBackupError();
       syncSettings();
       setNotice(
         remote.length > 0
-          ? 'Senha conferida com o arquivo da nuvem. Backup automático retomado.'
-          : 'Desbloqueado. Ainda não há backup na nuvem.'
+          ? t(lang, 'cloud.unlock.doneWithRemote')
+          : t(lang, 'cloud.unlock.doneEmpty')
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : puterErrorMessage(e));
+      setError(uiError(e));
     } finally {
       setBusy(null);
     }
@@ -258,7 +267,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     setPassword('');
     setPasswordConfirm('');
     syncSettings();
-    setNotice('Senha esquecida neste navegador. O automático pausa até desbloquear.');
+    setNotice(t(lang, 'cloud.lock.done'));
   };
 
   /**
@@ -269,7 +278,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
    * for a lost passphrase; the alternative (no path) would brick the feature.
    */
   const handleResetPassword = () => {
-    const problem = validatePassphrase(password);
+    const problem = validatePassphrase(password, lang);
     if (problem) {
       setError(problem);
       return;
@@ -278,7 +287,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     clearBackupError();
     syncSettings();
     setNotice(
-      'Nova senha em uso. O backup antigo da nuvem ficou ilegível — o próximo envio o substitui.'
+      t(lang, 'cloud.reset.done')
     );
   };
 
@@ -287,7 +296,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     // fallback when unlocked. Locked AND empty field: ask, do not guess.
     const effective = password.trim() ? password : null;
     if (!effective && !isUnlocked()) {
-      setError('Digite a senha do backup para enviar.');
+      setError(t(lang, 'cloud.backup.needPassword'));
       return;
     }
     setBusy('backup');
@@ -298,7 +307,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       apiRef.current = api;
       const result = effective
         ? await (async () => {
-            const r = await backupNow(api, effective);
+            const r = await backupNow(api, effective, lang);
             unlock(effective);
             return r;
           })()
@@ -306,7 +315,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       recordBackupSuccess(result.username);
       syncSettings();
       await refreshRemote(api);
-      setNotice(`Enviado e cifrado (${formatBytes(result.bytes)}). A nuvem nunca vê o conteúdo.`);
+      setNotice(t(lang, 'cloud.backup.done').replace('{bytes}', formatBytes(result.bytes)));
     } catch (e) {
       fail(e);
     } finally {
@@ -317,7 +326,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
   const handlePreviewRestore = async () => {
     const effective = needPassword();
     if (!effective) {
-      setError('Digite a senha do backup para ler a nuvem.');
+      setError(t(lang, 'cloud.restore.needPassword'));
       return;
     }
     setBusy('restore');
@@ -327,11 +336,11 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       const api = apiRef.current ?? (await loadPuter());
       apiRef.current = api;
       if (!isSignedIn(api)) await signIn(api);
-      const preview = await previewRestore(api, effective);
+      const preview = await previewRestore(api, effective, lang);
       (apiRef as { previewPw?: string }).previewPw = effective;
       setPendingRestore(preview);
     } catch (e) {
-      setError(e instanceof Error ? e.message : puterErrorMessage(e));
+      setError(uiError(e));
     } finally {
       setBusy(null);
     }
@@ -347,9 +356,16 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       const api = apiRef.current ?? (await loadPuter());
       const counts = await applyRestore(api, pw);
       await onCloudRestore();
+      const mapsPart = t(
+        lang,
+        counts.maps === 1 ? 'export.restore.maps.one' : 'export.restore.maps.many'
+      ).replace('{n}', String(counts.maps));
+      const clientsPart = t(
+        lang,
+        counts.clients === 1 ? 'export.restore.clients.one' : 'export.restore.clients.many'
+      ).replace('{n}', String(counts.clients));
       setNotice(
-        `Restaurado da nuvem: ${counts.maps} ${counts.maps === 1 ? 'sessão' : 'sessões'}, ` +
-          `${counts.clients} ${counts.clients === 1 ? 'participante' : 'participantes'}.`
+        t(lang, 'cloud.restore.done').replace('{summary}', `${mapsPart}, ${clientsPart}`)
       );
     } catch (e) {
       fail(e);
@@ -369,12 +385,12 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       const remote = await listRemoteFiles(api);
       setFiles(remote);
       if (remote.length === 0) {
-        setNotice('A nuvem já está vazia: nada para apagar.');
+        setNotice(t(lang, 'cloud.delete.empty'));
         return;
       }
       setPendingDelete(remote);
     } catch (e) {
-      setError(e instanceof Error ? e.message : puterErrorMessage(e));
+      setError(uiError(e));
     } finally {
       setBusy(null);
     }
@@ -395,7 +411,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
         cloudBackup: { ...s.cloudBackup, lastBackupAt: null, lastError: null },
       });
       await refreshRemote(api);
-      setNotice('Tudo apagado da nuvem. O backup local continua intacto.');
+      setNotice(t(lang, 'cloud.delete.done'));
     } catch (e) {
       fail(e);
     } finally {
@@ -416,20 +432,26 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     setAccount(null);
     setFiles(null);
     setSpace(null);
-    setNotice('Desconectado do Puter e senha esquecida. Ative de novo quando quiser.');
+    setNotice(t(lang, 'cloud.disconnect.done'));
   };
 
   const statusLine = () => {
-    if (!cloud.enabled) return 'Desligado — tudo fica só neste navegador.';
+    if (!cloud.enabled) return t(lang, 'cloud.status.off');
     switch (status.kind) {
       case 'locked':
-        return 'Ligado, aguardando a senha para retomar.';
+        return t(lang, 'cloud.status.locked');
       case 'error':
-        return `Última tentativa falhou: ${status.lastError ?? 'erro'}`;
+        return t(lang, 'cloud.status.error').replace(
+          '{err}',
+          status.lastError ?? t(lang, 'cloud.status.errorFallback')
+        );
       case 'never':
-        return 'Ligado, nenhum envio ainda.';
+        return t(lang, 'cloud.status.never');
       case 'ok':
-        return `Último envio ${formatCloudAgo(Date.now(), status.lastBackupAt)}.`;
+        return t(lang, 'cloud.status.ok').replace(
+          '{ago}',
+          formatCloudAgo(Date.now(), status.lastBackupAt, lang)
+        );
       default:
         return '';
     }
@@ -438,23 +460,22 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
   return (
     <>
       <Divider />
-      <section aria-label="Backup em nuvem">
+      <section aria-label={t(lang, 'cloud.title')}>
         <h3 className="text-xs font-bold text-content uppercase tracking-wider flex items-center gap-1.5">
           {cloud.enabled ? (
             <Cloud className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
           ) : (
             <CloudOff className="w-3.5 h-3.5" aria-hidden="true" />
           )}
-          Backup em nuvem (Puter, cifrado)
+          {t(lang, 'cloud.title')}
         </h3>
         <p className="mt-1 text-[11px] font-medium text-content-muted">
-          Opcional e desligado por padrão. Quando ligado, cada envio é cifrado
-          <strong> neste navegador </strong>
-          antes de subir: a nuvem guarda só bytes ilegíveis, e a senha nunca
-          sai daqui. {statusLine()}
+          {t(lang, 'cloud.intro.a')}
+          <strong> {t(lang, 'cloud.intro.b')} </strong>
+          {t(lang, 'cloud.intro.c')} {statusLine()}
           {account && (
             <>
-              {' '}Conta: <strong>{account}</strong>.
+              {' '}{t(lang, 'cloud.account')} <strong>{account}</strong>.
             </>
           )}
         </p>
@@ -479,13 +500,13 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
               className="ctl w-full text-xs font-bold"
             >
               <Cloud className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>{busy === 'connect' ? 'Conectando…' : account ? `Conectado como ${account}` : '1 · Conectar ao Puter'}</span>
+              <span>{busy === 'connect' ? t(lang, 'cloud.connect.working') : account ? t(lang, 'cloud.connect.connectedAs').replace('{user}', account) : t(lang, 'cloud.connect.button')}</span>
             </button>
             {account && (
               <>
                 <div>
                   <label htmlFor="cloud-new-password" className="block text-xs font-bold text-content uppercase tracking-wider mb-1.5">
-                    2 · Senha do backup (só sua, mínimo {MIN_PASSPHRASE_LENGTH} caracteres)
+                    {t(lang, 'cloud.pw.label').replace('{n}', String(MIN_PASSPHRASE_LENGTH))}
                   </label>
                   <input
                     id="cloud-new-password"
@@ -493,13 +514,13 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                     autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Uma frase que só você saiba"
+                    placeholder={t(lang, 'cloud.pw.placeholder')}
                     className="w-full h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
                   />
                 </div>
                 <div>
                   <label htmlFor="cloud-new-password-confirm" className="block text-xs font-bold text-content uppercase tracking-wider mb-1.5">
-                    Confirmar a senha
+                    {t(lang, 'cloud.pw.confirm')}
                   </label>
                   <input
                     id="cloud-new-password-confirm"
@@ -507,13 +528,12 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                     autoComplete="new-password"
                     value={passwordConfirm}
                     onChange={(e) => setPasswordConfirm(e.target.value)}
-                    placeholder="Repita a frase"
+                    placeholder={t(lang, 'cloud.pw.confirmPlaceholder')}
                     className="w-full h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
                   />
                 </div>
                 <p className="text-[11px] font-medium text-content-muted">
-                  Sem a senha, nem você abre o backup depois — não há
-                  recuperação. Guarde-a onde guarda senhas.
+                  {t(lang, 'cloud.pw.warning')}
                 </p>
                 <button
                   type="button"
@@ -522,7 +542,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                   className="ctl ctl-primary w-full text-xs font-bold"
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>{busy === 'enable' ? 'Ativando e enviando…' : '3 · Ativar e fazer o primeiro envio'}</span>
+                  <span>{busy === 'enable' ? t(lang, 'cloud.enable.working') : t(lang, 'cloud.enable.button')}</span>
                 </button>
               </>
             )}
@@ -533,7 +553,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="flex-1 min-w-0">
                 <label htmlFor="cloud-password" className="sr-only">
-                  Senha do backup
+                  {t(lang, 'cloud.unlock.passwordLabel')}
                 </label>
                 <input
                   id="cloud-password"
@@ -541,7 +561,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isUnlocked() ? 'Desbloqueado ✓ (senha guardada só nesta sessão)' : 'Senha do backup'}
+                  placeholder={isUnlocked() ? t(lang, 'cloud.unlock.unlockedPlaceholder') : t(lang, 'cloud.unlock.passwordLabel')}
                   disabled={isUnlocked()}
                   className="w-full h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle disabled:opacity-60"
                 />
@@ -553,7 +573,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                   className="ctl text-xs font-bold shrink-0"
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Bloquear</span>
+                  <span>{t(lang, 'cloud.unlock.lockButton')}</span>
                 </button>
               ) : (
                 <button
@@ -563,7 +583,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                   className="ctl ctl-primary text-xs font-bold shrink-0"
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>{busy === 'unlock' ? 'Conferindo…' : 'Desbloquear'}</span>
+                  <span>{busy === 'unlock' ? t(lang, 'cloud.unlock.working') : t(lang, 'cloud.unlock.button')}</span>
                 </button>
               )}
             </div>
@@ -575,11 +595,10 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                   disabled={busy !== null}
                   className="text-[11px] font-bold text-content-muted hover:text-content underline underline-offset-2"
                 >
-                  Esqueci a senha — recomeçar com uma nova
+                  {t(lang, 'cloud.reset.forgot')}
                 </button>
                 <p className="mt-0.5 text-[11px] font-medium text-content-muted">
-                  O backup antigo da nuvem fica ilegível; o próximo envio o
-                  substitui. Nada no navegador muda.
+                  {t(lang, 'cloud.reset.oldStays')}
                 </p>
               </div>
             )}
@@ -587,9 +606,9 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
             {/* Auto */}
             <label className="flex items-center justify-between gap-3 p-2.5 rounded-control border border-line bg-surface-sunken cursor-pointer">
               <span className="text-xs font-bold text-content">
-                Backup automático
+                {t(lang, 'cloud.auto.title')}
                 <span className="block text-[11px] font-medium text-content-muted">
-                  Envia ~1 min após você parar (teto de 5 min), só desbloqueado e online. Nunca abre login sozinho.
+                  {t(lang, 'cloud.auto.desc')}
                 </span>
               </span>
               <input
@@ -601,7 +620,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                     cloudBackup: { ...getSettings().cloudBackup, auto: e.target.checked },
                   })
                 }
-                aria-label="Backup automático"
+                aria-label={t(lang, 'cloud.auto.title')}
                 className="w-5 h-5 accent-[var(--accent-text)] shrink-0"
               />
             </label>
@@ -615,7 +634,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                 className="ctl ctl-primary text-xs font-bold"
               >
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>{busy === 'backup' ? 'Enviando…' : 'Backup agora'}</span>
+                <span>{busy === 'backup' ? t(lang, 'cloud.backup.working') : t(lang, 'cloud.backup.button')}</span>
               </button>
               <button
                 type="button"
@@ -624,7 +643,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                 className="ctl text-xs font-bold"
               >
                 <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>{busy === 'restore' ? 'Lendo…' : 'Restaurar da nuvem'}</span>
+                <span>{busy === 'restore' ? t(lang, 'cloud.restore.working') : t(lang, 'cloud.restore.button')}</span>
               </button>
               <button
                 type="button"
@@ -637,7 +656,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                       apiRef.current = live;
                       await refreshRemote(live);
                     } catch (e) {
-                      setError(e instanceof Error ? e.message : puterErrorMessage(e));
+                      setError(uiError(e));
                     } finally {
                       setBusy(null);
                     }
@@ -647,7 +666,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                 className="ctl text-xs font-bold"
               >
                 <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Ver arquivos</span>
+                <span>{t(lang, 'cloud.files.button')}</span>
               </button>
             </div>
 
@@ -656,12 +675,14 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
               <div className="p-2.5 rounded-control border border-line bg-surface-sunken text-[11px]">
                 {space && (
                   <p className="font-mono font-bold text-content-muted">
-                    Puter: {formatBytes(space.used)} de {formatBytes(space.capacity)} usados
+                    Puter: {t(lang, 'cloud.space.used')
+                      .replace('{used}', formatBytes(space.used))
+                      .replace('{capacity}', formatBytes(space.capacity))}
                   </p>
                 )}
                 {files !== null && (
                   files.length === 0 ? (
-                    <p className="mt-1 font-medium text-content-muted">Nenhum arquivo do SessionMap na nuvem.</p>
+                    <p className="mt-1 font-medium text-content-muted">{t(lang, 'cloud.files.empty')}</p>
                   ) : (
                     <ul className="mt-1 space-y-1">
                       {files.map((f) => (
@@ -669,7 +690,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                           <span className="font-mono truncate">{f.name}</span>
                           <span className="shrink-0 font-mono">
                             {f.size !== null ? formatBytes(f.size) : '?'}
-                            {f.modified ? ` · ${new Date(f.modified).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
+                            {f.modified ? ` · ${new Date(f.modified).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
                           </span>
                         </li>
                       ))}
@@ -688,7 +709,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                 className="ctl ctl-danger text-xs font-bold"
               >
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Apagar tudo da nuvem…</span>
+                <span>{t(lang, 'cloud.delete.button')}</span>
               </button>
               <button
                 type="button"
@@ -697,12 +718,11 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
                 className="ctl text-xs font-bold"
               >
                 <CloudOff className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Desconectar</span>
+                <span>{t(lang, 'cloud.disconnect.button')}</span>
               </button>
             </div>
             <p className="text-[11px] font-medium text-content-muted">
-              Apagar da nuvem não toca neste navegador. Desconectar esquece a
-              senha aqui e pausa o automático.
+              {t(lang, 'cloud.disconnect.note')}
             </p>
           </div>
         )}
@@ -713,22 +733,43 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       {createPortal(
         <ConfirmDialog
           isOpen={pendingRestore !== null}
-          title="Restaurar da nuvem?"
-          confirmLabel="Restaurar backup"
-          cancelLabel="Cancelar"
+          title={t(lang, 'cloud.restoreConfirm.title')}
+          confirmLabel={t(lang, 'cloud.restoreConfirm.button')}
+          cancelLabel={t(lang, 'common.cancel')}
           onCancel={() => setPendingRestore(null)}
           onConfirm={() => void confirmRestore()}
           description={
             pendingRestore ? (
               <>
                 <p>
-                  A nuvem guarda <strong>{pendingRestore.maps} sessões</strong>
-                  {pendingRestore.clients > 0 && <> e <strong>{pendingRestore.clients} participantes</strong></>}
-                  {pendingRestore.exportedAt && <> (enviado em {new Date(pendingRestore.exportedAt).toLocaleDateString('pt-BR')})</>}.
+                  {t(lang, 'cloud.restoreConfirm.fileHas')}{' '}
+                  <strong>
+                    {t(
+                      lang,
+                      pendingRestore.maps === 1
+                        ? 'export.restore.maps.one'
+                        : 'export.restore.maps.many'
+                    ).replace('{n}', String(pendingRestore.maps))}
+                  </strong>
+                  {pendingRestore.clients > 0 && (
+                    <>
+                      {' '}{t(lang, 'export.restore.and')}{' '}
+                      <strong>
+                        {t(
+                          lang,
+                          pendingRestore.clients === 1
+                            ? 'export.restore.clients.one'
+                            : 'export.restore.clients.many'
+                        ).replace('{n}', String(pendingRestore.clients))}
+                      </strong>
+                    </>
+                  )}
+                  {pendingRestore.exportedAt && (
+                    <> {t(lang, 'cloud.restoreConfirm.sentAt').replace('{date}', new Date(pendingRestore.exportedAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR'))}</>
+                  )}.
                 </p>
                 <p className="mt-2 text-content-subtle">
-                  Sessões e participantes com o mesmo id serão substituídos. Tipos e
-                  roteiros novos são somados.
+                  {t(lang, 'cloud.restoreConfirm.overwrite')}
                 </p>
               </>
             ) : null
@@ -739,23 +780,23 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       {createPortal(
         <TypeToConfirmDialog
           isOpen={pendingDelete !== null}
-          title="Apagar tudo da nuvem?"
-          requireWord="APAGAR"
-          confirmLabel="Apagar tudo da nuvem"
-          cancelLabel="Manter"
+          title={t(lang, 'cloud.deleteConfirm.title')}
+          requireWord={lang === 'en' ? 'DELETE' : 'APAGAR'}
+          confirmLabel={t(lang, 'cloud.deleteConfirm.button')}
+          cancelLabel={t(lang, 'cloud.deleteConfirm.keep')}
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => void confirmDeleteAll()}
           description={
             pendingDelete ? (
               <>
-                <p>Estes arquivos somem do seu Puter, sem desfazer:</p>
+                <p>{t(lang, 'cloud.deleteConfirm.body')}</p>
                 <ul className="mt-1 space-y-0.5 font-mono">
                   {pendingDelete.map((f) => (
                     <li key={f.path}>· {f.name}</li>
                   ))}
                 </ul>
                 <p className="mt-2 text-content-subtle">
-                  O backup local continua intacto — só a cópia da nuvem vai.
+                  {t(lang, 'cloud.deleteConfirm.localStays')}
                 </p>
               </>
             ) : null

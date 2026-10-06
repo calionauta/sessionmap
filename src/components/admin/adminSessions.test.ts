@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
  *
  * This is a test of a bug that shipped: `AdminClientManager` receives its
  * session list as a prop and filters it on clientId, but the state it was
- * handed (`allMaps` in TherapistView) was never assigned anywhere except a
+ * handed (`allMaps` in HostView) was never assigned anywhere except a
  * deletion filter. It stayed `[]` for the life of the session, so the panel
  * filtered an empty list against every client and rendered "no sessions yet"
  * for a client with real history — including the session that was open on
@@ -69,7 +69,7 @@ describe('the list the admin panel is handed', () => {
   });
 
   test('is the UNFILTERED list, archived sessions included', () => {
-    // TherapistView keeps a second, active-only list for the header picker and
+    // HostView keeps a second, active-only list for the header picker and
     // the drawer. The admin panel must get the other one, or its own archive
     // tab can never show anything.
     const working = sessions.filter((m) => !isArchived(m));

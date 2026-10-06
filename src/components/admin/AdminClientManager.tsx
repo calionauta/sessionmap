@@ -38,6 +38,8 @@ import {
 import { countTotalNodes, parseMarkdownToTree } from '../../utils/tree';
 import { formatSessionTimestamp } from '../../utils/text';
 import { exportSessionMarkdown, exportClientSessionsZip, exportAllClientsZip } from '../../utils/export';
+import { t } from '../../i18n/strings';
+import { useLang } from '../../i18n/LanguageContext';
 import { Modal, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
 import { NewSessionDialog } from '../modals/NewSessionDialog';
@@ -62,6 +64,7 @@ function OrphanSessionCard({
   onOpen: () => void;
   onDelete: () => void;
 }) {
+  const lang = useLang();
   const nodeCount = countTotalNodes(session.root);
   const sessionLabel = session.sessionDate || session.title;
   return (
@@ -70,22 +73,22 @@ function OrphanSessionCard({
         <div className="text-xs font-bold text-content break-words">{sessionLabel}</div>
         <div className="text-[11px] text-content-muted font-medium mt-0.5 break-words">
           <span className="font-mono">
-            {nodeCount} {nodeCount === 1 ? 'balão' : 'balões'}
+            {t(lang, nodeCount === 1 ? 'admin.orphan.nodes.one' : 'admin.orphan.nodes.many').replace('{n}', String(nodeCount))}
           </span>
-          {' · '}registrado como <strong>{session.clientName || 'sem nome'}</strong> (id{' '}
+          {' · '}{t(lang, 'admin.orphan.recordedAs')} <strong>{session.clientName || t(lang, 'admin.orphan.noName')}</strong> (id{' '}
           {session.clientId})
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button type="button" onClick={onOpen} className="ctl text-xs font-bold">
-          <span>Abrir</span>
+          <span>{t(lang, 'admin.orphan.open')}</span>
           <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         </button>
         {canDelete && (
           <button
             type="button"
             onClick={onDelete}
-            aria-label={`Excluir sessão ${sessionLabel}`}
+            aria-label={t(lang, 'admin.orphan.deleteSession').replace('{label}', sessionLabel)}
             className="ctl ctl-danger w-11 px-0"
           >
             <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -182,6 +185,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // history is what made them undiscoverable — so they get a tab at the same
   // level as the client list rather than a section inside one of its rows.
   const [panelTab, setPanelTab] = useState<'participantes' | 'catalogo'>('participantes');
+  const lang = useLang();
 
   // The catalog lives here (state) and in storage (persisted): the dialog and
   // the badges read this state, so an edit applies everywhere at once.
@@ -507,8 +511,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title="Painel do Anfitrião · Participantes & Sessões"
-        description="Organize cada participante e inicie novas sessões datadas em tempo real"
+        title={t(lang, 'admin.title')}
+        description={t(lang, 'admin.subtitle')}
         icon={<Users className="w-5 h-5" />}
         maxWidth="max-w-4xl"
       >
@@ -534,35 +538,35 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         <div
           className="-mx-6 px-6 pt-1 pb-3 border-b border-line bg-surface"
           role="tablist"
-          aria-label="Participantes ou catálogo global"
+          aria-label={t(lang, 'admin.tabs.label')}
         >
           <div className="flex p-1 bg-surface-inset rounded-xl border border-line">
             {(
               [
-                { key: 'participantes' as const, label: `Participantes (${scopedClients.length})` },
-                { key: 'catalogo' as const, label: 'Tipos e roteiros' },
+                { key: 'participantes' as const, label: t(lang, 'admin.tabs.participants').replace('{n}', String(scopedClients.length)) },
+                { key: 'catalogo' as const, label: t(lang, 'admin.tabs.catalog') },
               ]
-            ).map((t) => (
+            ).map((tab) => (
               <button
-                key={t.key}
+                key={tab.key}
                 type="button"
                 role="tab"
-                aria-selected={panelTab === t.key}
-                tabIndex={panelTab === t.key ? 0 : -1}
-                onClick={() => setPanelTab(t.key)}
+                aria-selected={panelTab === tab.key}
+                tabIndex={panelTab === tab.key ? 0 : -1}
+                onClick={() => setPanelTab(tab.key)}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
-                    setPanelTab(t.key === 'participantes' ? 'catalogo' : 'participantes');
+                    setPanelTab(tab.key === 'participantes' ? 'catalogo' : 'participantes');
                   }
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                  panelTab === t.key
+                  panelTab === tab.key
                     ? 'bg-surface-raised text-content shadow-xs'
                     : 'text-content-muted hover:text-content'
                 }`}
               >
-                {t.label}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -576,7 +580,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             <div className="p-3 border-b border-line space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-xs font-bold text-content uppercase tracking-wider">
-                  Participantes ({scopedClients.length})
+                  {t(lang, 'admin.list.title').replace('{n}', String(scopedClients.length))}
                 </h3>
                 <button
                   type="button"
@@ -584,7 +588,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   className="ctl ctl-primary px-2.5 text-xs font-bold"
                 >
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Novo</span>
+                  <span>{t(lang, 'admin.list.new')}</span>
                 </button>
               </div>
 
@@ -592,37 +596,37 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   both surfaces expose the archive the same way. */}
               <div
                 role="tablist"
-                aria-label="Participantes ativos ou arquivados"
+                aria-label={t(lang, 'admin.list.scope')}
                 className="flex p-1 bg-surface-inset rounded-xl border border-line"
               >
                 {(
                   [
-                    { key: false, label: 'Ativos', count: activeClients.length },
-                    { key: true, label: 'Arquivados', count: archivedClients.length },
+                    { key: false, label: t(lang, 'admin.list.active'), count: activeClients.length },
+                    { key: true, label: t(lang, 'admin.list.archived'), count: archivedClients.length },
                   ] as const
-                ).map((t) => (
+                ).map((tab) => (
                   <button
-                    key={String(t.key)}
+                    key={String(tab.key)}
                     type="button"
                     role="tab"
-                    aria-selected={showArchived === t.key}
-                    tabIndex={showArchived === t.key ? 0 : -1}
-                    onClick={() => setShowArchived(t.key)}
+                    aria-selected={showArchived === tab.key}
+                    tabIndex={showArchived === tab.key ? 0 : -1}
+                    onClick={() => setShowArchived(tab.key)}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                         e.preventDefault();
-                        setShowArchived(!t.key);
+                        setShowArchived(!tab.key);
                       }
                     }}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                      showArchived === t.key
+                      showArchived === tab.key
                         ? 'bg-surface-raised text-content shadow-xs'
                         : 'text-content-muted hover:text-content'
                     }`}
                   >
-                    {t.label}
+                    {tab.label}
                     <span className="ml-1.5 font-mono text-[10px] opacity-70">
-                      {t.count}
+                      {tab.count}
                     </span>
                   </button>
                 ))}
@@ -631,7 +635,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               {isCreatingClient && (
                 <form onSubmit={handleSaveNewClient} className="flex items-center gap-2 pt-1">
                   <label htmlFor="admin-new-client-name" className="sr-only">
-                    Nome do novo participante
+                    {t(lang, 'admin.list.newNameLabel')}
                   </label>
                   <input
                     id="admin-new-client-name"
@@ -639,14 +643,14 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     type="text"
                     value={newClientName}
                     onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="Nome do participante…"
+                    placeholder={t(lang, 'admin.list.newNamePlaceholder')}
                     className="flex-1 min-w-0 h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content font-medium placeholder:text-content-subtle"
                   />
                   <button
                     type="submit"
                     className="ctl ctl-primary w-11 px-0"
-                    title="Confirmar"
-                    aria-label="Confirmar novo participante"
+                    title={t(lang, 'admin.list.confirm')}
+                    aria-label={t(lang, 'admin.list.confirmNew')}
                   >
                     <Check className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -654,8 +658,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     type="button"
                     onClick={() => setIsCreatingClient(false)}
                     className="ctl w-11 px-0"
-                    aria-label="Cancelar novo participante"
-                    title="Cancelar"
+                    aria-label={t(lang, 'admin.list.cancelNew')}
+                    title={t(lang, 'admin.list.cancel')}
                   >
                     <X className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -664,7 +668,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
               <div className="relative flex items-center">
                 <label htmlFor="admin-client-search" className="sr-only">
-                  Buscar participante
+                  {t(lang, 'admin.list.searchLabel')}
                 </label>
                 <Search
                   className="w-4 h-4 absolute left-3 text-content-muted pointer-events-none"
@@ -675,7 +679,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   type="text"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
-                  placeholder="Buscar participante…"
+                  placeholder={t(lang, 'admin.list.searchPlaceholder')}
                   className="w-full h-11 pl-10 pr-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
                 />
               </div>
@@ -685,7 +689,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
               {filteredClients.length === 0 ? (
                 <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel">
-                  Nenhum participante encontrado. Use “Novo” para cadastrar.
+                  {t(lang, 'admin.list.empty')}
                 </p>
               ) : (
                 filteredClients.map((client) => {
@@ -717,7 +721,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             htmlFor={`admin-rename-${client.id}`}
                             className="sr-only"
                           >
-                            Renomear {client.name}
+                            {t(lang, 'admin.list.renameOf').replace('{name}', client.name)}
                           </label>
                           <input
                             id={`admin-rename-${client.id}`}
@@ -730,7 +734,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                           <button
                             type="submit"
                             className="ctl ctl-primary w-11 px-0"
-                            aria-label={`Confirmar novo nome de ${client.name}`}
+                            aria-label={t(lang, 'admin.list.confirmRenameOf').replace('{name}', client.name)}
                           >
                             <Check className="w-4 h-4" aria-hidden="true" />
                           </button>
@@ -756,12 +760,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                 : 'text-content-muted font-medium'
                             }`}
                           >
-                            {count} {count === 1 ? 'sessão' : 'sessões'}
+                            {t(lang, count === 1 ? 'admin.list.sessions.one' : 'admin.list.sessions.many').replace('{n}', String(count))}
                           </div>
                           {/* The union of this client's sessions' kinds.
-                              Derived, never stored: a therapy client who
-                              starts mentoring grows a second badge on its
-                              own, and no client is ever filed in one drawer. */}
+                              Derived, never stored: a client who takes up a
+                              second kind grows a second badge on its own, and
+                              no client is ever filed in one drawer. */}
                           <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1">
                             {clientModalityIds(maps, client.id).map((id) => {
                               const mod = modalities.find((m) => m.id === id);
@@ -781,7 +785,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             setEditingClientId(client.id);
                             setEditingClientName(client.name);
                           }}
-                          aria-label={`Renomear ${client.name}`}
+                          aria-label={t(lang, 'admin.list.renameOf').replace('{name}', client.name)}
                           className="ctl w-11 px-0"
                         >
                           <Edit2 className="w-4 h-4" aria-hidden="true" />
@@ -791,8 +795,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleUnarchiveClient(client)}
-                              aria-label={`Restaurar ${client.name}`}
-                              title="Restaurar participante e sessões"
+                              aria-label={t(lang, 'admin.list.restore').replace('{name}', client.name)}
+                              title={t(lang, 'admin.list.restoreTitle')}
                               className="ctl w-11 px-0"
                             >
                               <ArchiveRestore className="w-4 h-4" aria-hidden="true" />
@@ -800,8 +804,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteClient(client)}
-                              aria-label={`Excluir ${client.name} e todas as sessões`}
-                              title="Excluir participante e sessões"
+                              aria-label={t(lang, 'admin.list.deleteAll').replace('{name}', client.name)}
+                              title={t(lang, 'admin.list.deleteAllTitle')}
                               className="ctl ctl-danger w-11 px-0"
                             >
                               <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -812,8 +816,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleArchiveClient(client)}
-                              aria-label={`Arquivar ${client.name} e todas as sessões`}
-                              title="Arquivar participante e sessões"
+                              aria-label={t(lang, 'admin.list.archiveAll').replace('{name}', client.name)}
+                              title={t(lang, 'admin.list.archiveAllTitle')}
                               className="ctl w-11 px-0"
                             >
                               <Archive className="w-4 h-4" aria-hidden="true" />
@@ -821,8 +825,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteClient(client)}
-                              aria-label={`Excluir ${client.name}`}
-                              title="Excluir participante e sessões"
+                              aria-label={t(lang, 'admin.list.delete').replace('{name}', client.name)}
+                              title={t(lang, 'admin.list.deleteAllTitle')}
                               className="ctl ctl-danger w-11 px-0"
                             >
                               <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -842,12 +846,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 type="button"
                 onClick={handleExportAllClientsZip}
                 disabled={isExporting}
-                title="Exportar todas as sessões de todos os participantes em um arquivo .zip completo"
+                title={t(lang, 'admin.list.exportAllTitle')}
                 className="ctl w-full text-xs font-bold shadow-2xs"
               >
                 <FolderArchive className="w-3.5 h-3.5 text-positive shrink-0" aria-hidden="true" />
                 <span className="text-left leading-snug">
-                  {isExporting ? 'Compactando…' : 'Zipar Todos os Participantes (.zip)'}
+                  {isExporting ? t(lang, 'admin.list.exporting') : t(lang, 'admin.list.exportAll')}
                 </span>
               </button>
             </div>
@@ -866,7 +870,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 <div className="p-4 sm:p-5 border-b border-line flex items-center justify-between gap-3 flex-wrap shrink-0">
                   <div className="min-w-0">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-accent-text">
-                      Participante Selecionado
+                      {t(lang, 'admin.detail.selected')}
                     </span>
                     <h3 className="text-xl font-black tracking-tight text-content break-words">
                       {currentClient.name}
@@ -890,24 +894,28 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       type="button"
                       onClick={handleExportCurrentClientZip}
                       disabled={isExporting}
-                      aria-label={`Exportar todas as ${clientSessions.length} sessões de ${currentClient.name} em .zip`}
-                      title={`Exportar todas as ${clientSessions.length} sessões de ${currentClient.name} compactadas em .zip`}
+                      aria-label={t(lang, 'admin.detail.exportZipOf')
+                        .replace('{n}', String(clientSessions.length))
+                        .replace('{name}', currentClient.name)}
+                      title={t(lang, 'admin.detail.exportZipTitle')
+                        .replace('{n}', String(clientSessions.length))
+                        .replace('{name}', currentClient.name)}
                       className="ctl w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
                       <Archive className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
-                      <span>Exportar (.zip)</span>
+                      <span>{t(lang, 'admin.detail.exportZip')}</span>
                     </button>
 
                     {/* Import Markdown file */}
                     <button
                       type="button"
                       onClick={() => importFileInputRef.current?.click()}
-                      aria-label="Importar arquivo Markdown (.md) como nova sessão para este participante"
-                      title="Importar arquivo Markdown (.md) como nova sessão para este participante"
+                      aria-label={t(lang, 'admin.detail.importLabel')}
+                      title={t(lang, 'admin.detail.importLabel')}
                       className="ctl w-full sm:w-auto text-xs font-bold shadow-2xs text-accent-text"
                     >
                       <Upload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>Importar (.md)</span>
+                      <span>{t(lang, 'admin.detail.import')}</span>
                     </button>
 
                     {/* Create New Session */}
@@ -917,7 +925,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       className="ctl ctl-primary w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>Nova Sessão</span>
+                      <span>{t(lang, 'admin.detail.newSession')}</span>
                     </button>
                   </div>
                 </div>
@@ -928,24 +936,24 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
-                      Histórico de Sessões ({clientSessions.length})
+                      {t(lang, 'admin.detail.history').replace('{n}', String(clientSessions.length))}
                     </h3>
                     {modalities.length > 0 && (
                       <label className="flex items-center gap-1.5 text-[11px] font-bold text-content-muted">
-                        <span className="sr-only">Filtrar por tipo</span>
+                        <span className="sr-only">{t(lang, 'admin.detail.filterType')}</span>
                         <select
                           value={modalityFilter}
                           onChange={(e) => setModalityFilter(e.target.value)}
-                          aria-label="Filtrar sessões por tipo"
+                          aria-label={t(lang, 'admin.detail.filterSessions')}
                           className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
                         >
-                          <option value="all">Todos os tipos</option>
+                          <option value="all">{t(lang, 'maplist.filter.all')}</option>
                           {modalities.map((m) => (
                             <option key={m.id} value={m.id}>
                               {m.name}
                             </option>
                           ))}
-                          <option value="none">Sem tipo</option>
+                          <option value="none">{t(lang, 'common.noType')}</option>
                         </select>
                       </label>
                     )}
@@ -953,8 +961,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
                   {clientSessions.length === 0 ? (
                     <div className="py-12 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
-                      Nenhuma sessão iniciada para este participante. Clique em “+ Nova Sessão” ou
-                      “+ Importar (.md)” acima para começar.
+                      {t(lang, 'admin.detail.empty')}
                     </div>
                   ) : (
                     clientSessions.map((session) => {
@@ -978,7 +985,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               </span>
                               {isActive && (
                                 <span className="text-[10px] font-black px-2 py-0.5 rounded bg-accent text-content-onaccent uppercase tracking-wide shrink-0">
-                                  sessão ativa
+                                  {t(lang, 'admin.detail.activeBadge')}
                                 </span>
                               )}
                             </div>
@@ -990,10 +997,10 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-content-muted font-medium">
                               <span className="flex items-center gap-1 font-mono shrink-0">
                                 <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-                                <span>{nodeCount} balões</span>
+                                <span>{t(lang, nodeCount === 1 ? 'admin.orphan.nodes.one' : 'admin.orphan.nodes.many').replace('{n}', String(nodeCount))}</span>
                               </span>
                               <span aria-hidden="true">·</span>
-                              <span className="min-w-0 break-words">Raiz: {session.root.text}</span>
+                              <span className="min-w-0 break-words">{t(lang, 'admin.detail.root').replace('{t}', session.root.text)}</span>
                             </div>
 
                             {/* One kind per session, changeable after the
@@ -1006,7 +1013,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               />
                               <label className="flex items-center gap-1.5">
                                 <span className="sr-only">
-                                  Tipo da sessão {sessionLabel}
+                                  {t(lang, 'admin.detail.sessionTypeOf').replace('{label}', sessionLabel)}
                                 </span>
                                 <select
                                   value={session.modalityId ?? ''}
@@ -1015,7 +1022,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                   }
                                   className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
                                 >
-                                  <option value="">Sem tipo</option>
+                                  <option value="">{t(lang, 'common.noType')}</option>
                                   {modalities.map((m) => (
                                     <option key={m.id} value={m.id}>
                                       {m.name}
@@ -1031,8 +1038,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => exportSessionMarkdown(session)}
-                              aria-label={`Baixar a sessão de ${sessionLabel} em Markdown`}
-                              title="Baixar esta sessão em Markdown (.md)"
+                              aria-label={t(lang, 'admin.detail.downloadMd').replace('{label}', sessionLabel)}
+                              title={t(lang, 'admin.detail.downloadMdTitle')}
                               className="ctl w-11 px-0"
                             >
                               <Download className="w-3.5 h-3.5" aria-hidden="true" />
@@ -1048,7 +1055,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                 isActive ? 'ctl-primary' : ''
                               }`}
                             >
-                              <span>{isActive ? 'Continuar' : 'Abrir Sessão'}</span>
+                              <span>{isActive ? t(lang, 'admin.detail.continue') : t(lang, 'admin.detail.openSession')}</span>
                               <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             </button>
 
@@ -1056,8 +1063,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleUnarchiveSession(session)}
-                                aria-label={`Restaurar sessão ${sessionLabel}`}
-                                title="Restaurar sessão"
+                                aria-label={t(lang, 'admin.detail.restoreSession').replace('{label}', sessionLabel)}
+                                title={t(lang, 'admin.detail.restoreSessionTitle')}
                                 className="ctl w-11 px-0"
                               >
                                 <ArchiveRestore className="w-4 h-4" aria-hidden="true" />
@@ -1066,8 +1073,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setPendingSessionArchive(session)}
-                                aria-label={`Arquivar sessão ${sessionLabel}`}
-                                title="Arquivar sessão"
+                                aria-label={t(lang, 'admin.detail.archiveSession').replace('{label}', sessionLabel)}
+                                title={t(lang, 'admin.detail.archiveSessionTitle')}
                                 className="ctl w-11 px-0"
                               >
                                 <Archive className="w-4 h-4" aria-hidden="true" />
@@ -1078,7 +1085,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleDeleteSession(session)}
-                                aria-label={`Excluir sessão ${sessionLabel}`}
+                                aria-label={t(lang, 'admin.detail.deleteSession').replace('{label}', sessionLabel)}
                                 className="ctl ctl-danger w-11 px-0"
                               >
                                 <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -1098,12 +1105,10 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     <div className="pt-2 mt-2 border-t border-line">
                       <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
                         <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-                        Sem participante atribuído ({orphanedMaps.length})
+                        {t(lang, 'admin.detail.orphanTitle').replace('{n}', String(orphanedMaps.length))}
                       </h3>
                       <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
-                        Estas sessões não correspondem a nenhum participante na lista. Abra
-                        uma para ver a quem ela pertence, ou exclua se não for mais
-                        necessária.
+                        {t(lang, 'admin.detail.orphanBody')}
                       </p>
                       <div className="space-y-2">
                         {orphanedMaps.map((session) => (
@@ -1132,19 +1137,18 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
                 <div className="py-6 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
                   {clients.length === 0
-                    ? 'Nenhum participante cadastrado neste navegador. Crie um participante para iniciar uma sessão.'
-                    : 'Selecione um participante para ver o histórico de sessões.'}
+                    ? t(lang, 'admin.detail.noClients')
+                    : t(lang, 'admin.detail.selectClient')}
                 </div>
 
                 {orphanedMaps.length > 0 && (
                   <div className="pt-2 mt-2 border-t border-line">
                     <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-                      Sem participante atribuído ({orphanedMaps.length})
+                      {t(lang, 'admin.detail.orphanTitle').replace('{n}', String(orphanedMaps.length))}
                     </h3>
                     <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
-                      Estas sessões não correspondem a nenhum participante na lista. Abra uma
-                      para ver a quem ela pertence, ou exclua se não for mais necessária.
+                      {t(lang, 'admin.detail.orphanBody')}
                     </p>
                     <div className="space-y-2">
                       {orphanedMaps.map((session) => (
@@ -1198,7 +1202,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       <NewSessionDialog
         isOpen={pendingSessionFor !== null}
         onClose={() => setPendingSessionFor(null)}
-        clientName={pendingSessionFor?.name ?? 'Participante'}
+        clientName={pendingSessionFor?.name ?? t(lang, 'admin.detail.fallbackName')}
         defaultModalityId={
           (pendingSessionFor &&
             maps.find(
@@ -1210,27 +1214,33 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       />
       <ConfirmDialog
         isOpen={pendingModalityDelete !== null}
-        title="Excluir este tipo?"
+        title={t(lang, 'admin.confirm.deleteType.title')}
         isDestructive
-        confirmLabel="Excluir tipo"
-        cancelLabel="Manter"
+        confirmLabel={t(lang, 'admin.confirm.deleteType.confirm')}
+        cancelLabel={t(lang, 'admin.confirm.deleteType.keep')}
         onCancel={() => setPendingModalityDelete(null)}
         onConfirm={() => void confirmModalityDelete()}
         description={
           pendingModalityDelete ? (
             <>
               <p>
-                O tipo <strong>{pendingModalityDelete.name}</strong> sai do
-                catálogo. As{' '}
+                {t(lang, 'admin.confirm.deleteType.bodyA')} <strong>{pendingModalityDelete.name}</strong>{' '}
+                {t(lang, 'admin.confirm.deleteType.bodyB')}{' '}
                 <strong>
-                  {maps.filter((m) => m.modalityId === pendingModalityDelete.id).length}{' '}
-                  sessões
+                  {t(
+                    lang,
+                    maps.filter((m) => m.modalityId === pendingModalityDelete.id).length === 1
+                      ? 'admin.confirm.count.one'
+                      : 'admin.confirm.count.many'
+                  ).replace(
+                    '{n}',
+                    String(maps.filter((m) => m.modalityId === pendingModalityDelete.id).length)
+                  )}
                 </strong>{' '}
-                que o usam passam a “sem tipo”.
+                {t(lang, 'admin.confirm.deleteType.bodyC')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Nada é apagado: só o rótulo sai, e você pode reclassificar cada
-                sessão depois.
+                {t(lang, 'admin.confirm.deleteType.bodyD')}
               </p>
             </>
           ) : null
@@ -1238,31 +1248,35 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       />
       <ConfirmDialog
         isOpen={pendingClientDelete !== null}
-        title="Excluir este participante?"
+        title={t(lang, 'admin.confirm.deleteClient.title')}
         isDestructive
-        confirmLabel="Excluir participante e sessões"
-        cancelLabel="Cancelar"
+        confirmLabel={t(lang, 'admin.confirm.deleteClient.confirm')}
+        cancelLabel={t(lang, 'admin.confirm.deleteClient.cancel')}
         onCancel={() => setPendingClientDelete(null)}
         onConfirm={confirmClientDelete}
         description={
           pendingClientDelete ? (
             <>
               <p>
-                <strong>{pendingClientDelete.name}</strong> e{' '}
+                <strong>{pendingClientDelete.name}</strong> {t(lang, 'admin.confirm.deleteClient.and')}{' '}
                 <strong>
-                  {maps.filter((m) => m.clientId === pendingClientDelete.id).length}{' '}
-                  {maps.filter((m) => m.clientId === pendingClientDelete.id).length === 1
-                    ? 'sessão'
-                    : 'sessões'}
+                  {t(
+                    lang,
+                    maps.filter((m) => m.clientId === pendingClientDelete.id).length === 1
+                      ? 'admin.confirm.count.one'
+                      : 'admin.confirm.count.many'
+                  ).replace(
+                    '{n}',
+                    String(maps.filter((m) => m.clientId === pendingClientDelete.id).length)
+                  )}
                 </strong>{' '}
                 {maps.filter((m) => m.clientId === pendingClientDelete.id).length === 1
-                  ? 'será removida'
-                  : 'serão removidas'}{' '}
-                deste navegador. Não há servidor: o apagamento é definitivo e local.
+                  ? t(lang, 'admin.confirm.deleteClient.willRemove.one')
+                  : t(lang, 'admin.confirm.deleteClient.willRemove.many')}{' '}
+                {t(lang, 'admin.confirm.deleteClient.tail')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Você poderá restaurar o cadastro e todas as sessões logo após, pela janela
-                de desfazer. Arquivar em vez de excluir deixa tudo recuperável.
+                {t(lang, 'admin.confirm.deleteClient.undo')}
               </p>
             </>
           ) : null
@@ -1271,27 +1285,31 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
       <ConfirmDialog
         isOpen={pendingClientArchive !== null}
-        title="Arquivar este participante?"
-        confirmLabel="Arquivar participante e sessões"
-        cancelLabel="Manter ativo"
+        title={t(lang, 'admin.confirm.archiveClient.title')}
+        confirmLabel={t(lang, 'admin.confirm.archiveClient.confirm')}
+        cancelLabel={t(lang, 'admin.confirm.archiveClient.keep')}
         onCancel={() => setPendingClientArchive(null)}
         onConfirm={confirmClientArchive}
         description={
           pendingClientArchive ? (
             <>
               <p>
-                <strong>{pendingClientArchive.name}</strong> e as{' '}
+                <strong>{pendingClientArchive.name}</strong> {t(lang, 'admin.confirm.deleteClient.and')}{' '}
                 <strong>
-                  {maps.filter((m) => m.clientId === pendingClientArchive.id).length}{' '}
-                  {maps.filter((m) => m.clientId === pendingClientArchive.id).length === 1
-                    ? 'sessão'
-                    : 'sessões'}
+                  {t(
+                    lang,
+                    maps.filter((m) => m.clientId === pendingClientArchive.id).length === 1
+                      ? 'admin.confirm.count.one'
+                      : 'admin.confirm.count.many'
+                  ).replace(
+                    '{n}',
+                    String(maps.filter((m) => m.clientId === pendingClientArchive.id).length)
+                  )}
                 </strong>{' '}
-                sairão da lista de participantes ativos.
+                {t(lang, 'admin.confirm.archiveClient.tail')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Nada é apagado: tudo continua em &quot;Arquivados&quot;, onde você pode
-                consultar, restaurar ou excluir definitivamente.
+                {t(lang, 'admin.confirm.archiveClient.note')}
               </p>
             </>
           ) : null
@@ -1300,24 +1318,24 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
       <ConfirmDialog
         isOpen={pendingSessionArchive !== null}
-        title="Arquivar esta sessão?"
-        confirmLabel="Arquivar sessão"
-        cancelLabel="Manter ativa"
+        title={t(lang, 'admin.confirm.archiveSession.title')}
+        confirmLabel={t(lang, 'admin.confirm.archiveSession.confirm')}
+        cancelLabel={t(lang, 'admin.confirm.archiveSession.keep')}
         onCancel={() => setPendingSessionArchive(null)}
         onConfirm={confirmSessionArchive}
         description={
           pendingSessionArchive ? (
             <>
               <p>
-                A sessão de <strong>{pendingSessionArchive.clientName}</strong> em{' '}
+                {t(lang, 'maplist.sessionOf')} <strong>{pendingSessionArchive.clientName}</strong>{' '}
+                {t(lang, 'maplist.sessionOn')}{' '}
                 <strong>
                   {pendingSessionArchive.sessionDate || pendingSessionArchive.title}
                 </strong>{' '}
-                sai da lista de ativas. O participante não é afetado.
+                {t(lang, 'admin.confirm.archiveSession.tail')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Nada é apagado: você continua podendo consultar, restaurar ou excluir em
-                &quot;Arquivadas&quot;.
+                {t(lang, 'admin.confirm.archiveSession.note')}
               </p>
             </>
           ) : null
@@ -1326,25 +1344,25 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
       <ConfirmDialog
         isOpen={pendingSessionDelete !== null}
-        title="Excluir esta sessão?"
+        title={t(lang, 'admin.confirm.deleteSession.title')}
         isDestructive
-        confirmLabel="Excluir sessão"
-        cancelLabel="Cancelar"
+        confirmLabel={t(lang, 'admin.confirm.deleteSession.confirm')}
+        cancelLabel={t(lang, 'admin.confirm.deleteSession.cancel')}
         onCancel={() => setPendingSessionDelete(null)}
         onConfirm={confirmSessionDelete}
         description={
           pendingSessionDelete ? (
             <>
               <p>
-                A sessão de <strong>{pendingSessionDelete.clientName}</strong> em{' '}
+                {t(lang, 'maplist.sessionOf')} <strong>{pendingSessionDelete.clientName}</strong>{' '}
+                {t(lang, 'maplist.sessionOn')}{' '}
                 <strong>
                   {pendingSessionDelete.sessionDate || pendingSessionDelete.title}
                 </strong>{' '}
-                será removida deste navegador.
+                {t(lang, 'admin.confirm.deleteSession.tail')}
               </p>
               <p className="mt-2 text-content-subtle">
-                Você poderá restaurá-la logo após, pela janela de desfazer. Arquivar em vez
-                de excluir deixa o registro recuperável.
+                {t(lang, 'admin.confirm.deleteSession.undo')}
               </p>
             </>
           ) : null
@@ -1360,11 +1378,15 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
         >
           <span>
-            Participante <strong>{undoClientDeleteState.client.name}</strong> excluído
+            {t(lang, 'admin.toast.clientDeleted')} <strong>{undoClientDeleteState.client.name}</strong>{' '}
+            {t(lang, 'admin.toast.deleted')}
             {undoClientDeleteState.sessionCount > 0
-              ? ` (${undoClientDeleteState.sessionCount} ${
-                  undoClientDeleteState.sessionCount === 1 ? 'sessão' : 'sessões'
-                })`
+              ? ` (${t(
+                  lang,
+                  undoClientDeleteState.sessionCount === 1
+                    ? 'admin.confirm.count.one'
+                    : 'admin.confirm.count.many'
+                ).replace('{n}', String(undoClientDeleteState.sessionCount))})`
               : ''}
             .
           </span>
@@ -1373,7 +1395,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             onClick={handleUndoClientDelete}
             className="ctl ctl-primary px-4"
           >
-            Desfazer
+            {t(lang, 'admin.toast.undo')}
           </button>
         </div>
       )}
@@ -1385,15 +1407,16 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
         >
           <span>
-            Sessão <strong>{undoSessionDeleteState.sessionDate || undoSessionDeleteState.title}</strong>{' '}
-            excluída.
+            {t(lang, 'admin.toast.sessionDeleted')}{' '}
+            <strong>{undoSessionDeleteState.sessionDate || undoSessionDeleteState.title}</strong>{' '}
+            {t(lang, 'admin.toast.deletedF')}
           </span>
           <button
             type="button"
             onClick={handleUndoSessionDelete}
             className="ctl ctl-primary px-4"
           >
-            Desfazer
+            {t(lang, 'admin.toast.undo')}
           </button>
         </div>
       )}
