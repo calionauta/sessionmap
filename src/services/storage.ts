@@ -19,9 +19,11 @@ const LOCAL_CLIENTS_KEY = 'sessionmap_clients';
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'papel',
-  // PT-first default, always: auto-detecting from the browser would flip
-  // seeded test environments (happy-dom reports en-US) and surprise a
-  // Brazilian product. EN is one tap away in Settings.
+  // PT-first default: auto-detecting from the browser would flip seeded test
+  // environments (happy-dom reports en-US) and surprise a Brazilian
+  // product. EN arrives explicitly instead — one tap in Settings, or the
+  // landing page's own choice (read on first run in getSettings). This
+  // constant never changes; it is only the fallback.
   language: 'pt',
   liveTextMode: 'live',
   thinBarAlwaysVisible: false,
@@ -870,6 +872,10 @@ export function getSettings(): Settings {
          screen, and the only place that is guaranteed is the read. */
       return { ...merged, outlineWidthPercent: clampOutlineWidth(merged.outlineWidthPercent) };
     }
+    // First run: no stored choice yet. The landing page's own key wins when
+    // present — it holds what the user picked (or was detected) there — and
+    // the PT default stands otherwise. Stored settings always win after.
+    return { ...DEFAULT_SETTINGS, language: readLandingLanguage() ?? DEFAULT_SETTINGS.language };
   } catch {
     // fallback
   }
@@ -881,6 +887,32 @@ export function saveSettings(settings: Settings): void {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // fallback
+  }
+}
+
+/**
+ * The landing page's language key (`sessionmap_landing_lang`), shared both
+ * ways: the landing writes the picked-or-detected language, the app reads it
+ * on first run (see getSettings), and the app writes it back whenever the
+ * in-app language changes — so returning to the landing keeps the app choice.
+ * Plain strings, validated on read: anything else falls back to PT.
+ */
+const LANDING_LANG_KEY = 'sessionmap_landing_lang';
+
+function readLandingLanguage(): Settings['language'] | null {
+  try {
+    const v = localStorage.getItem(LANDING_LANG_KEY);
+    return v === 'pt' || v === 'en' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberLandingLanguage(lang: Settings['language']): void {
+  try {
+    localStorage.setItem(LANDING_LANG_KEY, lang);
+  } catch {
+    // Private mode: the app choice still applies, the landing just won't know.
   }
 }
 

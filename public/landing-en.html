@@ -28,6 +28,9 @@
       if (!target) {
         var nav = (navigator.language || navigator.userLanguage || 'pt').toLowerCase();
         target = (nav === 'pt' || nav.indexOf('pt-') === 0) ? 'pt' : 'en';
+        /* Persisted too, not just redirected: the app reads this key on its
+           first run, so a browser-detected EN visitor opens an EN app. */
+        try { localStorage.setItem(KEY, target); } catch (e) {}
       }
       if (target === 'en' && !onEN) location.replace(path.replace(/landing\.html$/, 'landing-en.html'));
       else if (target === 'pt' && onEN) location.replace(path.replace(/landing-en\.html$/, 'landing.html'));

@@ -101,7 +101,8 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 - **Paper/night themes** applied before first paint (no light flash).
 - **PT/EN language** in Settings (PT default); applies to the whole interface and
   syncs `document.lang`. Seeds and scripts stay in the language they were written in.
-  The public page detects the browser language on first visit and remembers the manual switch.
+  The public page and the app share the choice: the first visit detects the
+  browser and remembers; switching on either side applies to the other.
 - Separate font scale for topics and balloons; live / on-Enter-only modes;
   thin bar always visible or temporary.
 

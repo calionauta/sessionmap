@@ -28,6 +28,7 @@ import {
   deleteMap,
   getSettings,
   saveSettings,
+  rememberLandingLanguage,
   getActiveMapId,
   setActiveMapId,
   saveSnapshot,
@@ -925,6 +926,11 @@ export const HostView: React.FC = () => {
   const handleUpdateSettings = (newSettings: Settings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
+    // The app choice travels back to the landing page, so reopening it
+    // later keeps this language instead of re-detecting the browser's.
+    if (newSettings.language !== settings.language) {
+      rememberLandingLanguage(newSettings.language);
+    }
     // The layout choice travels with the settings, so it survives a reload for
     // the same reason the rest of them do.
     if (newSettings.maximizeOutline !== settings.maximizeOutline) {
