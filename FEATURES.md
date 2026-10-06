@@ -60,7 +60,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 
 ## Tipos de atendimento e roteiros
 
-- **Uma modalidade por sessão** (Terapia, Mentoria, Consultoria + as que você criar).
+- **Uma modalidade por sessão** (Mentoria, Consultoria, Reunião + as que você criar).
 - **Badges derivados no participante:** a união das sessões — ninguém é "de um tipo só".
 - Filtro por tipo no histórico e no drawer; reclassificação posterior sem recriar.
 - **Catálogo global editável** (criar/renomear/excluir; excluir vira "sem tipo", nunca apaga sessão).

@@ -4,6 +4,9 @@ Mapa mental em tempo real: você digita em tópicos e os
 participantes acompanham o mapa, numa segunda janela ou projeção — **100% offline
 e privado por padrão**.
 
+Para consultores, mentores, equipes — e qualquer reunião online.
+Grátis, open source, sem instalar: abre no navegador e funciona.
+
 - **Usar agora:** <https://calionauta.github.io/sessionmap/>
 - **Como funciona:** [página pública](https://calionauta.github.io/sessionmap/landing.html)
 - **Recursos completos:** [FEATURES.md](FEATURES.md)
@@ -12,8 +15,8 @@ e privado por padrão**.
 
 1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
    tipo e, se quiser, um roteiro inicial).
-2. Abra a **Janela do Participante** e projete/ compartilhe só ela.
-3. Digite os tópicos: cada linha vira um balão na tela do participante, ao vivo.
+2. Abra a **Janela do Participante** e projete/compartilhe só ela.
+3. Digite os tópicos: cada linha vira um balão no mapa do participante, ao vivo.
 4. `Ctrl+.` pausa a tela do participante a qualquer momento.
 
 A janela do participante nunca mostra menus, outline, notas privadas nem o nome do
@@ -27,7 +30,7 @@ participante na aba — só o mapa.
 - O único dado que sai do navegador é o **backup em nuvem** ([Puter](https://puter.com)),
   desligado por padrão — você liga quando quiser,
   sempre criptografado no navegador (AES-256-GCM) com senha que só existe na sua
-  memória. Desligado por padrão.
+  memória.
 
 ## Backup
 
