@@ -40,6 +40,7 @@ function setup(overrides: Overrides = {}) {
       onOpenClientWindow: () => calls.push('clientWindow'),
       onFocusClientWindow: () => calls.push('focusClient'),
       onTogglePause: () => calls.push('pause'),
+      onStopSharing: () => calls.push('stopSharing'),
       onOpenMapList: () => calls.push('mapList'),
       onToggleFocusZoom: () => calls.push('focusZoom'),
       onOpenShareGuide: () => calls.push('share'),
@@ -57,7 +58,6 @@ const bar = () => container as HTMLElement;
 const byLabel = (label: string) =>
   bar().querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
 const buttons = () => Array.from(bar().querySelectorAll('button'));
-const labels = () => buttons().map((b) => b.textContent?.trim() ?? '');
 
 afterEach(() => {
   cleanup();
@@ -66,60 +66,84 @@ afterEach(() => {
 });
 
 describe('the session bar', () => {
-  test('the share action exists exactly once', () => {
+  test('the present action exists exactly once', () => {
     setup({ isClientConnected: false });
-    const matching = buttons().filter((b) => (b.textContent ?? '').includes('Compartilhar'));
+    const matching = buttons().filter((b) => (b.textContent ?? '').includes('Apresentar'));
     expect(matching).toHaveLength(1);
     expect(bar().textContent).not.toContain('[Abrir]');
   });
 
-  test('disconnected, the one action is to share', () => {
+  test('disconnected, the one action presents, and says what it does', () => {
     setup({ isClientConnected: false });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhar'))!;
+    const action = buttons().find((b) => (b.textContent ?? '').includes('Apresentar'))!;
     expect(action.className).toContain('ctl-primary');
+    expect(action.getAttribute('title')).toContain('nova janela');
+    expect(bar().querySelector('[role="status"]')).toBeNull();
     act(() => {
       fireEvent.click(action);
     });
     expect(calls).toEqual(['clientWindow']);
   });
 
-  test('connected, the same button reports sharing and pauses', () => {
-    // Sharing and pause stay two pieces of state; the button reports which
-    // one it is about rather than merging them into a label that means two
-    // different things.
+  test('live, action and state are separate: pause acts, the dot reports', () => {
+    // Meet/Zoom pattern: the button is always an action in the same slot,
+    // the pulsing dot is read-only state beside it — never a button label.
     setup({ isClientConnected: true, isPaused: false });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhado'))!;
-    expect(action.className).not.toContain('ctl-primary');
+    const pause = byLabel('Pausar a tela do participante');
     act(() => {
-      fireEvent.click(action);
+      fireEvent.click(pause);
     });
     expect(calls).toEqual(['pause']);
-  });
-
-  test('paused, it offers to resume', () => {
-    setup({ isClientConnected: true, isPaused: true });
-    expect(labels().some((l) => l.includes('Retomar tela'))).toBe(true);
-  });
-
-  test('the pause action is never hidden, at any width', () => {
-    // It used to live inside a `hidden lg:flex` cluster, so below 1024px the
-    // host could not pause the client's screen except by remembering
-    // Ctrl+.. The status pill may hide; the action may not.
-    setup({ isClientConnected: true });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhado'))!;
-    expect(action.className).not.toContain('hidden');
-  });
-
-  test('the status is a status, not a second button', () => {
-    setup({ isClientConnected: true });
     const status = bar().querySelector('[role="status"]')!;
+    expect(status.textContent).toContain('Ao vivo');
     expect(status.querySelector('button')).toBeNull();
   });
 
-  test('the bar is four controls and a menu, not fourteen buttons', () => {
+  test('live, ending the presentation stops it', () => {
+    setup({ isClientConnected: true, isPaused: false });
+    const stop = buttons().find((b) =>
+      (b.textContent ?? '').includes('Encerrar apresentação')
+    )!;
+    expect(stop.className).toContain('ctl-danger');
+    act(() => {
+      fireEvent.click(stop);
+    });
+    expect(calls).toEqual(['stopSharing']);
+  });
+
+  test('paused, the indicator says so and the icon offers resume', () => {
+    setup({ isClientConnected: true, isPaused: true });
+    expect(bar().querySelector('[role="status"]')!.textContent).toContain('Pausado');
+    expect(byLabel('Retomar a tela do participante')).not.toBeNull();
+  });
+
+  test('the pause action is never hidden, at any width', () => {
     setup({ isClientConnected: true });
-    // 1 switcher, 1 action, 1 export, 1 menu trigger. Everything else moved.
+    const action = byLabel('Pausar a tela do participante');
+    expect(action.className).not.toContain('hidden');
+  });
+
+  test('no state leaks into button labels', () => {
+    setup({ isClientConnected: false });
+    expect(bar().textContent).not.toContain('Não compartilhado');
+    expect(bar().textContent).not.toContain('Compartilhado');
+    expect(bar().textContent).not.toContain('Compartilhando');
+    setup({ isClientConnected: true });
+    expect(bar().textContent).not.toContain('Não compartilhado');
+    expect(bar().textContent).not.toContain('Compartilhado');
+    expect(bar().textContent).not.toContain('Compartilhando');
+  });
+
+  test('the bar is four controls and a menu, not fourteen buttons', () => {
+    setup({ isClientConnected: false });
+    // 1 switcher, 1 share action, 1 export, 1 menu trigger. Everything else moved.
     expect(buttons()).toHaveLength(4);
+  });
+
+  test('sharing adds exactly one control: pause plus end-sharing', () => {
+    setup({ isClientConnected: true });
+    // 1 switcher, 1 pause, 1 end-sharing, 1 export, 1 menu trigger.
+    expect(buttons()).toHaveLength(5);
   });
 
   test('the secondary tools moved into the menu, still reachable', () => {
@@ -352,7 +376,7 @@ describe('the narrow-window pane switch', () => {
     // gains exactly one button, and the map switch is not hiding behind a menu:
     // it is the navigation between the only two surfaces there are.
     setup({ narrowPane: 'outline', isClientConnected: true });
-    expect(buttons()).toHaveLength(5);
+    expect(buttons()).toHaveLength(6);
     expect(byLabel('Mais ferramentas')).not.toBeNull();
   });
 });

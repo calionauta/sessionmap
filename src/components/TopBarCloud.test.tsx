@@ -34,6 +34,7 @@ function renderBar(cloud: React.ComponentProps<typeof TopBar>['cloud'], onOpenSe
       onOpenClientWindow: () => {},
       onFocusClientWindow: () => {},
       onTogglePause: () => {},
+      onStopSharing: () => {},
       onOpenMapList: () => {},
       onToggleFocusZoom: () => {},
       onOpenShareGuide: () => {},

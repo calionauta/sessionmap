@@ -445,6 +445,26 @@ export const TherapistView: React.FC = () => {
     }
   };
 
+  // Stop sharing: close the client window when it is ours to close, and mark
+  // the session as not shared immediately. The heartbeat would notice a
+  // closed window on its own within ~4.5s, but leaving a dead "sharing"
+  // button up until then is a lie — and a client window the host did not
+  // open (reloaded host, second tab) is simply marked off.
+  const closeClientWindow = useCallback(() => {
+    try {
+      const win = clientWindowRef.current;
+      if (win && !win.closed) win.close();
+    } catch {
+      // cross-origin or already gone: the state reset below is the fix.
+    }
+    clientWindowRef.current = null;
+    setIsClientConnected(false);
+    setIsPaused((prev) => {
+      if (prev) syncService.send({ type: 'pause', paused: false });
+      return false;
+    });
+  }, []);
+
   // Update map root with debounced autosave
   const handleUpdateRoot = (newRoot: MindMapNode, reason: string = 'edit') => {
     if (!activeMap) return;
@@ -926,6 +946,7 @@ export const TherapistView: React.FC = () => {
           openClientWindow();
         }}
         onTogglePause={togglePause}
+        onStopSharing={closeClientWindow}
         onOpenMapList={() => setIsMapListOpen(true)}
         onToggleFocusZoom={() =>
           handleUpdateSettings({ ...settings, focusZoomMode: !settings.focusZoomMode })

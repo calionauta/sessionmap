@@ -18,6 +18,7 @@ import {
   Moon,
   Target,
   Users,
+  X,
 } from 'lucide-react';
 import { OverflowMenu, MenuEntry } from './ui/OverflowMenu';
 
@@ -76,15 +77,16 @@ export interface TopBarProps {
   /**
    * Bring the client's window to the front.
    *
-   * Separate from opening it on purpose. "Janela do Participante" used to do both,
-   * because `window.open` with a named target reuses an existing window — which
-   * meant the bar could not stop offering it without quietly taking away the
-   * ability to un-minimise a client's screen mid-session. In a therapy session
-   * that is a real thing that happens, so the capability is kept; it just does
-   * not deserve a permanent control.
+   * Separate from opening it on purpose. `window.open` with a named target
+   * reuses an existing window — which meant the bar could not stop offering
+   * the open action without quietly taking away the ability to un-minimise
+   * the shared screen mid-session. The capability is kept; it just does
+   * not deserve a permanent control, so it lives in the overflow menu.
    */
   onFocusClientWindow: () => void;
   onTogglePause: () => void;
+  /** Close the shared window and mark the session as not shared. */
+  onStopSharing: () => void;
   onOpenMapList: () => void;
   onToggleFocusZoom: () => void;
   onOpenShareGuide: () => void;
@@ -107,6 +109,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenClientWindow,
   onFocusClientWindow,
   onTogglePause,
+  onStopSharing,
   onOpenMapList,
   onToggleFocusZoom,
   onOpenShareGuide,
@@ -119,21 +122,15 @@ export const TopBar: React.FC<TopBarProps> = ({
   cloud = null,
 }) => {
   /**
-   * The one control that both reports the sharing state and acts on it.
+   * The share cluster: action and state are separate, like Meet/Zoom.
    *
-   * Not sharing, the action is "share", so that is what the button says —
-   * the only primary fill in the bar. Sharing, the button says so, and
-   * pressing it pauses, which is the one thing you do to a live shared
-   * screen. Paused, it becomes resume. Sharing and pause stay two separate
-   * pieces of state; the button only ever wears one.
+   * The BUTTON is always an action in the same slot — `Apresentar` opens the
+   * participant window, `Encerrar apresentação` closes it. The STATE lives in
+   * a non-interactive `Ao vivo` / `Pausado` indicator beside it, never in a
+   * button label. Pause stays its own icon button while live (plus `Ctrl+.`),
+   * so freezing and ending never share a label or a slot.
    */
   const disconnected = !isClientConnected;
-  const actionLabel = disconnected
-    ? 'Compartilhar'
-    : isPaused
-      ? 'Retomar tela'
-      : 'Compartilhado';
-  const ActionIcon = disconnected ? ExternalLink : isPaused ? Play : Pause;
 
   // Preferences are states, so they are checkbox items. A toggle that looks
   // like a button in a menu is a toggle the reader has to guess at.
@@ -280,25 +277,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="whitespace-nowrap">{cloud.label}</span>
           </button>
         )}
-        {/* Status only. It was on `hidden lg:flex`, which meant that below 1024px
-            the host could not pause the client's screen at all except by
-            remembering Ctrl+.. The pill may still hide — it is supplementary —
-            but the ACTION below never does. */}
-        <div
-          role="status"
-          className="hidden lg:flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content"
-        >
-          <span
-            data-state-dot=""
-            className={`w-2 h-2 rounded-full ${
-              isPaused ? 'bg-negative' : isClientConnected ? 'bg-positive animate-pulse' : 'bg-caution'
-            }`}
-          />
-          <span>
-            {isPaused ? 'Pausado' : isClientConnected ? 'Compartilhando' : 'Não compartilhado'}
-          </span>
-        </div>
-
         {/* The narrow-window pane switch. Before it: a 375px screen showed a
             142px outline beside a 233px map, and a 44px splitter across the
             middle of it. The bar is the only surface that is on screen in both
@@ -319,27 +297,68 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={disconnected ? onOpenClientWindow : onTogglePause}
-          title={
-            disconnected
-              ? 'Abrir a janela compartilhada'
-              : isPaused
-                ? 'Retomar a tela compartilhada (Ctrl+.)'
-                : 'Pausar a tela compartilhada (Ctrl+.)'
-          }
-          className={`ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ${
-            disconnected ? 'ctl-primary' : ''
-          }`}
-        >
-          <ActionIcon
-            className={`w-3.5 h-3.5 shrink-0 ${disconnected ? '' : 'fill-current'}`}
-            aria-hidden="true"
-          />
-          <span className="hidden sm:inline">{actionLabel}</span>
-          <span className="sr-only sm:hidden">{actionLabel}</span>
-        </button>
+        {disconnected ? (
+          <button
+            type="button"
+            onClick={onOpenClientWindow}
+            title="Abre a tela do participante em nova janela"
+            aria-label="Apresentar: abre a tela do participante em nova janela"
+            className="ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ctl-primary"
+          >
+            <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="hidden sm:inline">Apresentar</span>
+            <span className="sr-only sm:hidden">Apresentar</span>
+          </button>
+        ) : (
+          <>
+            {/* Live state. Read-only by design: it never acts, so it is never
+                mistaken for the action next to it. */}
+            <div
+              role="status"
+              className="flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-inset border border-line text-xs font-semibold text-content"
+            >
+              <span
+                aria-hidden="true"
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  isPaused ? 'bg-caution' : 'bg-positive animate-pulse'
+                }`}
+              />
+              <span className="whitespace-nowrap">{isPaused ? 'Pausado' : 'Ao vivo'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onTogglePause}
+              title={
+                isPaused
+                  ? 'Retomar a tela do participante (Ctrl+.)'
+                  : 'Pausar a tela do participante (Ctrl+.)'
+              }
+              aria-label={
+                isPaused
+                  ? 'Retomar a tela do participante'
+                  : 'Pausar a tela do participante'
+              }
+              className="ctl w-9 h-9 !min-h-0 px-0"
+            >
+              {isPaused ? (
+                <Play className="w-4 h-4 fill-current" aria-hidden="true" />
+              ) : (
+                <Pause className="w-4 h-4 fill-current" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onStopSharing}
+              title="Encerrar a apresentação e fechar a tela do participante"
+              aria-label="Encerrar apresentação"
+              className="ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ctl-danger"
+            >
+              <X className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">Encerrar apresentação</span>
+              <span className="sr-only sm:hidden">Encerrar apresentação</span>
+            </button>
+          </>
+        )}
 
         <div className="h-5 w-px bg-line hidden sm:block" aria-hidden="true" />
 

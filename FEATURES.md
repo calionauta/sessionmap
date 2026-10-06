@@ -14,13 +14,13 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
   ~1s parado — sem flicker.
 - **Tela do participante segue o cursor:** o mapa do participante centraliza o tópico sob
   o seu cursor, sem precisar pausar para "alcançar".
-- **Compartilhar na top bar:** um botão só — `Compartilhar` abre a janela, `Compartilhado` indica ao vivo (e pausa ao clicar), `Retomar tela` volta. `Ctrl+.` faz o mesmo.
+- **Apresentar na top bar:** `Apresentar` abre a tela do participante em nova janela; ao vivo, o indicador `Ao vivo` (ou `Pausado`) mostra o estado e `Encerrar apresentação` fecha. `Pausar` em ícone + `Ctrl+.` congelam sem encerrar.
 - **Título e URL neutros na janela B:** aba diz só "Mapa"; nome do participante nunca
   aparece na tela compartilhada.
 - **Tela cheia, cursor que se esconde e barra fina** que recolhe sozinha na
   janela do participante (pensada para projeção).
 - **Zoom no foco:** ao navegar, aproxima o nó atual + pais + filhos nas duas telas.
-- **Status de conexão** anfitrião↔participante com heartbeat e indicador na top bar.
+- **Status de conexão** anfitrião↔participante com heartbeat (sem pílula separada de status na top bar).
 
 ## Outline (como se escreve)
 
