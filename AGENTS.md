@@ -21,7 +21,7 @@ Teste de arquivo único: `bun test <path>`.
 - Testes co-localizados (`*.test.ts(x)` ao lado do fonte); testes "lint-shaped"
   (que leem o próprio fonte) existem e são intencionais — atualize-os junto.
 - TypeScript estrito; sem `any` novo; `oldString` de edits deve ser único no arquivo.
-- Português nas mensagens de usuário e comentários voltados ao terapeuta.
+- Português nas mensagens de usuário e comentários voltados ao anfitrião.
 
 ## Arquitetura (resumo)
 
@@ -29,7 +29,7 @@ Teste de arquivo único: `bun test <path>`.
   `services/sync.ts` (BroadcastChannel + fallback throttled).
 - Fonte da verdade local: IndexedDB (`services/storage.ts`) + `localStorage`.
 - Um parse do buffer por texto (`liveTree`), um commit (`commitBuffer`).
-- Sessão tem `modalityId`; cliente nunca é classificado (badges = união derivada).
+- Sessão tem `modalityId`; participante nunca é classificado (badges = união derivada).
 - `saveMap` carimba `updatedAt` por padrão; escrita de manutenção usa `{stamp:false}`.
 - Nuvem Puter é opt-in e criptografada; `puterCloud.ts` é só transporte (dynamic import,
   fora do chunk inicial); segredo nunca persiste (há teste-canário que garante).

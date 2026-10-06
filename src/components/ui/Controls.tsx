@@ -22,6 +22,8 @@ interface SegmentedProps<T extends string | number> {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Full-width with evenly stretched options, for stacked rows. */
+  fluid?: boolean;
 }
 
 export function Segmented<T extends string | number>({
@@ -29,6 +31,7 @@ export function Segmented<T extends string | number>({
   options,
   value,
   onChange,
+  fluid = false,
 }: SegmentedProps<T>) {
   return (
     <div
@@ -38,7 +41,9 @@ export function Segmented<T extends string | number>({
          label do not fit a 375px viewport side by side, and a row that
          bleeds past the dialog reads as broken. Wrapped options are still
          one group, one tab stop per option, no behavior change. */
-      className="flex flex-wrap items-center gap-1 p-1 bg-surface-inset rounded-xl border border-line max-w-full"
+      className={`flex flex-wrap items-center gap-1 p-1 bg-surface-inset rounded-xl border border-line max-w-full ${
+        fluid ? 'w-full' : ''
+      }`}
     >
       {options.map((opt) => {
         const selected = opt.value === value;
@@ -50,6 +55,8 @@ export function Segmented<T extends string | number>({
             aria-checked={selected}
             onClick={() => onChange(opt.value)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 ${
+              fluid ? 'flex-1 justify-center' : ''
+            } ${
               selected
                 ? 'bg-accent text-content-onaccent shadow-xs'
                 : 'text-content-muted hover:text-content'

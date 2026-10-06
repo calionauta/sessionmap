@@ -7,7 +7,7 @@ import JSZip from 'jszip';
  * buffer writes.
  *
  * The heading is the map's TITLE rather than the root node's text: a session
- * is filed under a name the therapist gave it, which can differ from the date
+ * is filed under a name the host gave it, which can differ from the date
  * sitting in the outline. Everything below is byte-for-byte what
  * treeToMarkdown produces, so an exported file re-imports to exactly the tree
  * it came from — the round trip the export and the editor now share.
@@ -130,7 +130,7 @@ export function downloadBlob(blob: Blob, filename: string) {
  */
 export function exportSessionMarkdown(session: MindMap) {
   const md = exportToMarkdown(session);
-  const clientName = session.clientName ? sanitizeFilename(session.clientName) : 'Cliente';
+  const clientName = session.clientName ? sanitizeFilename(session.clientName) : 'Participante';
   const sessionName = sanitizeFilename(session.sessionDate || session.title || 'sessao');
   downloadFile(md, `${clientName}_${sessionName}.md`, 'text/markdown;charset=utf-8');
 }
@@ -140,10 +140,10 @@ export function exportSessionMarkdown(session: MindMap) {
  */
 export async function exportClientSessionsZip(clientName: string, sessions: MindMap[]): Promise<void> {
   const zip = new JSZip();
-  const safeClientName = sanitizeFilename(clientName || 'Cliente');
+  const safeClientName = sanitizeFilename(clientName || 'Participante');
 
   if (sessions.length === 0) {
-    zip.file('README.txt', `Nenhuma sessão registrada para o cliente ${clientName}.`);
+    zip.file('README.txt', `Nenhuma sessão registrada para o participante ${clientName}.`);
   } else {
     const usedNames = new Set<string>();
     sessions.forEach((s, idx) => {
@@ -178,12 +178,12 @@ export async function exportAllClientsZip(
   clients.forEach((c) => clientNameById.set(c.id, c.name));
 
   if (allMaps.length === 0) {
-    zip.file('README.txt', 'Nenhum cliente ou sessão encontrada no banco local.');
+    zip.file('README.txt', 'Nenhum participante ou sessão encontrada no banco local.');
   } else {
     const usedClientFolders = new Set<string>();
 
     allMaps.forEach((s, idx) => {
-      const clientName = clientNameById.get(s.clientId) || s.clientName || 'Cliente';
+      const clientName = clientNameById.get(s.clientId) || s.clientName || 'Participante';
       const folderName = sanitizeFilename(clientName);
       usedClientFolders.add(folderName);
 
@@ -200,7 +200,7 @@ export async function exportAllClientsZip(
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
-  downloadBlob(blob, `sessionmap_todos_clientes_${today}.zip`);
+  downloadBlob(blob, `sessionmap_todos_participantes_${today}.zip`);
 }
 
 /**
@@ -345,7 +345,7 @@ export function exportToPNG(
     try {
       // Same preparation as the SVG export: custom properties inlined and the
       // pan/zoom transform dropped, so a PNG rasterises the map rather than
-      // whatever the therapist happens to be looking at.
+      // whatever the host happens to be looking at.
       const { svgString, width, height, bgColor } = buildExportSVG(svgElement, theme);
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
       const URLObj = window.URL || window.webkitURL || window;

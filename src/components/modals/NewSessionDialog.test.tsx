@@ -41,23 +41,23 @@ describe('NewSessionDialog', () => {
     renderDialog(() => {});
     const kind = screen.getByLabelText('Tipo de atendimento') as HTMLSelectElement;
     const names = Array.from(kind.options).map((o) => o.text);
-    expect(names).toEqual(['Sem tipo', 'Terapia', 'Mentoria', 'Consultoria']);
+    expect(names).toEqual(['Sem tipo', 'Mentoria', 'Consultoria', 'Reunião']);
     expect(kind.value).toBe('');
     // No general (modality-less) template is seeded, so the empty state for
     // "Sem tipo" says where to create one rather than offering nothing.
     expect(
-      screen.getByText('Nenhum roteiro para este tipo ainda — crie um em Clientes & Sessões.')
+      screen.getByText('Nenhum roteiro para este tipo ainda — crie um em Participantes & Sessões.')
     ).toBeTruthy();
   });
 
   test('templates follow the kind: own plus general, never another kind', () => {
     renderDialog(() => {});
     const kind = screen.getByLabelText('Tipo de atendimento') as HTMLSelectElement;
-    fireEvent.change(kind, { target: { value: 'mod_terapia' } });
+    fireEvent.change(kind, { target: { value: 'mod_reuniao' } });
 
     const tpl = screen.getByLabelText('Roteiro inicial') as HTMLSelectElement;
     const names = Array.from(tpl.options).map((o) => o.text);
-    expect(names).toContain('Sessão de terapia');
+    expect(names).toContain('Reunião');
     expect(names).not.toContain('Sessão de mentoria');
     expect(names).not.toContain('Sessão de consultoria');
   });
@@ -74,7 +74,7 @@ describe('NewSessionDialog', () => {
       target: { value: 'mod_mentoria' },
     });
     fireEvent.change(screen.getByLabelText('Roteiro inicial'), {
-      target: { value: 'tpl_seed_1' },
+      target: { value: 'tpl_seed_0' },
     });
     // The skeleton is previewed before committing to it.
     expect(screen.getByText(/Onde está travando/)).toBeTruthy();

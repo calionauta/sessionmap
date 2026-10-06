@@ -51,7 +51,7 @@ describe('CloudBackupSection', () => {
         auto: false,
         lastBackupAt: null,
         lastError: null,
-        puterUsername: 'terapeuta',
+        puterUsername: 'anfitriao',
       },
     };
     render(
@@ -98,7 +98,7 @@ describe('CloudBackupSection', () => {
         auto: false,
         lastBackupAt: null,
         lastError: null,
-        puterUsername: 'terapeuta',
+        puterUsername: 'anfitriao',
       },
     };
     render(

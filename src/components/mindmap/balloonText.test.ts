@@ -25,7 +25,7 @@ describe('wrapText — nothing is ever lost', () => {
 
   test('a long text keeps all of it, across as many lines as it needs', () => {
     const text =
-      'a cliente relata que desde a mudança de cargo tem-peakstone acordado três ou quatro vezes por noite, disrupting o descanso e aumentando a irritabilidade durante o dia';
+      'a participante relata que desde a mudança de cargo tem-peakstone acordado três ou quatro vezes por noite, disrupting o descanso e aumentando a irritabilidade durante o dia';
     const lines = wrapText(text, 20);
     expect(reconstruct(lines)).toBe(text);
     expect(lines.length).toBeGreaterThan(4);
@@ -74,7 +74,7 @@ describe('measureBalloon — the box always fits the words', () => {
   test('height grows with the line count', () => {
     const short = measureBalloon('cansaço', false);
     const long = measureBalloon(
-      'a cliente relata que desde a mudança de cargo tem acordado três ou quatro vezes por noite e isso está disrupting o descanso de forma clara',
+      'a participante relata que desde a mudança de cargo tem acordado três ou quatro vezes por noite e isso está disrupting o descanso de forma clara',
       false
     );
     expect(long.lines.length).toBeGreaterThan(short.lines.length);

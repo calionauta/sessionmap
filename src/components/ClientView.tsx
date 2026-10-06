@@ -104,7 +104,7 @@ export const ClientView: React.FC = () => {
     setFontScale(initialSettings.clientFontScale || 1.0);
     // The client window is the larger of the two displays — it is projected,
     // and read by someone who does not have the outline in front of them. It
-    // therefore follows the therapist's focus-zoom setting instead of silently
+    // therefore follows the host's focus-zoom setting instead of silently
     // using the component's `false` default: the setting exists precisely so
     // the point being discussed is the biggest thing on the shared screen.
     setFocusZoomMode(initialSettings.focusZoomMode);
@@ -299,7 +299,7 @@ export const ClientView: React.FC = () => {
           className="flex h-full flex-col items-center justify-center px-8 text-center text-sm text-content-muted"
         >
           <h1 className="text-balance max-w-xs text-base font-medium tracking-tight">
-            Aguardando conexão com a sessão do terapeuta…
+            Aguardando conexão com a sessão do anfitrião…
           </h1>
         </div>
       )}

@@ -133,7 +133,7 @@ export async function getSpace(api: Puter): Promise<CloudSpace | null> {
   }
 }
 
-/** Turns puter error objects into sentences a therapist can act on. */
+/** Turns puter error objects into sentences a host can act on. */
 export function puterErrorMessage(err: unknown): string {
   // Offline first: a failed chunk import or fetch without connection is a
   // TypeError with no code, and "Failed to fetch" helps nobody.

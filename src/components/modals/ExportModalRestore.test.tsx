@@ -81,7 +81,7 @@ describe('ExportModal backup restore', () => {
     expect(JSON.parse(String(localStorage.getItem('sessionmap_maps') ?? '[]'))).toEqual([]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
-    await screen.findByText(/Restaurado: 1 sessão, 1 cliente\./);
+    await screen.findByText(/Restaurado: 1 sessão, 1 participante\./);
     expect(onRestoreBackup).toHaveBeenCalled();
     const stored = JSON.parse(String(localStorage.getItem('sessionmap_maps')));
     expect(stored.find((m: { id: string }) => m.id === 'm_new')?.clientName).toBe('Bia');
@@ -94,7 +94,7 @@ describe('ExportModal backup restore', () => {
 
     await screen.findByText('Restaurar este backup?');
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar backup' }));
-    await screen.findByText(/Restaurado: 1 sessão, 1 cliente\./);
+    await screen.findByText(/Restaurado: 1 sessão, 1 participante\./);
   });
 
   test('garbage is reported, not applied', async () => {

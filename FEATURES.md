@@ -6,21 +6,21 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 
 ## Sessão ao vivo (duas janelas)
 
-- **Janela do terapeuta (privada):** outline editável + prévia do mapa lado a lado.
-- **Janela do cliente (`?view=client`):** só os balões, sem menus nem outline.
+- **Janela do anfitrião (privada):** outline editável + prévia do mapa lado a lado.
+- **Janela do participante (`?view=client`):** só os balões, sem menus nem outline.
 - **Espelho em tempo real:** cada letra, seleção e posição do cursor viajam por
   `BroadcastChannel` (com fallback via evento de storage); sem servidor, sem conta.
 - **Barra de digitação única:** a mesma frase nos dois lados, some sozinha após
   ~1s parado — sem flicker.
-- **Tela do cliente segue o cursor:** o mapa do cliente centraliza o tópico sob
-  o cursor do terapeuta, sem precisar pausar para "alcançar".
-- **Modo pausa (`Ctrl+.`):** troca a tela do cliente por uma tela calma na hora.
-- **Título e URL neutros na janela B:** aba diz só "Mapa"; nome do cliente nunca
+- **Tela do participante segue o cursor:** o mapa do participante centraliza o tópico sob
+  o seu cursor, sem precisar pausar para "alcançar".
+- **Compartilhar na top bar:** um botão só — `Compartilhar` abre a janela, `Compartilhado` indica ao vivo (e pausa ao clicar), `Retomar tela` volta. `Ctrl+.` faz o mesmo.
+- **Título e URL neutros na janela B:** aba diz só "Mapa"; nome do participante nunca
   aparece na tela compartilhada.
 - **Tela cheia, cursor que se esconde e barra fina** que recolhe sozinha na
-  janela do cliente (pensada para projeção).
+  janela do participante (pensada para projeção).
 - **Zoom no foco:** ao navegar, aproxima o nó atual + pais + filhos nas duas telas.
-- **Status de conexão** terapeuta↔cliente com heartbeat e indicador na top bar.
+- **Status de conexão** anfitrião↔participante com heartbeat e indicador na top bar.
 
 ## Outline (como se escreve)
 
@@ -47,21 +47,21 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - Largura do painel de tópicos **persistida** (arrasto, setas, Home/Esc).
 - **Maximizar outline ou mapa**; no celular, alternância tópicos↔mapa em tela cheia.
 
-## Clientes & sessões
+## Participantes & sessões
 
-- Cadastro, renomeação, busca, contagem de sessões; cliente demo só na estreia.
-- **Notas privadas por cliente:** sobrevivem a trocas de sessão e **nunca** são
-  transmitidas à janela do cliente.
-- **Arquivar/restaurar** clientes (leva as sessões junto) e sessões avulsas.
-- **Excluir com desfazer** (cliente volta com as sessões; sessão volta sozinha).
-- **Sessões órfãs visíveis:** nada some em silêncio se o cliente sair da lista.
-- **Importar `.md`** como sessão nova; numeração `Sessão N` por cliente.
-- Painel em abas: **Clientes** (fluxo diário) e **Tipos e roteiros** (catálogo global).
+- Cadastro, renomeação, busca, contagem de sessões. Começa vazio: nenhum dado de exemplo.
+- **Notas privadas por participante:** sobrevivem a trocas de sessão e **nunca** são
+  transmitidas à janela do participante.
+- **Arquivar/restaurar** participantes (leva as sessões junto) e sessões avulsas.
+- **Excluir com desfazer** (participante volta com as sessões; sessão volta sozinha; o aviso some em 10s).
+- **Sessões órfãs visíveis:** nada some em silêncio se o participante sair da lista.
+- **Importar `.md`** como sessão nova; numeração `Sessão N` por participante.
+- Painel em abas: **Participantes** (fluxo diário) e **Tipos e roteiros** (catálogo global).
 
 ## Tipos de atendimento e roteiros
 
 - **Uma modalidade por sessão** (Terapia, Mentoria, Consultoria + as que você criar).
-- **Badges derivados no cliente:** a união das sessões — ninguém é "de um tipo só".
+- **Badges derivados no participante:** a união das sessões — ninguém é "de um tipo só".
 - Filtro por tipo no histórico e no drawer; reclassificação posterior sem recriar.
 - **Catálogo global editável** (criar/renomear/excluir; excluir vira "sem tipo", nunca apaga sessão).
 - **Roteiros por tipo + gerais**, em Markdown, com preview; picker ao iniciar sessão.
@@ -69,8 +69,8 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 ## Exportação e backup local
 
 - Por sessão: **Markdown, OPML, FreeMind (.mm), JSON, PNG, SVG**, copiar.
-- **ZIP por cliente** e **ZIP geral**; backup JSON completo (envelope versionado
-  com clientes, sessões, tipos e roteiros) **com restore** (aceita arquivos legados).
+- **ZIP por participante** e **ZIP geral**; backup JSON completo (envelope versionado
+  com participantes, sessões, tipos e roteiros) **com restore** (aceita arquivos legados).
 - Restore confirma contagens antes de escrever; tipos/roteiros somam, nunca renomeiam.
 
 ## Backup em nuvem (Puter, opcional, desligado por padrão)

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SessionMap — mapa mental terapêutico em tempo real</title>
-<meta name="description" content="O terapeuta digita em tópicos, o cliente acompanha em balões. 100% offline e privado por padrão.">
+<title>SessionMap — mapa mental em tempo real</title>
+<meta name="description" content="Você digita em tópicos, os participantes acompanham o mapa. Grátis, open source, sem instalar, 100% offline por padrão.">
 <style>
   :root{
     --bg:#faf7f1; --surface:#fffdf8; --ink:#2b2620; --muted:#7a7266;
@@ -21,6 +21,13 @@
   .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
     color:var(--good);background:#e9f5ee;border:1px solid #cde8d8;border-radius:999px;padding:4px 12px}
+  .gh{margin-left:auto;opacity:.5;display:inline-flex;border-radius:8px;padding:6px}
+  .gh:hover{opacity:1}
+  .gh svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 6px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px}
+  .badge i{font-style:normal;color:var(--good);font-weight:900}
   .hero{text-align:center;padding:56px 0 40px}
   .hero h1{font-size:clamp(32px,5.5vw,54px);line-height:1.08;letter-spacing:-1.5px;margin:14px 0}
   .hero h1 em{font-style:normal;color:var(--accent)}
@@ -70,24 +77,29 @@
 <div class="wrap">
   <header class="top">
     <span class="logo">SessionMap</span><span class="dot" aria-hidden="true"></span>
+    <a class="gh" href="https://github.com/calionauta/sessionmap" aria-label="Código-fonte no GitHub" title="Código-fonte no GitHub"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></a>
   </header>
 
   <div class="hero">
-    <span class="pill">100% offline e privado por padrão</span>
-    <h1>Você digita <em>tópicos</em>.<br>O cliente vê <em>balões</em>.</h1>
-    <p>Mapa mental terapêutico em tempo real: o terapeuta escreve numa janela privada e o cliente acompanha o mapa numa segunda tela — sem conta, sem servidor, sem nada saindo do navegador.</p>
+    <div class="badges" aria-label="Grátis, aberto, sem instalar, offline">
+      <span class="badge"><i>✓</i>100% gratuito</span>
+      <span class="badge"><i>✓</i>Open source</span>
+      <span class="badge"><i>✓</i>Sem instalar</span>
+      <span class="badge"><i>✓</i>Funciona offline</span>
+    </div>
+    <h1>Você digita <em>tópicos</em>.<br>Os participantes veem o <em>mapa</em>.</h1>
+    <p>Mapa mental em tempo real no navegador: você escreve numa janela privada e os participantes acompanham o mapa numa segunda tela — sem conta, sem download, sem nada saindo do navegador.</p>
     <div class="cta">
       <a class="btn primary" href="./">Abrir o SessionMap</a>
-      <a class="btn ghost" href="https://github.com/calionauta/sessionmap">Ver o código</a>
     </div>
   </div>
 
   <div class="demo" aria-label="Exemplo: tópicos viram balões">
     <div class="pane">
-      <h3>Janela do terapeuta (privada)</h3>
+      <h3>Sua janela (privada)</h3>
       <div class="topic"># Sessão de hoje<br>- Como chega<br>&nbsp;&nbsp;- Cansaço no fim do dia<br>&nbsp;&nbsp;- O que ajuda<br>- Próximos passos</div>
     </div>    <div class="pane">
-      <h3>Janela do cliente (projetada)</h3>
+      <h3>Janela do participante (projetada)</h3>
       <svg class="maptree" viewBox="0 0 360 300" role="img" aria-label="Mapa fiel ao sistema: Sessão de hoje no centro liga-se a Como chega e Próximos passos; Como chega liga-se a dois tópicos">
         <path d="M 180 62 C 180 88, 72 84, 72 110"/>
         <path d="M 180 62 C 180 88, 292 84, 292 110"/>
@@ -113,28 +125,28 @@
     <h2>Como funciona</h2>
     <p class="sub">Quatro passos, do cadastro à sessão.</p>
     <div class="steps">
-      <div class="step"><b>1</b><p>Cadastre o cliente, escolha o tipo (terapia, mentoria, consultoria…) e um roteiro inicial.</p></div>
-      <div class="step"><b>2</b><p>Abra a <strong>Janela do Cliente</strong> e projete só ela — sem menus, sem nomes na aba.</p></div>
-      <div class="step"><b>3</b><p>Digite os tópicos. Cada linha vira um balão ao vivo na tela do cliente.</p></div>
-      <div class="step"><b>4</b><p><kbd>Ctrl</kbd> + <kbd>.</kbd> pausa a tela do cliente quando precisar.</p></div>
+      <div class="step"><b>1</b><p>Cadastre o participante, escolha o tipo (consultoria, mentoria, reunião…) e um roteiro inicial.</p></div>
+      <div class="step"><b>2</b><p>Abra a <strong>Janela do Participante</strong> e projete só ela — sem menus, sem nomes na aba.</p></div>
+      <div class="step"><b>3</b><p>Digite os tópicos. Cada linha vira um balão ao vivo na tela do participante.</p></div>
+      <div class="step"><b>4</b><p><kbd>Ctrl</kbd> + <kbd>.</kbd> pausa a tela do participante quando precisar.</p></div>
     </div>
   </section>
 
   <section>
-    <h2>Para terapeutas, consultores e mentores</h2>
-    <p class="sub">Cada sessão tem um tipo — e cada tipo tem seu roteiro inicial. Um cliente pode ser de mentoria e de terapia: o histórico acompanha.</p>
+    <h2>Para consultores, mentores e equipes</h2>
+    <p class="sub">Cada sessão tem um tipo — e cada tipo tem seu roteiro inicial. Um participante pode ser de mentoria e de consultoria: o histórico acompanha.</p>
     <div class="grid">
       <div class="card">
-        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg></div>
-        <h3>Terapeutas</h3><p>Mapa ao vivo na segunda tela, pausa rápida com <kbd>Ctrl</kbd> + <kbd>.</kbd>, notas privadas que nunca vazam para o projetor.</p>
-      </div>
-      <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 13h20"/></svg></div>
-        <h3>Consultores</h3><p>Diagnóstico visual construído com o cliente na hora — e ata pronta em Markdown, OPML ou FreeMind no fim.</p>
+        <h3>Consultores</h3><p>Diagnóstico visual construído com o participante na hora — e ata pronta em Markdown, OPML ou FreeMind no fim.</p>
       </div>
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5" fill="var(--accent)" stroke="none"/></svg></div>
         <h3>Mentores</h3><p>Roteiros por tipo de sessão, histórico por mentorado e exportação em ZIP para revisitar a jornada.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5"/><circle cx="17" cy="9" r="2.8"/><path d="M16 14.6c2.9.3 5 2.1 5 4.9"/></svg></div>
+        <h3>Equipes</h3><p>Dailies, brainstorms e 1:1s com histórico por participante — e a ata em tópicos já sai pronta.</p>
       </div>
     </div>
   </section>
@@ -145,7 +157,7 @@
     <div class="grid">
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="M15 10.5l7-3.5v10l-7-3.5"/></svg></div>
-        <h3>Reunião com cliente</h3><p>Compartilhe a janela B em vez da tela inteira: o cliente vê o mapa limpo, você mantém o resto privado.</p>
+        <h3>Reuniões com participantes</h3><p>Compartilhe a janela B em vez da tela inteira: o participante vê o mapa limpo, você mantém o resto privado.</p>
       </div>
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
@@ -164,7 +176,7 @@
     <div class="grid">
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>Privacidade radical</h3><p>Nome do cliente nunca aparece na janela compartilhada. Nada sai do navegador sem você mandar.</p>
+        <h3>Privacidade radical</h3><p>Anotações privadas por participante, invisíveis na tela compartilhada. Nome nunca aparece na janela dos participantes. Nada sai do navegador sem você mandar.</p>
       </div>
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg></div>

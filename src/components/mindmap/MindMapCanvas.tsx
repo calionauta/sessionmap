@@ -218,7 +218,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       if (last && Math.abs(w - last.w) < 24 && Math.abs(h - last.h) < 24)
         return;
       lastFitSizeRef.current = { w, h };
-      /* Re-frame around what the therapist is on, not around the whole map.
+      /* Re-frame around what the host is on, not around the whole map.
 
          Fitting everything is right when there is no selection, but with one it
          throws the node being edited to wherever the new bounds put it — which
@@ -301,7 +301,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         //
         // Centring the box was the bug: a node with many children reaching
         // right and few ancestors reaching left is the common shape, and the
-        // box centre then sits well to the right of the node the therapist is
+        // box centre then sits well to the right of the node the host is
         // actually on. "Focus" that puts the subject off-centre is not focus.
         //
         // The scale still comes from the cluster, so the zoom level keeps

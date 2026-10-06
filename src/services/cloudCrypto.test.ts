@@ -15,7 +15,7 @@ import {
  * rejection of anything that is not our envelope.
  */
 
-const PW = 'frase secreta bem longa do terapeuta';
+const PW = 'frase secreta bem longa do anfitrião';
 
 describe('cloud crypto', () => {
   test('available in this runtime', () => {

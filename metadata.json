@@ -1,6 +1,6 @@
 {
   "name": "sessionmap",
-  "description": "Aplicativo offline e privado para anotação em tempo real com mapa mental em balões e janela compartilhada para o cliente.",
+  "description": "Aplicativo offline e privado para anotação em tempo real com mapa mental em balões e janela compartilhada para o participante.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

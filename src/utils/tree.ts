@@ -196,7 +196,7 @@ export function branchIndexOf(root: MindMapNode, nodeId: string): number {
  * Why a move was refused.
  *
  * The reason lives with the operation because the operation is what refuses;
- * the sentence shown to the therapist for each one is UI policy and lives in
+ * the sentence shown to the host for each one is UI policy and lives in
  * ./lift. Splitting them is not pedantry — the type is the operation's return
  * contract, and a test asserting on refusals should not have to import a
  * keyboard chord to read it.

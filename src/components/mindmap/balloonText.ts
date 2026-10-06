@@ -7,7 +7,7 @@
  * with a character width of 8.41px and hard-coded a maximum of two lines, while
  * the renderer broke text with a different width (9px) and then truncated the
  * second line with an ellipsis. The two were close enough that short labels
- * looked right and long ones silently lost words — a therapist's own words,
+ * looked right and long ones silently lost words — a host's own words,
  * on the screen the client is reading from across the room.
  *
  * There is no character budget. A balloon grows in both directions, because

@@ -122,7 +122,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           ) : (
             <p className="mt-1 text-[11px] text-content-muted font-medium">
               {offered.length === 0
-                ? 'Nenhum roteiro para este tipo ainda — crie um em Clientes & Sessões.'
+                ? 'Nenhum roteiro para este tipo ainda — crie um em Participantes & Sessões.'
                 : 'Começa só com a data, como sempre.'}
             </p>
           )}

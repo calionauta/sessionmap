@@ -285,7 +285,7 @@ export async function runAutoBackup(): Promise<boolean> {
     return false;
   }
   // A background tick must never open a login popup (browsers block it and
-  // it would ambush the therapist mid-session).
+  // it would ambush the host mid-session).
   if (!isSignedIn(api)) return false;
   try {
     await backupWithCachedPassphrase(api);

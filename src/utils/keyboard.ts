@@ -15,7 +15,7 @@
  * its own history. The window handler in TherapistView was calling
  * preventDefault() and applying a TREE undo — and the tree history has no entry
  * for "typed this" or "deleted this", because typing is recorded with reason
- * 'typing' and deliberately never enters it. A therapist who selected the whole
+ * 'typing' and deliberately never enters it. A host who selected the whole
  * markdown buffer and deleted it had no way back, and that is the worst
  * possible outcome in the one editor where the whole session can be retyped
  * from memory in a second. It looked like Ctrl+Z was broken; it was working

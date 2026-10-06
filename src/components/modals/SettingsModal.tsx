@@ -35,7 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Configurações da Sessão"
-      description="Ajuste a visualização e o ritmo de interação com o cliente"
+      description="Ajuste a visualização e o ritmo de interação com o participante"
       icon={<Sliders className="w-5 h-5" />}
       footer={
         <button type="button" onClick={onClose} className="ctl ctl-primary">
@@ -66,10 +66,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <SettingRow
           id="live-text"
           align="start"
-          label="Exibição da Digitação na Janela do Cliente"
+          label="Exibição da Digitação na Janela do Participante"
           description={
             <>
-              <strong>Ao vivo:</strong> o cliente acompanha cada letra em tempo real.
+              <strong>Ao vivo:</strong> o participante acompanha cada letra em tempo real.
               <br />
               <strong>Só ao confirmar:</strong> mostra apenas &quot;digitando…&quot;
               até você apertar Enter.
@@ -133,59 +133,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
 
-        <SettingRow
-          id="outline-font-scale"
-          label={
-            <>
-              <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Tamanho da Fonte dos Tópicos</span>
-            </>
-          }
-          description="Aumenta a letra com que você escreve e lê os tópicos na coluna da esquerda. A altura das linhas e a indentação crescem junto, para a hierarquia continuar legível."
-          control={
-            <Segmented
-              label="Escala da fonte dos tópicos"
-              value={settings.outlineFontScale}
-              onChange={(v) => update('outlineFontScale', v)}
-              options={[0.85, 1.0, 1.15, 1.3, 1.5].map((s) => ({
-                value: s,
-                label: `${Math.round(s * 100)}%`,
-              }))}
-            />
-          }
-        />
+        {/* Stacked, not side-by-side: the user's own suggestion, and the
+            right one — a five-option ruler beside a long label squeezed both
+            into unreadability. Title names it, the full-width ruler below is
+            the gesture, the help lands last. */}
+        <div className="space-y-2">
+          <div className="font-bold text-xs text-content flex items-center gap-1.5">
+            <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+            <span>Tamanho da Fonte dos Tópicos</span>
+          </div>
+          <Segmented
+            label="Escala da fonte dos tópicos"
+            value={settings.outlineFontScale}
+            onChange={(v) => update('outlineFontScale', v)}
+            fluid
+            options={[0.85, 1.0, 1.15, 1.3, 1.5].map((s) => ({
+              value: s,
+              label: `${Math.round(s * 100)}%`,
+            }))}
+          />
+          <p className="text-xs text-content-muted font-medium leading-relaxed">
+            Aumenta a letra com que você escreve e lê os tópicos na coluna da
+            esquerda. A altura das linhas e a indentação crescem junto, para a
+            hierarquia continuar legível.
+          </p>
+        </div>
 
         <Divider />
 
-        <SettingRow
-          id="client-font-scale"
-          align="start"
-          label={
-            <>
-              <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Fonte das Anotações do Cliente</span>
-            </>
-          }
-          description={
-            <>
-              O tamanho dos balões que o <strong>cliente</strong> lê na segunda tela —
-              ajuste para a distância da sala: quanto maior a sala, maior a fonte.
-              <br />
-              A prévia ao lado é o espelho dessa tela e acompanha o mesmo valor.
-            </>
-          }
-          control={
-            <Segmented
-              label="Escala da fonte das anotações do cliente"
-              value={settings.clientFontScale}
-              onChange={(v) => update('clientFontScale', v)}
-              options={[0.85, 1.0, 1.15, 1.3, 1.5, 1.75].map((s) => ({
-                value: s,
-                label: `${Math.round(s * 100)}%`,
-              }))}
-            />
-          }
-        />
+        <div className="space-y-2">
+          <div className="font-bold text-xs text-content flex items-center gap-1.5">
+            <Type className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+            <span>Fonte das Anotações do Participante</span>
+          </div>
+          <Segmented
+            label="Escala da fonte das anotações do participante"
+            value={settings.clientFontScale}
+            onChange={(v) => update('clientFontScale', v)}
+            fluid
+            options={[0.85, 1.0, 1.15, 1.3, 1.5, 1.75].map((s) => ({
+              value: s,
+              label: `${Math.round(s * 100)}%`,
+            }))}
+          />
+          <p className="text-xs text-content-muted font-medium leading-relaxed">
+            O tamanho dos balões que o <strong>participante</strong> lê na segunda tela —
+            ajuste para a distância da sala: quanto maior a sala, maior a fonte.
+            <br />
+            A prévia ao lado é o espelho dessa tela e acompanha o mesmo valor.
+          </p>
+        </div>
 
         <CloudBackupSection
           settings={settings}

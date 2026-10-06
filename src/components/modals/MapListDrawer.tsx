@@ -246,14 +246,14 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               aria-hidden="true"
             />
             <label htmlFor="map-search" className="sr-only">
-              Buscar mapa por cliente ou anotação
+              Buscar mapa por participante ou anotação
             </label>
             <input
               id="map-search"
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por cliente ou anotação…"
+              placeholder="Buscar por participante ou anotação…"
               className="w-full pl-9 pr-3 py-2 text-xs rounded-control border border-line bg-surface font-medium text-content placeholder:text-content-subtle"
             />
           </div>

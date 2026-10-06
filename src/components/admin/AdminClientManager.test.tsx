@@ -46,7 +46,7 @@ function renderAdmin(props?: {
   onSelectSession?: (m: MindMap) => void;
 }) {
   const maps = [
-    session('m_ter', 'mod_terapia', '01/01/2026 10:00:00'),
+    session('m_reu', 'mod_reuniao', '01/01/2026 10:00:00'),
     session('m_men', 'mod_mentoria', '02/01/2026 10:00:00'),
   ];
   return render(
@@ -55,7 +55,7 @@ function renderAdmin(props?: {
       onClose: () => {},
       clients: [ana],
       maps,
-      activeMapId: 'm_ter',
+      activeMapId: 'm_reu',
       activeClientId: 'c_ana',
       onSelectSession: props?.onSelectSession ?? (() => {}),
       onRefreshData: props?.onRefreshData ?? (() => {}),
@@ -69,7 +69,7 @@ describe('AdminClientManager modality wiring', () => {
     renderAdmin();
     // One badge per kind on the row (plus one per session card): the union,
     // derived, never stored.
-    expect(screen.getAllByText('Terapia').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Reunião').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Mentoria').length).toBeGreaterThanOrEqual(2);
   });
 
@@ -82,13 +82,13 @@ describe('AdminClientManager modality wiring', () => {
     await waitFor(() => expect(onRefreshData).toHaveBeenCalled());
 
     const stored = JSON.parse(String(localStorage.getItem('sessionmap_maps')));
-    expect(stored.find((m: MindMap) => m.id === 'm_ter')?.modalityId).toBe('mod_mentoria');
+    expect(stored.find((m: MindMap) => m.id === 'm_reu')?.modalityId).toBe('mod_mentoria');
   });
 
-  test('"+ Nova Sessão" opens the picker instead of creating blindly', () => {
+  test('"Nova Sessão" opens the picker instead of creating blindly', () => {
     let selected: MindMap | null = null;
     renderAdmin({ onSelectSession: (m) => { selected = m; } });
-    fireEvent.click(screen.getByRole('button', { name: '+ Nova Sessão' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nova Sessão' }));
     // The picker, pre-selected with the client's last used kind.
     expect(screen.getByText('Nova sessão · Ana M.')).toBeTruthy();
     expect(selected).toBeNull();
@@ -108,7 +108,7 @@ describe('AdminClientManager catalog tab', () => {
     // And the client list steps out of the way.
     expect(screen.queryAllByText('Ana M.')).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole('tab', { name: /clientes/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /participantes/i }));
     expect(screen.getAllByText('Ana M.').length).toBeGreaterThan(0);
   });
 
@@ -127,12 +127,12 @@ describe('AdminClientManager catalog tab', () => {
     const onRefreshData = mock(() => {});
     renderAdmin({ onRefreshData });
     fireEvent.click(screen.getByRole('tab', { name: 'Tipos e roteiros' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Excluir tipo Terapia' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir tipo Reunião' }));
     await screen.findByText('Excluir este tipo?');
     fireEvent.click(screen.getByRole('button', { name: 'Excluir tipo' }));
     await waitFor(() => expect(onRefreshData).toHaveBeenCalled());
     const stored = JSON.parse(String(localStorage.getItem('sessionmap_modalities')));
-    expect(stored.map((m: { name: string }) => m.name)).not.toContain('Terapia');
+    expect(stored.map((m: { name: string }) => m.name)).not.toContain('Reunião');
   });
 
   test('adding a template files it under the picked kind', () => {
@@ -143,7 +143,7 @@ describe('AdminClientManager catalog tab', () => {
       target: { value: 'Abertura' },
     });
     fireEvent.change(screen.getByLabelText('Tipo do roteiro'), {
-      target: { value: 'mod_terapia' },
+      target: { value: 'mod_reuniao' },
     });
     fireEvent.change(screen.getByLabelText('Texto do roteiro em tópicos'), {
       target: { value: '- Chegada' },
@@ -153,6 +153,6 @@ describe('AdminClientManager catalog tab', () => {
     const added = stored.find(
       (t: { title: string }) => t.title === 'Abertura'
     ) as { modalityId: string };
-    expect(added.modalityId).toBe('mod_terapia');
+    expect(added.modalityId).toBe('mod_reuniao');
   });
 });

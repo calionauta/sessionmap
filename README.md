@@ -1,7 +1,7 @@
 # SessionMap
 
-Mapa mental terapêutico em tempo real: o terapeuta digita em tópicos e o
-cliente acompanha em balões, numa segunda janela ou projeção — **100% offline
+Mapa mental em tempo real: você digita em tópicos e os
+participantes acompanham o mapa, numa segunda janela ou projeção — **100% offline
 e privado por padrão**.
 
 - **Usar agora:** <https://calionauta.github.io/sessionmap/>
@@ -10,20 +10,20 @@ e privado por padrão**.
 
 ## Como funciona (30 segundos)
 
-1. Cadastre o cliente em **Clientes & Sessões** e inicie uma sessão (escolha o
+1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
    tipo e, se quiser, um roteiro inicial).
-2. Abra a **Janela do Cliente** e projete/ compartilhe só ela.
-3. Digite os tópicos: cada linha vira um balão na tela do cliente, ao vivo.
-4. `Ctrl+.` pausa a tela do cliente a qualquer momento.
+2. Abra a **Janela do Participante** e projete/ compartilhe só ela.
+3. Digite os tópicos: cada linha vira um balão na tela do participante, ao vivo.
+4. `Ctrl+.` pausa a tela do participante a qualquer momento.
 
-A janela do cliente nunca mostra menus, outline, notas privadas nem o nome do
-cliente na aba — só o mapa.
+A janela do participante nunca mostra menus, outline, notas privadas nem o nome do
+participante na aba — só o mapa.
 
 ## Privacidade
 
 - Tudo fica no navegador (IndexedDB + `localStorage`); a sincronia entre as
   janelas usa `BroadcastChannel` local. Sem conta, sem servidor, sem tracking.
-- Notas do terapeuta sobre o cliente nunca são transmitidas.
+- Suas notas sobre cada participante nunca são transmitidas.
 - O único dado que sai do navegador é o **backup em nuvem** ([Puter](https://puter.com)),
   desligado por padrão — você liga quando quiser,
   sempre criptografado no navegador (AES-256-GCM) com senha que só existe na sua
@@ -31,8 +31,8 @@ cliente na aba — só o mapa.
 
 ## Backup
 
-- **Local:** backup JSON completo (sessões, clientes, tipos, roteiros) com
-  restore, além de Markdown/OPML/FreeMind/PNG/SVG e ZIPs por cliente ou geral.
+- **Local:** backup JSON completo (sessões, participantes, tipos, roteiros) com
+  restore, além de Markdown/OPML/FreeMind/PNG/SVG e ZIPs por participante ou geral.
 - **Nuvem:** em Configurações → Backup em nuvem: conectar ao Puter, definir a
   senha, enviar manual ou automático (~1 min após salvar). Apagar tudo exige
   digitar `APAGAR`. Perdeu a senha? O local está intacto — recomece com uma

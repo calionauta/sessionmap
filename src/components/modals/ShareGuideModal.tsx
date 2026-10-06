@@ -21,7 +21,7 @@ const PLATFORM_ITEMS = [
 const STEPS: Record<Platform, React.ReactNode> = {
   meet: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Clique no botão abaixo para abrir a <strong>Janela do Cliente</strong>.</li>
+      <li>Clique no botão abaixo para abrir a <strong>Janela do Participante</strong>.</li>
       <li>No Google Meet, clique no botão <strong>&quot;Apresentar agora&quot;</strong> (ícone de tela).</li>
       <li>
         Escolha a opção <strong>&quot;Uma janela&quot;</strong> (ou &quot;Uma guia&quot;).{' '}
@@ -33,21 +33,21 @@ const STEPS: Record<Platform, React.ReactNode> = {
   ),
   zoom: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Abra a janela do cliente no botão abaixo.</li>
+      <li>Abra a janela do participante no botão abaixo.</li>
       <li>No Zoom, clique no botão verde <strong>&quot;Compartilhar Tela&quot; (Share Screen)</strong>.</li>
       <li>Na aba <strong>Básico</strong>, escolha a janela que exibe apenas <strong>&quot;Mapa&quot;</strong>.</li>
       <li>
         Verifique o retângulo verde ao redor da janela do mapa confirmando que só ela
-        está visível ao cliente.
+        está visível ao participante.
       </li>
     </ol>
   ),
   teams: (
     <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed text-content">
-      <li>Abra a janela do cliente no botão abaixo.</li>
+      <li>Abra a janela do participante no botão abaixo.</li>
       <li>No Teams, clique em <strong>&quot;Compartilhar&quot;</strong> na barra superior.</li>
       <li>Na seção <strong>Janela</strong>, selecione a janela <strong>&quot;Mapa&quot;</strong>.</li>
-      <li>Suas anotações privadas e outras abas permanecem 100% invisíveis ao cliente.</li>
+      <li>Suas anotações privadas e outras abas permanecem 100% invisíveis ao participante.</li>
     </ol>
   ),
 };
@@ -56,14 +56,14 @@ const GUARANTEES = [
   {
     icon: <CheckCircle2 className="w-4 h-4 shrink-0" />,
     title: 'Janela Isolada',
-    body: 'A janela do cliente só contém o mapa em balões. Zero menus ou outlines.',
+    body: 'A janela do participante só contém o mapa em balões. Zero menus ou outlines.',
   },
   {
     icon: <EyeOff className="w-4 h-4 shrink-0" />,
     title: 'Título e URL Neutros',
     body: (
       <>
-        O título é apenas <strong>&quot;Mapa&quot;</strong>. Nenhum nome do cliente na aba
+        O título é apenas <strong>&quot;Mapa&quot;</strong>. Nenhum nome do participante na aba
         ou na barra de endereço.
       </>
     ),
@@ -106,7 +106,7 @@ export const ShareGuideModal: React.FC<ShareGuideModalProps> = ({
             }}
             className="ctl ctl-primary"
           >
-            Abrir Janela do Cliente
+            Abrir Janela do Participante
           </button>
         </>
       }

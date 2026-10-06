@@ -349,7 +349,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       await onCloudRestore();
       setNotice(
         `Restaurado da nuvem: ${counts.maps} ${counts.maps === 1 ? 'sessão' : 'sessões'}, ` +
-          `${counts.clients} ${counts.clients === 1 ? 'cliente' : 'clientes'}.`
+          `${counts.clients} ${counts.clients === 1 ? 'participante' : 'participantes'}.`
       );
     } catch (e) {
       fail(e);
@@ -723,11 +723,11 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
               <>
                 <p>
                   A nuvem guarda <strong>{pendingRestore.maps} sessões</strong>
-                  {pendingRestore.clients > 0 && <> e <strong>{pendingRestore.clients} clientes</strong></>}
+                  {pendingRestore.clients > 0 && <> e <strong>{pendingRestore.clients} participantes</strong></>}
                   {pendingRestore.exportedAt && <> (enviado em {new Date(pendingRestore.exportedAt).toLocaleDateString('pt-BR')})</>}.
                 </p>
                 <p className="mt-2 text-content-subtle">
-                  Sessões e clientes com o mesmo id serão substituídos. Tipos e
+                  Sessões e participantes com o mesmo id serão substituídos. Tipos e
                   roteiros novos são somados.
                 </p>
               </>

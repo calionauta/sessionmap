@@ -11,7 +11,7 @@ import {
 import { getClientNotes, saveClientNotes } from '../../services/storage';
 
 /**
- * The therapist's private free-text notes for ONE client.
+ * The host's private free-text notes for ONE client.
  *
  * Scope is the client, not the session, which is the whole point: these are
  * observations about the person that carry across sessions, so starting a new
@@ -27,7 +27,7 @@ import { getClientNotes, saveClientNotes } from '../../services/storage';
  * NEVER sent to the client window. The sync channel carries the MindMap and a
  * handful of control messages; the client record — and therefore these notes —
  * is never part of it. Sharing a window must not be able to project the
- * therapist's private notes to the patient.
+ * host's private notes to the patient.
  */
 interface ClientNotesPanelProps {
   /** null when no session is open, so there is no client to scope notes to. */
@@ -57,7 +57,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
    * 'expanded'  — takes the whole outline pane.
    *
    * The expanded state exists because these notes get read at length: a
-   * therapist referring back to context has to re-read it while the session is
+   * host referring back to context has to re-read it while the session is
    * running, and five rows at the bottom is not enough for that. Resizing the
    * outline pane was the tempting answer and the wrong one — that handle is
    * sized for the tree, and dragging it to read a note is a side effect on
@@ -121,7 +121,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
     let cancelled = false;
 
     // Anything typed into the previous client is flushed before switching.
-    // Dropping it instead would lose up to a second of the therapist's
+    // Dropping it instead would lose up to a second of the host's
     // writing, and there is no server copy to recover it from.
     void flush();
 
@@ -203,7 +203,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           </span>
         </button>
 
-        {/* Save state is shown, not assumed: these notes are the therapist's
+        {/* Save state is shown, not assumed: these notes are the host's
             only copy and there is no server to fall back on. */}
         <span
           role="status"
@@ -256,7 +256,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
           }`}
         >
           <label htmlFor="client-notes-textarea" className="sr-only">
-            Anotações livres sobre {clientName}. Não aparecem para o cliente.
+            Anotações livres sobre {clientName}. Não aparecem para o participante.
           </label>
           <textarea
             id="client-notes-textarea"
@@ -275,8 +275,8 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             disabled={!clientId || loading}
             placeholder={
               clientId
-                ? 'Observações sobre este cliente: contexto, histórico, pontos de atenção. Salvo por cliente, some com as sessões. Não aparece para o cliente.'
-                : 'Abra uma sessão para ter um cliente associado.'
+                ? 'Observações sobre este participante: contexto, histórico, pontos de atenção. Ficam guardadas com ele e somem se ele for excluído. Não aparecem para o participante.'
+                : 'Abra uma sessão para ter um participante associado.'
             }
             /* Both open states fill the box they are given, so resize-none: a
                manual drag on top of a flex-fill box fights the layout and
@@ -287,7 +287,7 @@ export const ClientNotesPanel: React.FC<ClientNotesPanelProps> = ({
             }`}
           />
           <p className="mt-1 shrink-0 text-[10px] text-content-subtle">
-            Visível só para você. Não é compartilhado com a janela do cliente.
+            Visível só para você. Não é compartilhado com a janela do participante.
           </p>
         </div>
       )}

@@ -66,20 +66,16 @@ afterEach(() => {
 });
 
 describe('the session bar', () => {
-  test('the connect action exists exactly once', () => {
-    // The bug: "Janela do Cliente" and the "[Abrir]" link inside the
-    // "Cliente Desconectado" pill were the same function in two costumes — a
-    // filled primary button and a bracketed text link — so the one thing the
-    // app exists to do appeared twice, at once, in two visual languages.
+  test('the share action exists exactly once', () => {
     setup({ isClientConnected: false });
-    const matching = buttons().filter((b) => (b.textContent ?? '').includes('Conectar cliente'));
+    const matching = buttons().filter((b) => (b.textContent ?? '').includes('Compartilhar'));
     expect(matching).toHaveLength(1);
     expect(bar().textContent).not.toContain('[Abrir]');
   });
 
-  test('disconnected, the one action is to connect', () => {
+  test('disconnected, the one action is to share', () => {
     setup({ isClientConnected: false });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Conectar cliente'))!;
+    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhar'))!;
     expect(action.className).toContain('ctl-primary');
     act(() => {
       fireEvent.click(action);
@@ -87,12 +83,12 @@ describe('the session bar', () => {
     expect(calls).toEqual(['clientWindow']);
   });
 
-  test('connected, the same button pauses instead', () => {
-    // Connection and pause stay two pieces of state; the button reports which
+  test('connected, the same button reports sharing and pauses', () => {
+    // Sharing and pause stay two pieces of state; the button reports which
     // one it is about rather than merging them into a label that means two
     // different things.
     setup({ isClientConnected: true, isPaused: false });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Pausar tela'))!;
+    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhado'))!;
     expect(action.className).not.toContain('ctl-primary');
     act(() => {
       fireEvent.click(action);
@@ -107,10 +103,10 @@ describe('the session bar', () => {
 
   test('the pause action is never hidden, at any width', () => {
     // It used to live inside a `hidden lg:flex` cluster, so below 1024px the
-    // therapist could not pause the client's screen except by remembering
+    // host could not pause the client's screen except by remembering
     // Ctrl+.. The status pill may hide; the action may not.
     setup({ isClientConnected: true });
-    const action = buttons().find((b) => (b.textContent ?? '').includes('Pausar tela'))!;
+    const action = buttons().find((b) => (b.textContent ?? '').includes('Compartilhado'))!;
     expect(action.className).not.toContain('hidden');
   });
 
@@ -192,7 +188,7 @@ describe('the session bar', () => {
   });
 
   test('the client window can still be brought back to the front', async () => {
-    // The regression this caught: "Janela do Cliente" also un-minimised the
+    // The regression this caught: "Janela do Participante" also un-minimised the
     // client's screen, because window.open with a named target reuses the
     // window. Letting the connect button take the primary slot quietly took
     // that away, and a client minimising their window mid-session is ordinary.
@@ -201,7 +197,7 @@ describe('the session bar', () => {
       fireEvent.click(byLabel('Mais ferramentas'));
     });
     const item = within(bar().querySelector('[role="menu"]')!).getByText(
-      'Trazer a tela do cliente para a frente'
+      'Trazer a tela compartilhada para a frente'
     );
     act(() => {
       fireEvent.click(item.closest('button')!);

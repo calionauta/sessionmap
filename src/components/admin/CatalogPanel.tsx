@@ -123,15 +123,15 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-6">
+    <div className="space-y-6">
       {/* Kinds */}
       <section aria-label="Tipos de atendimento">
         <h3 className="text-xs font-bold text-content-muted uppercase tracking-wider">
           Tipos de atendimento ({modalities.length})
         </h3>
         <p className="mt-1 text-[11px] text-content-muted font-medium">
-          Valem para todas as sessões, de qualquer cliente. Cada sessão tem um
-          tipo; cada cliente pode ter vários.
+          Valem para todas as sessões, de qualquer participante. Cada sessão tem um
+          tipo; cada participante pode ter vários.
         </p>
         <div className="mt-3 space-y-2">
           {modalities.map((m) => {

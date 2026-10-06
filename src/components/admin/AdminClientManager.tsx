@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Plus,
@@ -152,6 +152,26 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   const [undoSessionDeleteState, setUndoSessionDeleteState] = useState<MindMap | null>(
     null
   );
+  const undoToastTimerRef = useRef<number | null>(null);
+
+  // The delete-undo toasts dismiss themselves after 10s, like the session
+  // toast in the main view. A toast that never leaves stops being a notice
+  // and becomes furniture the eye learns to skip.
+  useEffect(() => {
+    if (!undoClientDeleteState && !undoSessionDeleteState) return;
+    if (undoToastTimerRef.current) window.clearTimeout(undoToastTimerRef.current);
+    undoToastTimerRef.current = window.setTimeout(() => {
+      setUndoClientDeleteState(null);
+      setUndoSessionDeleteState(null);
+      undoToastTimerRef.current = null;
+    }, 10000);
+    return () => {
+      if (undoToastTimerRef.current) {
+        window.clearTimeout(undoToastTimerRef.current);
+        undoToastTimerRef.current = null;
+      }
+    };
+  }, [undoClientDeleteState, undoSessionDeleteState]);
 
   // Kind + template picker for the next session. Resolved on CONFIRM, not on
   // open: the client row could change under the open dialog.
@@ -161,7 +181,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // Kinds and templates belong to no client — filing them under one client's
   // history is what made them undiscoverable — so they get a tab at the same
   // level as the client list rather than a section inside one of its rows.
-  const [panelTab, setPanelTab] = useState<'clientes' | 'catalogo'>('clientes');
+  const [panelTab, setPanelTab] = useState<'participantes' | 'catalogo'>('participantes');
 
   // The catalog lives here (state) and in storage (persisted): the dialog and
   // the badges read this state, so an edit applies everywhere at once.
@@ -235,7 +255,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
    * clientId, so a session recorded against a client that was renamed,
    * removed or — as was the actual bug — never matched (every new session was
    * filed under clients[0]) appeared in no list at all while still counting
-   * towards the "N clientes" export totals.
+   * towards the "N participantes" export totals.
    *
    * Surfacing them is better than hiding them: a session nobody can see is
    * indistinguishable from a lost one, and in this app that is clinical data.
@@ -487,8 +507,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title="Painel do Terapeuta · Clientes & Sessões"
-        description="Organize cada cliente e inicie novas sessões datadas em tempo real"
+        title="Painel do Anfitrião · Participantes & Sessões"
+        description="Organize cada participante e inicie novas sessões datadas em tempo real"
         icon={<Users className="w-5 h-5" />}
         maxWidth="max-w-4xl"
       >
@@ -505,18 +525,21 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             Stacking (rather than a drawer or a <select>) keeps search,
             rename and per-client delete reachable, which a collapsed
             picker would have to re-implement. */}
-        {/* Two rooms, one panel: the client workflow, and the global catalog.
-            The catalog configures every client at once, so it sits beside
-            the client list rather than inside one client's history. */}
+        {/* Two rooms, one panel: the participant workflow, and the global catalog.
+            The catalog configures every participant at once, so it sits beside
+            the participant list rather than inside one participant's history.
+            Full-bleed sides only (-mx-6): a negative TOP margin inside this
+            scrollable body clips under the header, which is exactly the cut
+            this tab bar used to show. */}
         <div
-          className="-m-6 px-6 pt-4 pb-3 border-b border-line bg-surface"
+          className="-mx-6 px-6 pt-1 pb-3 border-b border-line bg-surface"
           role="tablist"
-          aria-label="Clientes ou catálogo global"
+          aria-label="Participantes ou catálogo global"
         >
           <div className="flex p-1 bg-surface-inset rounded-xl border border-line">
             {(
               [
-                { key: 'clientes' as const, label: `Clientes (${scopedClients.length})` },
+                { key: 'participantes' as const, label: `Participantes (${scopedClients.length})` },
                 { key: 'catalogo' as const, label: 'Tipos e roteiros' },
               ]
             ).map((t) => (
@@ -530,7 +553,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
-                    setPanelTab(t.key === 'clientes' ? 'catalogo' : 'clientes');
+                    setPanelTab(t.key === 'participantes' ? 'catalogo' : 'participantes');
                   }
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
@@ -545,7 +568,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           </div>
         </div>
         <div className="-mx-6 -mb-6 flex flex-col md:flex-row md:h-[70vh] overflow-hidden">
-        {panelTab === 'clientes' && (
+        {panelTab === 'participantes' && (
           <>
           {/* Left Column: Client List */}
           <div className="w-full md:w-72 md:shrink-0 min-h-0 max-h-[40vh] md:max-h-none border-b md:border-b-0 md:border-r border-line flex flex-col bg-surface-sunken">
@@ -553,7 +576,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             <div className="p-3 border-b border-line space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-xs font-bold text-content uppercase tracking-wider">
-                  Clientes ({scopedClients.length})
+                  Participantes ({scopedClients.length})
                 </h3>
                 <button
                   type="button"
@@ -569,7 +592,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   both surfaces expose the archive the same way. */}
               <div
                 role="tablist"
-                aria-label="Clientes ativos ou arquivados"
+                aria-label="Participantes ativos ou arquivados"
                 className="flex p-1 bg-surface-inset rounded-xl border border-line"
               >
                 {(
@@ -608,7 +631,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               {isCreatingClient && (
                 <form onSubmit={handleSaveNewClient} className="flex items-center gap-2 pt-1">
                   <label htmlFor="admin-new-client-name" className="sr-only">
-                    Nome do novo cliente
+                    Nome do novo participante
                   </label>
                   <input
                     id="admin-new-client-name"
@@ -616,14 +639,14 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     type="text"
                     value={newClientName}
                     onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="Nome do cliente…"
+                    placeholder="Nome do participante…"
                     className="flex-1 min-w-0 h-11 px-3 text-sm rounded-control border border-line bg-surface-raised text-content font-medium placeholder:text-content-subtle"
                   />
                   <button
                     type="submit"
                     className="ctl ctl-primary w-11 px-0"
                     title="Confirmar"
-                    aria-label="Confirmar novo cliente"
+                    aria-label="Confirmar novo participante"
                   >
                     <Check className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -631,7 +654,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     type="button"
                     onClick={() => setIsCreatingClient(false)}
                     className="ctl w-11 px-0"
-                    aria-label="Cancelar novo cliente"
+                    aria-label="Cancelar novo participante"
                     title="Cancelar"
                   >
                     <X className="w-4 h-4" aria-hidden="true" />
@@ -641,7 +664,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
               <div className="relative flex items-center">
                 <label htmlFor="admin-client-search" className="sr-only">
-                  Buscar cliente
+                  Buscar participante
                 </label>
                 <Search
                   className="w-4 h-4 absolute left-3 text-content-muted pointer-events-none"
@@ -652,7 +675,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   type="text"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
-                  placeholder="Buscar cliente…"
+                  placeholder="Buscar participante…"
                   className="w-full h-11 pl-10 pr-3 text-sm rounded-control border border-line bg-surface-raised text-content placeholder:text-content-subtle"
                 />
               </div>
@@ -662,7 +685,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
               {filteredClients.length === 0 ? (
                 <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel">
-                  Nenhum cliente encontrado. Use “Novo” para cadastrar.
+                  Nenhum participante encontrado. Use “Novo” para cadastrar.
                 </p>
               ) : (
                 filteredClients.map((client) => {
@@ -769,7 +792,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               type="button"
                               onClick={() => handleUnarchiveClient(client)}
                               aria-label={`Restaurar ${client.name}`}
-                              title="Restaurar cliente e sessões"
+                              title="Restaurar participante e sessões"
                               className="ctl w-11 px-0"
                             >
                               <ArchiveRestore className="w-4 h-4" aria-hidden="true" />
@@ -778,7 +801,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               type="button"
                               onClick={() => handleDeleteClient(client)}
                               aria-label={`Excluir ${client.name} e todas as sessões`}
-                              title="Excluir cliente e sessões"
+                              title="Excluir participante e sessões"
                               className="ctl ctl-danger w-11 px-0"
                             >
                               <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -790,7 +813,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               type="button"
                               onClick={() => handleArchiveClient(client)}
                               aria-label={`Arquivar ${client.name} e todas as sessões`}
-                              title="Arquivar cliente e sessões"
+                              title="Arquivar participante e sessões"
                               className="ctl w-11 px-0"
                             >
                               <Archive className="w-4 h-4" aria-hidden="true" />
@@ -799,7 +822,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                               type="button"
                               onClick={() => handleDeleteClient(client)}
                               aria-label={`Excluir ${client.name}`}
-                              title="Excluir cliente e sessões"
+                              title="Excluir participante e sessões"
                               className="ctl ctl-danger w-11 px-0"
                             >
                               <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -819,12 +842,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 type="button"
                 onClick={handleExportAllClientsZip}
                 disabled={isExporting}
-                title="Exportar todas as sessões de todos os clientes em um arquivo .zip completo"
+                title="Exportar todas as sessões de todos os participantes em um arquivo .zip completo"
                 className="ctl w-full text-xs font-bold shadow-2xs"
               >
                 <FolderArchive className="w-3.5 h-3.5 text-positive shrink-0" aria-hidden="true" />
                 <span className="text-left leading-snug">
-                  {isExporting ? 'Compactando…' : 'Zipar Todos os Clientes (.zip)'}
+                  {isExporting ? 'Compactando…' : 'Zipar Todos os Participantes (.zip)'}
                 </span>
               </button>
             </div>
@@ -843,7 +866,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 <div className="p-4 sm:p-5 border-b border-line flex items-center justify-between gap-3 flex-wrap shrink-0">
                   <div className="min-w-0">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-accent-text">
-                      Cliente Selecionado
+                      Participante Selecionado
                     </span>
                     <h3 className="text-xl font-black tracking-tight text-content break-words">
                       {currentClient.name}
@@ -879,12 +902,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => importFileInputRef.current?.click()}
-                      aria-label="Importar arquivo Markdown (.md) como nova sessão para este cliente"
-                      title="Importar arquivo Markdown (.md) como nova sessão para este cliente"
+                      aria-label="Importar arquivo Markdown (.md) como nova sessão para este participante"
+                      title="Importar arquivo Markdown (.md) como nova sessão para este participante"
                       className="ctl w-full sm:w-auto text-xs font-bold shadow-2xs text-accent-text"
                     >
                       <Upload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>+ Importar (.md)</span>
+                      <span>Importar (.md)</span>
                     </button>
 
                     {/* Create New Session */}
@@ -894,7 +917,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                       className="ctl ctl-primary w-full sm:w-auto text-xs font-bold shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>+ Nova Sessão</span>
+                      <span>Nova Sessão</span>
                     </button>
                   </div>
                 </div>
@@ -930,7 +953,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
                   {clientSessions.length === 0 ? (
                     <div className="py-12 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
-                      Nenhuma sessão iniciada para este cliente. Clique em “+ Nova Sessão” ou
+                      Nenhuma sessão iniciada para este participante. Clique em “+ Nova Sessão” ou
                       “+ Importar (.md)” acima para começar.
                     </div>
                   ) : (
@@ -1075,10 +1098,10 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     <div className="pt-2 mt-2 border-t border-line">
                       <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
                         <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-                        Sem cliente atribuído ({orphanedMaps.length})
+                        Sem participante atribuído ({orphanedMaps.length})
                       </h3>
                       <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
-                        Estas sessões não correspondem a nenhum cliente na lista. Abra
+                        Estas sessões não correspondem a nenhum participante na lista. Abra
                         uma para ver a quem ela pertence, ou exclua se não for mais
                         necessária.
                       </p>
@@ -1109,18 +1132,18 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
               <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
                 <div className="py-6 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
                   {clients.length === 0
-                    ? 'Nenhum cliente cadastrado neste navegador. Crie um cliente para iniciar uma sessão.'
-                    : 'Selecione um cliente para ver o histórico de sessões.'}
+                    ? 'Nenhum participante cadastrado neste navegador. Crie um participante para iniciar uma sessão.'
+                    : 'Selecione um participante para ver o histórico de sessões.'}
                 </div>
 
                 {orphanedMaps.length > 0 && (
                   <div className="pt-2 mt-2 border-t border-line">
                     <h3 className="text-xs font-bold text-caution uppercase tracking-wider flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-                      Sem cliente atribuído ({orphanedMaps.length})
+                      Sem participante atribuído ({orphanedMaps.length})
                     </h3>
                     <p className="text-[11px] text-content-muted font-medium mt-1 mb-3">
-                      Estas sessões não correspondem a nenhum cliente na lista. Abra uma
+                      Estas sessões não correspondem a nenhum participante na lista. Abra uma
                       para ver a quem ela pertence, ou exclua se não for mais necessária.
                     </p>
                     <div className="space-y-2">
@@ -1146,7 +1169,10 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         )}
         </div>
         {panelTab === 'catalogo' && (
-          <div className="-mx-6 -mb-6 flex flex-col md:h-[70vh] max-h-[70vh] md:max-h-none min-h-0 overflow-hidden">
+          /* Normal flow, no inner scroll prison: the modal body already
+             scrolls, and a fixed-height box with its own scroller is what
+             rendered the tab as "blank until scrolled". */
+          <div className="-mx-6 -mb-6 px-4 sm:px-5 py-4">
             <CatalogPanel
               modalities={modalities}
               templates={templates}
@@ -1172,7 +1198,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       <NewSessionDialog
         isOpen={pendingSessionFor !== null}
         onClose={() => setPendingSessionFor(null)}
-        clientName={pendingSessionFor?.name ?? 'Cliente'}
+        clientName={pendingSessionFor?.name ?? 'Participante'}
         defaultModalityId={
           (pendingSessionFor &&
             maps.find(
@@ -1212,9 +1238,9 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       />
       <ConfirmDialog
         isOpen={pendingClientDelete !== null}
-        title="Excluir este cliente?"
+        title="Excluir este participante?"
         isDestructive
-        confirmLabel="Excluir cliente e sessões"
+        confirmLabel="Excluir participante e sessões"
         cancelLabel="Cancelar"
         onCancel={() => setPendingClientDelete(null)}
         onConfirm={confirmClientDelete}
@@ -1245,8 +1271,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
 
       <ConfirmDialog
         isOpen={pendingClientArchive !== null}
-        title="Arquivar este cliente?"
-        confirmLabel="Arquivar cliente e sessões"
+        title="Arquivar este participante?"
+        confirmLabel="Arquivar participante e sessões"
         cancelLabel="Manter ativo"
         onCancel={() => setPendingClientArchive(null)}
         onConfirm={confirmClientArchive}
@@ -1261,7 +1287,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     ? 'sessão'
                     : 'sessões'}
                 </strong>{' '}
-                sairão da lista de clientes ativos.
+                sairão da lista de participantes ativos.
               </p>
               <p className="mt-2 text-content-subtle">
                 Nada é apagado: tudo continua em &quot;Arquivados&quot;, onde você pode
@@ -1287,7 +1313,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 <strong>
                   {pendingSessionArchive.sessionDate || pendingSessionArchive.title}
                 </strong>{' '}
-                sai da lista de ativas. O cliente não é afetado.
+                sai da lista de ativas. O participante não é afetado.
               </p>
               <p className="mt-2 text-content-subtle">
                 Nada é apagado: você continua podendo consultar, restaurar ou excluir em
@@ -1325,8 +1351,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         }
       />
 
-      {/* Undo window: the deleted record stays restorable for as long as
-          the panel is open. There is no countdown — see needsDecision. */}
+      {/* Undo window: the deleted record stays restorable while the toast is
+          up, then dismisses itself after 10s. */}
       {undoClientDeleteState && (
         <div
           role="status"
@@ -1334,7 +1360,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
         >
           <span>
-            Cliente <strong>{undoClientDeleteState.client.name}</strong> excluído
+            Participante <strong>{undoClientDeleteState.client.name}</strong> excluído
             {undoClientDeleteState.sessionCount > 0
               ? ` (${undoClientDeleteState.sessionCount} ${
                   undoClientDeleteState.sessionCount === 1 ? 'sessão' : 'sessões'

@@ -75,7 +75,7 @@ describe('cloud status', () => {
 
 describe('footer labels', () => {
   const now = new Date('2026-10-06T12:00:00Z').getTime();
-  test('relative time in therapist words', () => {
+  test('relative time in host words', () => {
     expect(formatCloudAgo(now, null)).toBe('nunca');
     expect(formatCloudAgo(now, '2026-10-06T11:59:30Z')).toBe('agora há pouco');
     expect(formatCloudAgo(now, '2026-10-06T11:20:00Z')).toBe('há 40min');
@@ -111,11 +111,11 @@ describe('footer labels', () => {
 
 describe('outcome recording', () => {
   test('success stamps time, clears error, keeps username', () => {
-    recordBackupSuccess('terapeuta');
+    recordBackupSuccess('anfitriao');
     const s = cloudState();
     expect(typeof s.lastBackupAt).toBe('string');
     expect(s.lastError).toBeNull();
-    expect(s.puterUsername).toBe('terapeuta');
+    expect(s.puterUsername).toBe('anfitriao');
     // And nothing secret was persisted alongside.
     const raw = String(localStorage.getItem('sessionmap_settings'));
     expect(raw).not.toContain('frase');
@@ -129,7 +129,7 @@ describe('outcome recording', () => {
     const canary = 'canario-senha-nuvem-inexistente-xyz';
     unlock(canary);
     try {
-      recordBackupSuccess('terapeuta');
+      recordBackupSuccess('anfitriao');
       const leaked: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -143,7 +143,7 @@ describe('outcome recording', () => {
   });
 
   test('error records the sentence, keeps the last good backup', () => {
-    recordBackupSuccess('terapeuta');
+    recordBackupSuccess('anfitriao');
     const at = cloudState().lastBackupAt;
     recordBackupError('Sem conexão.');
     const s = cloudState();

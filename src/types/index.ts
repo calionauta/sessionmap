@@ -46,19 +46,19 @@ export interface MindMap {
    * The kind of work this session is: the id of a Modality in the catalog.
    * ONE per session, null/undefined means "not classified" (every session
    * written before modalities existed). The client is never classified —
-   * the same person can do therapy on Tuesday and mentoring on Thursday,
+   * the same person can mentor on Tuesday and consult on Thursday,
    * and the badge on their row is the union of their sessions.
    */
   modalityId?: string | null;
 }
 
 /**
- * A kind of work the therapist offers: terapia, mentoria, consultoria…
+ * A kind of work the host offers: mentoria, consultoria, reunião…
  *
  * A flat CUSTOMIZABLE catalog, not a fixed hierarchy and not free-form tags:
  * a hierarchy forces one client into one drawer (and the same person is two
- * drawers here), while free tags drift into synonyms ("terapia",
- * "Terapia ", "therapia") that no filter can trust. The catalog gives every
+ * drawers here), while free tags drift into synonyms ("reunião",
+ * "Reunião ", "reuniao") that no filter can trust. The catalog gives every
  * session exactly one controlled value, and the list itself is editable.
  */
 export interface Modality {
@@ -75,7 +75,7 @@ export interface Modality {
  *
  * Stored as the markdown the outline itself edits, so applying a template is
  * just parsing it: no second format to keep in sync with the parser, and the
- * therapist writes templates in the same language they write sessions in.
+ * host writes templates in the same language they write sessions in.
  */
 export interface SessionTemplate {
   id: string;
@@ -114,17 +114,17 @@ export interface Settings {
   focusZoomMode: boolean; // Zoom in on active node + parents + children when navigating
   /**
   /**
-   * Scales the text of the outline rows — the therapist's own typing surface.
+   * Scales the text of the outline rows — the host's own typing surface.
    *
    * Separate from clientFontScale, which sizes the balloons. Those are read by
-   * the client from across a room, these are read and typed by the therapist at
+   * the participant from across a room, these are read and typed by the host at
    * close range, and the two want different sizes for different reasons.
    */
   outlineFontScale: number;
   /**
    * Hides the mind map pane so the outline takes the full width.
    *
-   * The mirror of isMaximizedMap. Some sessions the therapist does not want the
+   * The mirror of isMaximizedMap. Some sessions the host does not want the
    * map in front of them at all — they are reading back and the client has the
    * map on the second screen — and a 62% pane of empty canvas is a large piece
    * of screen doing nothing.
@@ -134,7 +134,7 @@ export interface Settings {
    * The outline pane's width, as a share of the window.
    *
    * Persisted because the split is a working preference, not a view state: a
-   * therapist who widens the outline to read a long topic should not have to
+   * host who widens the outline to read a long topic should not have to
    * drag it again on the next session. Bounded by utils/layout on read, since a
    * value written by a build with a different range must not be able to render
    * the pane off screen.
@@ -151,7 +151,7 @@ export interface Settings {
  * Why a selection changed.
  *
  * 'caret' is the cursor moving to a different topic, and it travels like the
- * rest: the client window should show where the therapist IS, not where they
+ * rest: the participant window should show where the host IS, not where they
  * were three seconds ago. It is a separate reason because it is a different
  * KIND of change — a deliberate click, a clear — and the code that sends it
  * treats a null differently (see handleSelectNode).

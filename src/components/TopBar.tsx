@@ -32,8 +32,8 @@ import { OverflowMenu, MenuEntry } from './ui/OverflowMenu';
  * with the same one.
  *
  * THE RULE THE LAYOUT FOLLOWS: one primary action, and it is never ambiguous
- * which one that is. Before, "Janela do Cliente" and the "[Abrir]" link inside
- * the "Cliente Desconectado" pill were the same function wearing two different
+ * which one that is. Before, "Janela do Participante" and the "[Abrir]" link inside
+ * the "Participante Desconectado" pill were the same function wearing two different
  * costumes — a filled primary button on the right and a bracketed text link in
  * the middle — so the thing the app exists to do appeared twice, in two visual
  * languages, at once. The action button now BECOMES the connect action when
@@ -76,7 +76,7 @@ export interface TopBarProps {
   /**
    * Bring the client's window to the front.
    *
-   * Separate from opening it on purpose. "Janela do Cliente" used to do both,
+   * Separate from opening it on purpose. "Janela do Participante" used to do both,
    * because `window.open` with a named target reuses an existing window — which
    * meant the bar could not stop offering it without quietly taking away the
    * ability to un-minimise a client's screen mid-session. In a therapy session
@@ -119,35 +119,34 @@ export const TopBar: React.FC<TopBarProps> = ({
   cloud = null,
 }) => {
   /**
-   * The one control that both reports the connection and acts on it.
+   * The one control that both reports the sharing state and acts on it.
    *
-   * Disconnected, the action the therapist needs every single session is
-   * "conectar", so that is what the button says and the only primary fill in
-   * the bar. Connected, the same button becomes the pause toggle. Connection
-   * and pause stay two separate pieces of state — merging them into one control
-   * would have meant a button whose label changed meaning, which is worse than
-   * two controls.
+   * Not sharing, the action is "share", so that is what the button says —
+   * the only primary fill in the bar. Sharing, the button says so, and
+   * pressing it pauses, which is the one thing you do to a live shared
+   * screen. Paused, it becomes resume. Sharing and pause stay two separate
+   * pieces of state; the button only ever wears one.
    */
   const disconnected = !isClientConnected;
   const actionLabel = disconnected
-    ? 'Conectar cliente'
+    ? 'Compartilhar'
     : isPaused
       ? 'Retomar tela'
-      : 'Pausar tela';
+      : 'Compartilhado';
   const ActionIcon = disconnected ? ExternalLink : isPaused ? Play : Pause;
 
   // Preferences are states, so they are checkbox items. A toggle that looks
   // like a button in a menu is a toggle the reader has to guess at.
   const entries: MenuEntry[] = [];
 
-  /* Focing the client's window only means something while there is one. It sits
+  /* Focusing the shared window only means something while there is one. It sits
      in the menu rather than in the bar because it is a recovery action, not a
      mode — and losing it is exactly what happened when the connect button took
      over the primary slot. */
   if (isClientConnected) {
     entries.push({
       key: 'focusClient',
-      label: 'Trazer a tela do cliente para a frente',
+      label: 'Trazer a tela compartilhada para a frente',
       icon: <MonitorUp className="w-3.5 h-3.5" />,
       onSelect: onFocusClientWindow,
     });
@@ -235,8 +234,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onOpenClients}
-          title="Gerenciar clientes e sessões"
-          aria-label="Gerenciar clientes e sessões"
+          title="Gerenciar participantes e sessões"
+          aria-label="Gerenciar participantes e sessões"
           className="ctl !min-h-0 h-9 px-2.5 sm:px-3 !gap-2 text-xs font-semibold min-w-0"
         >
           <Users className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />
@@ -251,7 +250,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* SESSION — the loop the therapist is actually in. Right, fixed width,
+      {/* SESSION — the loop the host is actually in. Right, fixed width,
           so it never drifts away from the actions it belongs with. */}
       <div className="flex items-center gap-2 shrink-0">
         {/* Cloud backup status. Hidden below md: the client pill already
@@ -282,7 +281,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
         {/* Status only. It was on `hidden lg:flex`, which meant that below 1024px
-            the therapist could not pause the client's screen at all except by
+            the host could not pause the client's screen at all except by
             remembering Ctrl+.. The pill may still hide — it is supplementary —
             but the ACTION below never does. */}
         <div
@@ -296,7 +295,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }`}
           />
           <span>
-            {isPaused ? 'Cliente em pausa' : isClientConnected ? 'Cliente conectado' : 'Cliente desconectado'}
+            {isPaused ? 'Pausado' : isClientConnected ? 'Compartilhando' : 'Não compartilhado'}
           </span>
         </div>
 
@@ -325,10 +324,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={disconnected ? onOpenClientWindow : onTogglePause}
           title={
             disconnected
-              ? 'Abrir a janela do cliente (Conexão)'
+              ? 'Abrir a janela compartilhada'
               : isPaused
-                ? 'Retomar a tela do cliente (Ctrl+.)'
-                : 'Pausar a tela do cliente (Ctrl+.)'
+                ? 'Retomar a tela compartilhada (Ctrl+.)'
+                : 'Pausar a tela compartilhada (Ctrl+.)'
           }
           className={`ctl !min-h-0 h-9 px-2.5 sm:px-3 text-xs font-bold ${
             disconnected ? 'ctl-primary' : ''
@@ -345,7 +344,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="h-5 w-px bg-line hidden sm:block" aria-hidden="true" />
 
         {/* Export stayed in the bar and everything else moved. It is the one
-            secondary action a therapist reaches for every session, it already has
+            secondary action a host reaches for every session, it already has
             a shortcut, and hiding it would have been a downgrade dressed as a
             tidy-up. */}
         <button

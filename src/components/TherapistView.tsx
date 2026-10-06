@@ -129,7 +129,7 @@ export const TherapistView: React.FC = () => {
    *
    * Mirrors isMaximizedMap and the two are never both on: a window with neither
    * surface would be blank, which is the one outcome a layout toggle must not
-   * produce. Persisted, because a therapist who always works this way should
+   * produce. Persisted, because a host who always works this way should
    * not have to press it every session.
    */
   const [maximizeOutline, setMaximizeOutline] = useState<boolean>(
@@ -155,7 +155,7 @@ export const TherapistView: React.FC = () => {
    * Whether the typing bar is up, on the CLIENT's rule rather than its own.
    *
    * A draft turns it on and an idle timer turns it off, which is what the
-   * client window has always done. The therapist's copy used to key off whether
+   * client window has always done. The host's copy used to key off whether
    * the edited node happened to be on screen, recomputed on every keystroke —
    * and since a balloon grows and shrinks as it is typed into, that answer
    * flipped while the sentence was being written and the bar flickered. One
@@ -188,7 +188,7 @@ export const TherapistView: React.FC = () => {
    *
    * A separate boolean from the two maximisations, deliberately. Those are a
    * desktop preference, and folding this into them would mean that rotating a
-   * phone rewrote the split the therapist chose on the laptop — the layout
+   * phone rewrote the split the host chose on the laptop — the layout
    * would come back wrong. Below the breakpoint the split is not a split, so
    * this is the switch, and above it the maximisations keep their meaning
    * untouched.
@@ -357,7 +357,7 @@ export const TherapistView: React.FC = () => {
   // caveat below about screen-sharing the browser chrome.
   useEffect(() => {
     const title = activeMap
-      ? `PRIVADO · ${activeMap.clientName || 'Cliente'} (${activeMap.sessionDate || activeMap.title})`
+      ? `PRIVADO · ${activeMap.clientName || 'Participante'} (${activeMap.sessionDate || activeMap.title})`
       : 'PRIVADO · SessionMap';
     document.title = title;
   }, [activeMap]);
@@ -400,13 +400,13 @@ export const TherapistView: React.FC = () => {
       /* The client follows the caret too, and 'caret' is the reason that says so.
 
          It used not to: only the dwell was broadcast, and a dwell is a pause
-         the therapist has to take. Writing a list of topics does not contain
+         the host has to take. Writing a list of topics does not contain
          one — every Enter cancels the dwell and every keystroke restarts it —
          so the client's map simply did not move until they stopped, and
          stopping somewhere else was the only way to make it catch up.
 
          A null is NOT broadcast, and that is the one asymmetry. "No topic under
-         the caret" is a real fact locally — the therapist's own map stops
+         the caret" is a real fact locally — the host's own map stops
          centring whatever was last written — but sending it would clear the
          client's view on every single Enter, mid-sentence. There is nothing to
          follow TO, so the client stays where it is. */
@@ -901,9 +901,9 @@ export const TherapistView: React.FC = () => {
 
           The bar also went from fourteen permanent controls to four plus a
           menu, and the one primary action is now unambiguous — see TopBar for
-          why "Janela do Cliente" and "[Abrir]" could not both be it. */}
+          why "Janela do Participante" and "[Abrir]" could not both be it. */}
       <TopBar
-        clientName={activeMap?.clientName || 'Cliente'}
+        clientName={activeMap?.clientName || 'Participante'}
         sessionLabel={activeMap?.sessionDate || activeMap?.title || 'Sessão'}
         isClientConnected={isClientConnected}
         isPaused={isPaused}
@@ -975,7 +975,7 @@ export const TherapistView: React.FC = () => {
               onToggleMaximize={() => {
                 const next = !maximizeOutline;
                 // Routed through the settings so the choice is persisted: a
-                // therapist who always works this way should not re-press it.
+                // host who always works this way should not re-press it.
                 handleUpdateSettings({ ...settings, maximizeOutline: next });
               }}
               hidden={notesExpanded}
@@ -988,7 +988,7 @@ export const TherapistView: React.FC = () => {
                 takes the whole pane instead. */}
             <ClientNotesPanel
               clientId={activeMap.clientId}
-              clientName={activeMap.clientName || 'Cliente'}
+              clientName={activeMap.clientName || 'Participante'}
               expanded={notesExpanded}
               onExpandedChange={setNotesExpanded}
             />
@@ -1058,7 +1058,7 @@ export const TherapistView: React.FC = () => {
 
         {/* Right Pane: Mindmap Preview.
             Dismissed entirely when the outline takes the screen: some sessions
-            the therapist never looks at the map — the client has it on the
+            the host never looks at the map — the client has it on the
             second screen — and a 62% pane of canvas is a large piece of the
             display doing nothing. */}
         {showMap && (
@@ -1125,13 +1125,20 @@ export const TherapistView: React.FC = () => {
               <p className="text-content-muted text-xs font-medium">
                 Nenhuma sessão ativa neste navegador.
               </p>
+              {/* With no participants there is nobody to start a session for:
+                  opening the picker would silently do nothing, which reads as
+                  a dead button. Route to the admin panel instead, where a
+                  participant can be created first. */}
               <button
                 type="button"
-                onClick={handleCreateNewMap}
+                onClick={() => {
+                  if (clients.length === 0) setIsAdminOpen(true);
+                  else void handleCreateNewMap();
+                }}
                 className="ctl ctl-primary"
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>Nova sessão</span>
+                <span>{clients.length === 0 ? 'Adicionar participante' : 'Nova sessão'}</span>
               </button>
             </div>
           )}
@@ -1148,7 +1155,7 @@ export const TherapistView: React.FC = () => {
               One component, so there is nothing left to disagree. The
               visibility rule is the CLIENT's: an idle timeout, so the bar
               appears while something is being typed and settles when the
-              therapist stops. The canvas already highlights the node being
+              host stops. The canvas already highlights the node being
               edited, and with focus zoom it centres it, so restating that here
               was the noise — a floating card over the canvas. */}
           <TypingBar
@@ -1276,7 +1283,7 @@ export const TherapistView: React.FC = () => {
       <NewSessionDialog
         isOpen={pendingNewSessionClient !== null}
         onClose={() => setPendingNewSessionClient(null)}
-        clientName={pendingNewSessionClient?.name ?? 'Cliente'}
+        clientName={pendingNewSessionClient?.name ?? 'Participante'}
         defaultModalityId={
           (pendingNewSessionClient &&
             allMaps.find(

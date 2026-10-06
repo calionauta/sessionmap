@@ -39,7 +39,7 @@ let selections: Array<{ nodeId: string | null; reason: string }> = [];
 /**
  * Only the dwell's own broadcasts.
  *
- * 'caret' is the therapist's own map following the cursor, and it is local —
+ * 'caret' is the host's own map following the cursor, and it is local —
  * never sent to the client. It shares the channel, so a test about the dwell
  * has to say which half it means.
  */
@@ -326,9 +326,9 @@ describe('the markdown buffer', () => {
       cleanup();
     });
     container?.remove();
-    const other = node('root2', '01/01/2026', [node('solo', 'Outro cliente')]);
+    const other = node('root2', '01/01/2026', [node('solo', 'Outro participante')]);
     setup(other);
-    expect(textarea().value).toBe('# 01/01/2026\n- Outro cliente');
+    expect(textarea().value).toBe('# 01/01/2026\n- Outro participante');
   });
 });
 
@@ -378,7 +378,7 @@ describe('Enter starts the next topic', () => {
   test('repeats the marker the line uses instead of normalising it', () => {
     // Chosen over always writing "- ": a buffer pasted from a document that
     // uses "*" stays in "*" while it is edited, and the canonical form arrives
-    // later as a rewrite the therapist can see. Swapping the marker under the
+    // later as a rewrite the host can see. Swapping the marker under the
     // caret with no visible cause is the worse surprise.
     setup();
     type('# 28/09/2026\n*  cansaço');
@@ -447,7 +447,7 @@ describe('a new, empty topic tells the map about it', () => {
   test('an empty bullet is active, so the ghost balloon and footer appear', () => {
     // The bug: the parser discards an empty bullet, so there was no node to
     // find, the draft went out inactive, and the map said nothing at all while
-    // the therapist was starting a topic. A silent map is the whole problem.
+    // the host was starting a topic. A silent map is the whole problem.
     setup();
     type('# 28/09/2026\n- Trabalho\n  - cansaço\n  - ');
     caretAt(textarea().value.length);
@@ -657,7 +657,7 @@ describe('the help disclosure', () => {
   });
 });
 
-describe("the therapist's own map follows the caret", () => {
+describe("the host's own map follows the caret", () => {
   afterEach(() => {
     cleanup();
     container?.remove();
@@ -666,7 +666,7 @@ describe("the therapist's own map follows the caret", () => {
 
   const follows = () => selections.filter((s) => s.reason === 'caret');
 
-  test('moving to another topic tells the therapist which one', () => {
+  test('moving to another topic tells the host which one', () => {
     // Their own window, immediately. Making them wait out the dwell, or navigate
     // somewhere else first, is the map not answering a question that was asked.
     setup();
@@ -701,7 +701,7 @@ describe("the therapist's own map follows the caret", () => {
   test('typing a new topic picks it up as soon as it is a topic', () => {
     // The follow is a change, and null IS a change: leaving a topic for a blank
     // bullet has to release the map, or it keeps centring whatever was last
-    // written while the therapist is starting the next thought.
+    // written while the host is starting the next thought.
     setup();
     type('# 28/09/2026\n- cansaço\n- ');
     caretOnLine('- cansaço');
@@ -768,7 +768,7 @@ describe("the client's map follows the caret", () => {
   test('navigating to a topic moves the client, with no wait', () => {
     // The report: writing a list of topics never contains a three-second pause.
     // Every Enter cancelled the old timer and every keystroke restarted it, so
-    // the client's map only caught up once the therapist stopped — and stopping
+    // the client's map only caught up once the host stopped — and stopping
     // somewhere ELSE was the only way to make it happen.
     setup();
     caretOnLine('- cansaço');
@@ -777,7 +777,7 @@ describe("the client's map follows the caret", () => {
 
   test('a fresh bullet does NOT clear the client', async () => {
     // The one asymmetry. "No topic under the caret" is true locally — the
-    // therapist's own map stops centring the topic they just finished — but
+    // host's own map stops centring the topic they just finished — but
     // handleSelectNode drops a null from the wire, because sending it would
     // blank the client's view on every single Enter, mid-sentence. There is
     // nothing to follow TO, so the client stays where it is.
@@ -840,7 +840,7 @@ describe('the id the caret names is the id the map will find', () => {
    * `centreOn` cannot find the node to centre — and the map still looks like it
    * followed, because autoFit re-framed the whole thing. Which is exactly what
    * was reported: the map moved to the new item, and the item had no border
-   * until the therapist left the line and came back.
+   * until the host left the line and came back.
    */
   test('a topic named with the keyboard exists under the followed id once committed', () => {
     setup();
@@ -938,7 +938,7 @@ describe('pasting a document, then navigating it', () => {
 
     // A session with a DIFFERENT tree already in it, as any real paste lands in.
     let root: MindMapNode = node('root', '28/09/2026', [
-      node('c1', 'cliente', [node('c1a', 'tópico antigo')]),
+      node('c1', 'participante', [node('c1a', 'tópico antigo')]),
     ]);
     const Rerender = () =>
       React.createElement(MarkdownOutline, {

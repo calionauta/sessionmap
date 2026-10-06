@@ -1,11 +1,11 @@
 import { SyncMessage } from '../types';
 
 /**
- * Handshake identifiers shared by the therapist window and the client window.
+ * Handshake identifiers shared by the host window and the client window.
  * Both windows import this module, so both always agree on the name: never
  * duplicate these literals anywhere else.
  *
- * Renaming them is a breaking change across an open session — a therapist on
+ * Renaming them is a breaking change across an open session — a host on
  * the previous build and a client on this build will not pair until BOTH
  * windows are reloaded on the same build.
  */

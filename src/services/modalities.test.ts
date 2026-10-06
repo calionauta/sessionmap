@@ -18,15 +18,15 @@ import { MindMap, Modality, SessionTemplate } from '../types';
  */
 
 const mods: Modality[] = [
-  { id: 'mod_terapia', name: 'Terapia', createdAt: '2026-01-01T00:00:00Z' },
+  { id: 'mod_reuniao', name: 'Reunião', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'mod_mentoria', name: 'Mentoria', createdAt: '2026-01-01T00:00:00Z' },
 ];
 
 const templates: SessionTemplate[] = [
   {
     id: 'tpl_t',
-    modalityId: 'mod_terapia',
-    title: 'Terapia',
+    modalityId: 'mod_reuniao',
+    title: 'Reunião',
     markdown: '- Como chega',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -55,13 +55,13 @@ describe('the kind is one value per session', () => {
 
   test('the picker value lands on the record', () => {
     expect(
-      createNewSession('c_ana', 'Ana', { modalityId: 'mod_terapia' }).modalityId
-    ).toBe('mod_terapia');
+      createNewSession('c_ana', 'Ana', { modalityId: 'mod_reuniao' }).modalityId
+    ).toBe('mod_reuniao');
   });
 
   test('a template body becomes the starting tree, not a second format', () => {
     const m = createNewSession('c_ana', 'Ana', {
-      modalityId: 'mod_terapia',
+      modalityId: 'mod_reuniao',
       templateMarkdown: '- Como chega hoje\n  - O que pesa',
     });
     expect(m.root.children.map((c) => c.text)).toEqual(['Como chega hoje']);
@@ -76,17 +76,17 @@ describe('the kind is one value per session', () => {
 
 describe("the client's badges are the union of their sessions", () => {
   const maps = [
-    session('m1', 'c_ana', 'mod_terapia'),
+    session('m1', 'c_ana', 'mod_reuniao'),
     session('m2', 'c_ana', 'mod_mentoria'),
-    session('m3', 'c_ana', 'mod_terapia'),
+    session('m3', 'c_ana', 'mod_reuniao'),
     session('m4', 'c_ana', null),
-    session('m5', 'c_bia', 'mod_terapia'),
+    session('m5', 'c_bia', 'mod_reuniao'),
   ];
 
   test('one badge per kind, no duplicates, other clients excluded', () => {
     expect(clientModalityIds(maps, 'c_ana').sort()).toEqual([
       'mod_mentoria',
-      'mod_terapia',
+      'mod_reuniao',
     ]);
   });
 
@@ -97,7 +97,7 @@ describe("the client's badges are the union of their sessions", () => {
     };
     expect(clientModalityIds([...maps, archived], 'c_ana').sort()).toEqual([
       'mod_mentoria',
-      'mod_terapia',
+      'mod_reuniao',
     ]);
     const onlyArchived = [archived];
     expect(clientModalityIds(onlyArchived, 'c_ana')).toEqual([]);
@@ -106,7 +106,7 @@ describe("the client's badges are the union of their sessions", () => {
 
 describe('templates are offered per kind, plus the general ones', () => {
   test('therapy offers its own and the general skeleton', () => {
-    expect(templatesFor(templates, 'mod_terapia').map((t) => t.id).sort()).toEqual([
+    expect(templatesFor(templates, 'mod_reuniao').map((t) => t.id).sort()).toEqual([
       'tpl_g',
       'tpl_t',
     ]);
@@ -129,6 +129,6 @@ describe('a deleted kind degrades to unclassified, never to corrupt', () => {
   });
 
   test('known ids resolve', () => {
-    expect(modalityName(mods, 'mod_terapia')).toBe('Terapia');
+    expect(modalityName(mods, 'mod_reuniao')).toBe('Reunião');
   });
 });

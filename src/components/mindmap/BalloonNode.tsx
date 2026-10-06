@@ -66,7 +66,7 @@ export const BalloonNode: React.FC<BalloonNodeProps> = ({
    * and the text can no longer disagree. The previous code computed its own
    * character width (9px) and its own wrap, then capped the second line with an
    * ellipsis — so a long annotation lost words on the shared screen, silently,
-   * with no way for the therapist to know which ones. There is no character
+   * with no way for the host to know which ones. There is no character
    * budget and no truncation: the balloon grows, in width up to the cap and in
    * height without limit.
    */

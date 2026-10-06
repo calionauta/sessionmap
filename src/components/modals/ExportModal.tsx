@@ -76,7 +76,7 @@ const IMPORT_TARGETS: {
   {
     value: 'new_session',
     label: 'Como Nova Sessão',
-    describe: (map) => `Cria nova sessão datada para ${map.clientName || 'o cliente'}`,
+    describe: (map) => `Cria nova sessão datada para ${map.clientName || 'o participante'}`,
   },
   {
     value: 'append_current',
@@ -227,7 +227,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     handleRunZip(async () => {
       const allMaps = initialMaps && initialMaps.length > 0 ? initialMaps : await getAllMaps();
       const clientSessions = allMaps.filter((m) => m.clientId === map.clientId || m.clientName === map.clientName);
-      await exportClientSessionsZip(map.clientName || 'Cliente', clientSessions.length > 0 ? clientSessions : [map]);
+      await exportClientSessionsZip(map.clientName || 'Participante', clientSessions.length > 0 ? clientSessions : [map]);
     });
 
   // Export 3: All sessions of all clients zipped
@@ -298,7 +298,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const counts: RestoreCounts = await restoreFullBackup(target.payload);
       setRestoreStatus(
         `Restaurado: ${counts.maps} ${counts.maps === 1 ? 'sessão' : 'sessões'}, ` +
-          `${counts.clients} ${counts.clients === 1 ? 'cliente' : 'clientes'}` +
+          `${counts.clients} ${counts.clients === 1 ? 'participante' : 'participantes'}` +
           (counts.modalities > 0 || counts.templates > 0
             ? `, ${counts.modalities} tipos e ${counts.templates} roteiros novos`
             : '') +
@@ -367,7 +367,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             schema: 1,
             id: `m_${Date.now().toString(36)}`,
             clientId: map.clientId || 'c_default',
-            clientName: map.clientName || 'Cliente',
+            clientName: map.clientName || 'Participante',
             sessionDate: timestamp,
             title: rootNode.text || timestamp,
             createdAt: new Date().toISOString(),
@@ -418,7 +418,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             schema: 1,
             id: `m_${Date.now().toString(36)}`,
             clientId: map.clientId || 'c_default',
-            clientName: map.clientName || 'Cliente',
+            clientName: map.clientName || 'Participante',
             sessionDate: timestamp,
             title: parsedNode.text || timestamp,
             createdAt: new Date().toISOString(),
@@ -426,7 +426,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             root: parsedNode,
           };
           onImportMap(newMap);
-          setImportStatus({ type: 'success', message: `Nova sessão criada para ${map.clientName || 'o cliente'}!` });
+          setImportStatus({ type: 'success', message: `Nova sessão criada para ${map.clientName || 'o participante'}!` });
         }
         setTimeout(onClose, 1200);
         return;
@@ -439,7 +439,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
-  const clientLabel = map.clientName || 'o cliente';
+  const clientLabel = map.clientName || 'o participante';
 
   return (
     <>
@@ -447,7 +447,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Exportar & Importar Sessões"
-      description={`Cliente: ${map.clientName || 'Cliente'} · Sessão: ${map.sessionDate || map.title}`}
+      description={`Participante: ${map.clientName || 'Participante'} · Sessão: ${map.sessionDate || map.title}`}
       maxWidth="max-w-3xl"
     >
       <Tabs
@@ -506,7 +506,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     Todas as sessões de {clientLabel}
                   </>
                 }
-                description={<>Arquivo <code>.zip</code> com todas as sessões em Markdown deste cliente.</>}
+                description={<>Arquivo <code>.zip</code> com todas as sessões em Markdown deste participante.</>}
                 control={
                   <button
                     type="button"
@@ -528,10 +528,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 label={
                   <>
                     <FolderArchive className="w-4 h-4 text-accent-text" aria-hidden="true" />
-                    Todos os clientes
+                    Todos os participantes
                   </>
                 }
-                description={<>Arquivo <code>.zip</code> completo, com uma pasta por cliente.</>}
+                description={<>Arquivo <code>.zip</code> completo, com uma pasta por participante.</>}
                 control={
                   <button
                     type="button"
@@ -849,7 +849,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 O arquivo contém <strong>{pendingRestore.counts.maps} sessões</strong>
                 {pendingRestore.counts.clients > 0 && (
                   <>
-                    {' '}e <strong>{pendingRestore.counts.clients} clientes</strong>
+                    {' '}e <strong>{pendingRestore.counts.clients} participantes</strong>
                   </>
                 )}
                 {pendingRestore.counts.modalities > 0 && (
@@ -861,7 +861,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {pendingRestore.legacy && ' (formato antigo: só sessões)'}.
               </p>
               <p className="mt-2 text-content-subtle">
-                Sessões e clientes com o mesmo id serão substituídos pelos do
+                Sessões e participantes com o mesmo id serão substituídos pelos do
                 arquivo. Tipos e roteiros novos são somados; os que você
                 renomeou aqui não mudam.
               </p>

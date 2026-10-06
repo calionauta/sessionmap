@@ -92,7 +92,7 @@ describe('free markdown is understood as structure', () => {
   });
 
   test('a wrapped paragraph is ONE topic, not two', () => {
-    // A therapist writing a full sentence does not stop at 80 columns.
+    // A host writing a full sentence does not stop at 80 columns.
     expect(topics('# S\n- a anotação é longa e\n  continua aqui\n- b')).toEqual([
       'a anotação é longa e continua aqui',
       'b',
@@ -223,7 +223,7 @@ describe('ids are recycled so the caret and the client highlight survive', () =>
   });
 });
 
-describe('nothing the therapist wrote disappears', () => {
+describe('nothing the host wrote disappears', () => {
   /**
    * The property the old parser broke and the reason this rewrite exists. It
    * is checked against the WORDS rather than the shape, because a topic can

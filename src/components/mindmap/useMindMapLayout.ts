@@ -154,12 +154,12 @@ export function useMindMapLayout(
      * Does the draft's target already exist as a real node?
      *
      * The ghost balloon is an OPTIMISTIC placeholder: it exists for the case
-     * where the therapist's keystroke has been broadcast but the node is not in
+     * where the host's keystroke has been broadcast but the node is not in
      * this tree yet. That case is real — the client window receives `draft`
      * immediately while `snapshot` only follows the autosave, so without the
      * ghost the shared screen would show nothing until the save landed.
      *
-     * In the therapist's own window it is not real, and it was producing two
+     * In the host's own window it is not real, and it was producing two
      * balloons for one item: the node had already been created by Enter, so it
      * rendered on its own showing "Sem titulo", AND the ghost rendered a second
      * one after the siblings showing "novo ponto". The ghost was drawn as an
@@ -168,7 +168,7 @@ export function useMindMapLayout(
      * So it is only drawn when the target is genuinely absent from the tree.
      * When the node is there, the real node already renders the live text: the
      * outline pushes every keystroke through onUpdateRoot synchronously, so the
-     * autosave debounce never delayed what the therapist sees. The ghost was
+     * autosave debounce never delayed what the host sees. The ghost was
      * not buying latency in this view, it was buying a duplicate.
      */
     const draftTargetExists =

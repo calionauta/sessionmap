@@ -131,7 +131,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * The tree the text currently describes.
    *
    * Shown live rather than only on blur so the shared screen keeps mirroring
-   * the session while the therapist writes — a mode that only updated on blur
+   * the session while the host writes — a mode that only updated on blur
    * would show the client a stale map for as long as they kept typing, which
    * is the whole point of the second screen.
    *
@@ -215,7 +215,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     // The WHOLE line, not just the part before the caret. A caret sitting one
     // character into "- cansaço" would otherwise read the line as "-" and match
     // no topic at all, so the highlight and the lift would both do nothing
-    // until the therapist typed further into the text.
+    // until the host typed further into the text.
     const line = readLine(value, lineIndex);
     /* The live tree, not the committed one: on the keystroke that completes a
        topic, `text` has not caught up and the topic has no node yet. */
@@ -227,7 +227,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
 
     /* THE SESSION HEADING IS THE ROOT NODE, which is what it is: the session's
      * own name. Reading it as "not a topic" left the map dead on the one line a
-     * therapist lands on first, and dead on the client's screen with it. The
+     * host lands on first, and dead on the client's screen with it. The
      * lift already refuses to move the root, so resolving it costs nothing. */
     if (line.isHeading) {
       return {
@@ -321,9 +321,9 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
   const followedRef = useRef<string | null>(null);
 
   /**
-   * Moves the therapist's OWN map to the topic under the cursor.
+   * Moves the host's OWN map to the topic under the cursor.
    *
-   * Both windows, immediately. A therapist writing in the left pane wants the
+   * Both windows, immediately. A host writing in the left pane wants the
    * balloon they are writing into in the middle of their own window AND in the
    * client's; making either of them wait, or navigate somewhere else first, is
    * the map not answering a question that was asked.
@@ -457,7 +457,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * Tab indents, Shift+Tab outdents — on the selected lines.
    *
    * The whole reason a plain textarea is not enough here, and the thing the
-   * therapist flagged: Tab in a textarea normally moves focus, so the level of
+   * host flagged: Tab in a textarea normally moves focus, so the level of
    * a bullet would have to be typed as spaces. Every outliner solves it the
    * same way, by taking the key and rewriting the indent of the affected lines.
    *
@@ -497,17 +497,17 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
    * A plain textarea's Enter reproduces the previous line's INDENT but not its
    * bullet, so it produced a line the parser reads as a wrapped paragraph
    * folded into the topic above — no new topic, no ghost balloon, and the
-   * therapist having to type "- " by hand every single time. It is the one
+   * host having to type "- " by hand every single time. It is the one
    * thing a textarea cannot do and an outliner must, so it is taken here.
    *
    * The marker is REPEATED rather than normalised to "- ". A buffer pasted
    * from a document that uses "*" keeps "*" while it is being edited, and the
-   * canonical "-" arrives later as a visible rewrite the therapist can see and
+   * canonical "-" arrives later as a visible rewrite the host can see and
    * undo. Swapping the marker under the caret with no visible cause is the
    * worse surprise of the two.
    *
    * Enter on an EMPTY bullet ends the topic instead of nesting another one
-   * inside nothing, which is what every outliner does. Without it, a therapist
+   * inside nothing, which is what every outliner does. Without it, a host
    * who keeps pressing Enter walks down the buffer leaving a stack of blanks.
    *
    * Returns false for a line that is not a topic — a wrapped paragraph, a blank

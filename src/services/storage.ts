@@ -23,13 +23,13 @@ export const DEFAULT_SETTINGS: Settings = {
   thinBarAlwaysVisible: false,
   autoFitOnAdd: true,
   clientFontScale: 1.0,
-  focusZoomMode: true, // Default to true so therapist can see focus zoom in action!
+  focusZoomMode: true, // Default to true so host can see focus zoom in action!
   outlineFontScale: 1,
   // The map stays visible by default: hiding it is a per-session choice, and a
-  // therapist who wants it gone every time can turn it on once.
+  // host who wants it gone every time can turn it on once.
   maximizeOutline: false,
   // Pane width, persisted. It used to be bare component state, so the split
-  // reset itself on every reload and a therapist who widened the outline to
+  // reset itself on every reload and a host who widened the outline to
   // read a long topic had to drag it again every session. The bounds live in
   // utils/layout and are applied on read, so a value written by a build with a
   // different range cannot render the pane off screen.
@@ -41,60 +41,6 @@ export const DEFAULT_SETTINGS: Settings = {
     lastError: null,
     puterUsername: null,
   },
-};
-
-const DEFAULT_SAMPLE_CLIENT: Client = {
-  id: 'c_ana_m',
-  name: 'Ana M.',
-  createdAt: '2026-09-28T09:00:00Z',
-  notes: 'Sessões semanais · Foco em equilíbrio trabalho e família',
-};
-
-const SAMPLE_SESSION_DATE = '28/09/2026 14:08:17';
-
-const INITIAL_SAMPLE_MAP: MindMap = {
-  schema: 1,
-  id: 'm_sample_anam_1',
-  clientId: DEFAULT_SAMPLE_CLIENT.id,
-  clientName: DEFAULT_SAMPLE_CLIENT.name,
-  sessionDate: SAMPLE_SESSION_DATE,
-  title: SAMPLE_SESSION_DATE,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  root: {
-    id: 'n_root',
-    text: SAMPLE_SESSION_DATE,
-    collapsed: false,
-    children: [
-      {
-        id: 'n_trab',
-        text: 'Trabalho',
-        collapsed: false,
-        children: [
-          { id: 'n_t1', text: 'cansaço no fim do dia', children: [] },
-          { id: 'n_t2', text: 'chefe cobra prazos curtos', children: [] },
-        ],
-      },
-      {
-        id: 'n_fam',
-        text: 'Família',
-        collapsed: false,
-        children: [
-          { id: 'n_f1', text: 'mãe apoia e escuta', children: [] },
-          { id: 'n_f2', text: 'rotina com o irmão', children: [] },
-        ],
-      },
-      {
-        id: 'n_amig',
-        text: 'Amigos',
-        collapsed: false,
-        children: [
-          { id: 'n_a1', text: 'reencontro no sábado', children: [] },
-        ],
-      },
-    ],
-  },
-  view: { zoom: 1, x: 0, y: 0 },
 };
 
 // =================== MIGRATION narratips_* -> sessionmap_* ===================
@@ -110,12 +56,6 @@ const INITIAL_SAMPLE_MAP: MindMap = {
 
 const LS_MIGRATION_FLAG = 'sessionmap_keys_migrated';
 const IDB_MIGRATION_FLAG = 'sessionmap_db_migrated';
-/**
- * Marks that the demo client has already been offered. Without it, "the list
- * is empty" and "this install has never been used" are indistinguishable, and
- * deleting the last client resurrects the sample.
- */
-const CLIENTS_SEEDED_FLAG = 'sessionmap_clients_seeded';
 const LS_MIGRATED_SUFFIXES = [
   'settings',
   'active_map',
@@ -132,8 +72,8 @@ const LS_MIGRATED_SUFFIXES = [
 // sessionmap_settings to exist before first paint. DELETING the legacy keys is
 // not additive, and it must wait until the IndexedDB migration is known good
 // (below) — otherwise a failed IDB upgrade would leave the user with neither
-// the old settings nor the new ones, and migrationState='unavailable'
-// additionally suppresses the sample seed, so the app would open empty.
+// the old settings nor the new ones. An empty list simply stays empty,
+// and the UI shows its own empty state.
 function migrateLegacyLocalStorageKeys(): void {
   if (typeof localStorage === 'undefined') return;
   try {
@@ -349,11 +289,6 @@ async function migrateLegacyRecords(db: IDBDatabase): Promise<void> {
   migrationState = 'migrated';
 }
 
-/** Sample data must never be seeded on top of a legacy database we could not read. */
-function canSeedDefaults(): boolean {
-  return migrationState !== 'unavailable';
-}
-
 function getDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
@@ -399,7 +334,7 @@ function getDB(): Promise<IDBDatabase> {
     };
     request.onerror = () => reject(request.error);
     // Without this the promise hangs FOREVER when another tab holds the
-    // database (therapist window + client window is exactly two tabs), and
+    // database (host window + client window is exactly two tabs), and
     // every getAll/save hangs with it: the footer sticks on "Gravando…" and
     // the user reads it as "parou de salvar". Rejecting drops the callers
     // into their localStorage fallback instead of hanging.
@@ -433,55 +368,6 @@ export async function requestPersistence(): Promise<boolean> {
 
 // =================== CLIENT OPERATIONS ===================
 
-/**
- * Seeds the demo client, but ONLY on a genuine first run.
- *
- * This used to fire whenever the client list came back empty. Deleting the
- * last client therefore resurrected the sample right after the delete: the
- * row reappeared, and because the delete button is gated on
- * `clients.length > 1` it had already lost its own button by then. A
- * destructive action that un-does itself reads as the app being broken, and
- * in a therapy tool it is worse than useless: it looks like the record is
- * still there.
- *
- * An explicit flag distinguishes "never used" from "emptied on purpose", so a
- * genuinely empty list stays empty and the UI is free to show its own empty
- * state. Set again only by the reset path, never by a delete.
- */
-function shouldSeedClients(): boolean {
-  try {
-    return !localStorage.getItem(CLIENTS_SEEDED_FLAG);
-  } catch {
-    return false;
-  }
-}
-
-function markClientsSeeded(): void {
-  try {
-    localStorage.setItem(CLIENTS_SEEDED_FLAG, new Date().toISOString());
-  } catch {
-    // ignore
-  }
-}
-
-const MAPS_SEEDED_FLAG = 'sessionmap_maps_seeded';
-
-function shouldSeedMaps(): boolean {
-  try {
-    return !localStorage.getItem(MAPS_SEEDED_FLAG);
-  } catch {
-    return false;
-  }
-}
-
-function markMapsSeeded(): void {
-  try {
-    localStorage.setItem(MAPS_SEEDED_FLAG, new Date().toISOString());
-  } catch {
-    // ignore
-  }
-}
-
 export async function getAllClients(): Promise<Client[]> {
   try {
     const db = await getDB();
@@ -491,12 +377,8 @@ export async function getAllClients(): Promise<Client[]> {
       const req = store.getAll();
       req.onsuccess = () => {
         const clients: Client[] = req.result || [];
-        if (clients.length === 0 && canSeedDefaults() && shouldSeedClients()) {
-          markClientsSeeded();
-          saveClient(DEFAULT_SAMPLE_CLIENT);
-          resolve([DEFAULT_SAMPLE_CLIENT]);
-          return;
-        }
+        // An empty list stays empty: first install shows the empty state,
+        // and deleting the last record never resurrects a sample.
         resolve(clients.sort((a, b) => a.name.localeCompare(b.name)));
       };
       req.onerror = () => reject(req.error);
@@ -510,10 +392,7 @@ export async function getAllClients(): Promise<Client[]> {
         // empty
       }
     }
-    if (!shouldSeedClients()) return [];
-    markClientsSeeded();
-    localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify([DEFAULT_SAMPLE_CLIENT]));
-    return [DEFAULT_SAMPLE_CLIENT];
+    return [];
   }
 }
 
@@ -581,7 +460,7 @@ export function setActiveClientId(id: string): void {
 // survives starting, switching and deleting sessions, and it is deliberately
 // never broadcast: the client window receives the MindMap over the sync
 // channel and nothing else, so these notes cannot reach the shared screen even
-// by accident. That is the whole point of them — the therapist's own working
+// by accident. That is the whole point of them — the host's own working
 // notes about the person, which must never be projected to the person.
 
 export async function getClientNotes(clientId: string): Promise<string> {
@@ -751,7 +630,7 @@ export function createNewSession(
           text: timestamp,
           // No seeded first child. "Ponto Inicial" was a placeholder that had to
           // be selected and replaced, and if it was not, it survived into the
-          // canvas as a balloon the therapist never wrote and every export
+          // canvas as a balloon the host never wrote and every export
           // contained. The root row is itself the first thing to type into, so an
           // empty session now opens with exactly one editable line.
           children: [],
@@ -769,21 +648,13 @@ export async function getAllMaps(): Promise<MindMap[]> {
       const req = store.getAll();
       req.onsuccess = () => {
         let maps: MindMap[] = req.result || [];
-        // Same reasoning as shouldSeedClients(): an empty map list means the
-        // user deleted everything, not that this is a fresh install. Reseeding
-        // here made every "delete all" resurrect the sample session.
-        if (maps.length === 0 && canSeedDefaults() && shouldSeedMaps()) {
-          markMapsSeeded();
-          saveMap(INITIAL_SAMPLE_MAP);
-          maps = [INITIAL_SAMPLE_MAP];
-        }
         // Normalize maps to ensure client fields exist. archivedAt is
         // normalized too, so pre-archive records (which have no field at
         // all) and restored ones (null) behave identically to archived ones.
         maps = maps.map((m) => ({
           ...m,
-          clientId: m.clientId || DEFAULT_SAMPLE_CLIENT.id,
-          clientName: m.clientName || 'Cliente',
+          clientId: m.clientId || 'c_sem_participante',
+          clientName: m.clientName || 'Participante',
           sessionDate: m.sessionDate || m.title || formatSessionTimestamp(new Date(m.createdAt)),
           archivedAt: m.archivedAt ?? null,
         }));
@@ -800,9 +671,7 @@ export async function getAllMaps(): Promise<MindMap[]> {
         // empty
       }
     }
-    const defaultList = [INITIAL_SAMPLE_MAP];
-    localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(defaultList));
-    return defaultList;
+    return [];
   }
 }
 
@@ -1038,18 +907,12 @@ const MODALITIES_KEY = 'sessionmap_modalities';
 const TEMPLATES_KEY = 'sessionmap_templates';
 
 const DEFAULT_MODALITIES: Array<Pick<Modality, 'id' | 'name' | 'color'>> = [
-  { id: 'mod_terapia', name: 'Terapia', color: '#7c6cf0' },
   { id: 'mod_mentoria', name: 'Mentoria', color: '#2f9e6e' },
   { id: 'mod_consultoria', name: 'Consultoria', color: '#c47b1e' },
+  { id: 'mod_reuniao', name: 'Reunião', color: '#7c6cf0' },
 ];
 
 const DEFAULT_TEMPLATES: Array<{ modalityId: string; title: string; markdown: string }> = [
-  {
-    modalityId: 'mod_terapia',
-    title: 'Sessão de terapia',
-    markdown:
-      '- Como chega hoje\n- Tema central\n  - O que pesa mais\n  - O que ajuda\n- Fechamento e próximos passos',
-  },
   {
     modalityId: 'mod_mentoria',
     title: 'Sessão de mentoria',
@@ -1062,15 +925,21 @@ const DEFAULT_TEMPLATES: Array<{ modalityId: string; title: string; markdown: st
     markdown:
       '- Contexto e meta\n- Diagnóstico\n- Recomendações\n- Próximos passos e responsáveis',
   },
+  {
+    modalityId: 'mod_reuniao',
+    title: 'Reunião',
+    markdown:
+      '- Objetivo da reunião\n- Pontos discutidos\n- Decisões\n- Próximos passos e responsáveis',
+  },
 ];
 
-/** The catalog, seeded once with the three kinds from the request. */
+/** The catalog, seeded once with three generic kinds. */
 export function loadModalities(): Modality[] {
   try {
     const raw = localStorage.getItem(MODALITIES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Modality[];
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return migrateModalityNames(parsed);
     }
   } catch {
     return [];
@@ -1081,6 +950,39 @@ export function loadModalities(): Modality[] {
   }));
   persistModalities(seeded);
   return seeded;
+}
+
+/**
+ * One-time rename of the legacy catalog: the ids stay (sessions point
+ * at them), only the display names go generic. Runs on read, so it applies
+ * to existing installs without a migration pass — and it only touches rows
+ * the user never renamed themselves.
+ */
+function migrateModalityNames(modalities: Modality[]): Modality[] {  let changed = false;
+  const next = modalities.map((m) => {
+    if (m.id === 'mod_terapia' && m.name === 'Terapia') {
+      changed = true;
+      return { ...m, name: 'Reunião' };
+    }
+    return m;
+  });
+  if (changed) persistModalities(next);
+  return next;
+}
+
+/** Same one-time rename for the seeded template title. The body is kept as
+ *  the user may have edited it — only an untouched title is retitled. */
+function migrateTemplateNames(templates: SessionTemplate[]): SessionTemplate[] {
+  let changed = false;
+  const next = templates.map((t) => {
+    if (t.id === 'tpl_seed_0' && t.title === 'Sessão de terapia') {
+      changed = true;
+      return { ...t, title: 'Reunião', modalityId: 'mod_terapia' };
+    }
+    return t;
+  });
+  if (changed) persistTemplates(next);
+  return next;
 }
 
 export function persistModalities(modalities: Modality[]): void {
@@ -1118,7 +1020,7 @@ export function loadTemplates(): SessionTemplate[] {
     const raw = localStorage.getItem(TEMPLATES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as SessionTemplate[];
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return migrateTemplateNames(parsed);
     }
   } catch {
     return [];
@@ -1254,7 +1156,7 @@ export async function restoreFullBackup(data: unknown): Promise<RestoreCounts> {
     if (m.clientId && !knownClientIds.has(m.clientId)) {
       await saveClient({
         id: m.clientId,
-        name: m.clientName || 'Cliente',
+        name: m.clientName || 'Participante',
         createdAt: m.createdAt || new Date().toISOString(),
       });
       knownClientIds.add(m.clientId);
@@ -1269,19 +1171,19 @@ export async function restoreFullBackup(data: unknown): Promise<RestoreCounts> {
 
   if (modalities.length > 0) {
     const have = new Set(loadModalities().map((m) => m.id));
-    const merged = [
+    const merged = migrateModalityNames([
       ...loadModalities(),
       ...modalities.filter((m) => m && typeof m.id === 'string' && !have.has(m.id)),
-    ];
+    ]);
     counts.modalities = merged.length - have.size;
     persistModalities(merged);
   }
   if (templates.length > 0) {
     const have = new Set(loadTemplates().map((t) => t.id));
-    const merged = [
+    const merged = migrateTemplateNames([
       ...loadTemplates(),
       ...templates.filter((t) => t && typeof t.id === 'string' && !have.has(t.id)),
-    ];
+    ]);
     counts.templates = merged.length - have.size;
     persistTemplates(merged);
   }

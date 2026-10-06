@@ -1,18 +1,18 @@
 import React from 'react';
 
 /**
- * The bar that says what the therapist is typing right now.
+ * The bar that says what the host is typing right now.
  *
- * ONE component, shown in both windows. The therapist's copy and the client's
+ * ONE component, shown in both windows. The host's copy and the client's
  * copy were separate implementations of the same sentence, which is the only
- * way they can disagree — and they did: the therapist's version keyed off
+ * way they can disagree — and they did: the host's version keyed off
  * "is the edited node on screen" and flickered on every keystroke, while the
  * client's keyed off an idle timer and sat still. Same words, same bar, two
  * behaviours. There is now one.
  *
  * The label is computed by the caller because the parent is a different thing
  * in each window: on the client it is a name resolved from a mirrored tree, in
- * the therapist's window it is the same name straight from the caret.
+ * the host's window it is the same name straight from the caret.
  */
 
 interface TypingBarProps {

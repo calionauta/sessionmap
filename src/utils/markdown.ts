@@ -345,7 +345,7 @@ function collect(
         /*
          * Everything else — tables, blockquotes, raw HTML, genuine code — is
          * kept as its literal source instead of being dropped or promoted to
-         * structure. A therapist pasting a table should get a topic with the
+         * structure. A host pasting a table should get a topic with the
          * table in it, not a tree invented out of its borders, and never
          * nothing at all.
          */
@@ -466,7 +466,7 @@ export function treeToMarkdown(root: MindMapNode): string {
  * Every word the user typed, with markdown markers removed.
  *
  * The safety net for the buffer: compared against what the tree holds, it
- * answers "did anything the therapist wrote disappear?". It is deliberately
+ * answers "did anything the host wrote disappear?". It is deliberately
  * not used to BUILD the tree — marked does that — only to fail a test when
  * the two disagree.
  *
