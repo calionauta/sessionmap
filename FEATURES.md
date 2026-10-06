@@ -31,7 +31,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - **Parser CommonMark de verdade** (marked): aceita `*`, `+`, listas numeradas,
   headings e parágrafos, e normaliza tudo para a forma canônica.
 - **Enter** abre o próximo tópico no mesmo nível; **Enter em bullet vazio** encerra.
-- **Tab / Shift+Tab** indentam o bloco; **Esc** solta o foco (o Tab é capturado).
+- **Tab / Shift+Tab** indentam o bloco — no celular, botões **Recuar/Avançar** ao lado do texto (o teclado móvel não tem Tab); **Esc** solta o foco (o Tab é capturado).
 - **Recortar/copiar/colar entre níveis** de graça, pelo próprio navegador.
 - **Sem placeholder:** sessão vazia abre com uma linha editável, sem "Ponto Inicial".
 - **Sem linhas em branco acumuladas:** folhas vazias são podadas ao trocar de sessão.
@@ -110,6 +110,6 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 | Onde | Teclas |
 |---|---|
 | Global | `Ctrl+E` exportar · `Ctrl+Z` / `Ctrl+Shift+Z` desfazer/refazer (fora de texto) |
-| Outline | `Enter` novo tópico · `Shift+Enter` quebra suave · `Tab`/`Shift+Tab` nível · `Esc` solta |
+| Outline | `Enter` novo tópico · `Shift+Enter` quebra suave · `Tab`/`Shift+Tab` nível (botões Recuar/Avançar no celular) · `Esc` solta |
 | Mapa | `+`/`-` zoom · setas pan/navegação · `Ctrl+0` enquadrar · `Enter`/`Espaço` selecionar |
 | Painel | `Home` largura mínima · `Esc` fecha diálogos |

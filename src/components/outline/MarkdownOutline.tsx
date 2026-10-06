@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HelpCircle, Info, PanelLeft, Minimize2 } from 'lucide-react';
+import { HelpCircle, Info, PanelLeft, Minimize2, IndentIncrease, IndentDecrease } from 'lucide-react';
 import { FlatOutlineItem, MindMapNode, SelectReason } from '../../types';
 import { t } from '../../i18n/strings';
 import { useLang } from '../../i18n/LanguageContext';
@@ -552,6 +552,58 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
     return true;
   };
 
+  /**
+   * Nests or lifts the lines the caret touches, one level.
+   *
+   * The SAME rewrite the Tab key performs, exposed so a pointer can do it:
+   * the soft keyboards on iOS and Android have no Tab key (screen space is
+   * for characters), so on mobile the indent/outdent buttons above call this
+   * instead. Every outliner solves it this way — a formatting toolbar with
+   * indent controls next to the keyboard (Google Docs' Increase-indent,
+   * Apple Notes' Aa arrows, Obsidian's mobile toolbar). Typing two spaces
+   * by hand stays a valid fallback, but hunting for tiny keys mid-sentence
+   * is not a gesture anyone keeps.
+   *
+   * Returns false when nothing moved (session heading only), so callers can
+   * skip work that only makes sense when the buffer actually changed.
+   */
+  const shiftSelection = (outdent: boolean): boolean => {
+    const el = textareaRef.current;
+    if (!el) return false;
+    const { selectionStart, selectionEnd, value } = el;
+    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
+    const lineEndRaw = value.indexOf('\n', selectionEnd);
+    const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw;
+    const block = value.slice(lineStart, lineEnd);
+    const lines = block.split('\n');
+
+    const next = lines
+      .map((line) => {
+        // A bullet's indent is meaningful; the "#" session line is not a bullet
+        // and indenting it would hide the session row from the parser.
+        if (outdent) {
+          return line.startsWith(INDENT) ? line.slice(INDENT.length) : line.replace(/^\s/, '');
+        }
+        if (line.trim() === '' || line.trimStart().startsWith('#')) return line;
+        return INDENT + line;
+      })
+      .join('\n');
+
+    if (next === block) return false;
+    const updated = value.slice(0, lineStart) + next + value.slice(lineEnd);
+    setText(updated);
+    // Put the caret back where the same text now lives, adjusted by how much
+    // the first line's indent grew or shrank. Focus first: a pointer click on
+    // the button moved focus (and fired blur) before this ran.
+    const delta = next.length - block.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(selectionStart + delta, selectionEnd + delta);
+    });
+    scheduleParse();
+    return true;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
 
@@ -571,36 +623,7 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
 
     if (e.key !== 'Tab') return;
     e.preventDefault();
-
-    const { selectionStart, selectionEnd, value } = el;
-    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
-    const lineEndRaw = value.indexOf('\n', selectionEnd);
-    const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw;
-    const block = value.slice(lineStart, lineEnd);
-    const lines = block.split('\n');
-
-    const next = lines
-      .map((line) => {
-        // A bullet's indent is meaningful; the "#" session line is not a bullet
-        // and indenting it would hide the session row from the parser.
-        if (e.shiftKey) {
-          return line.startsWith(INDENT) ? line.slice(INDENT.length) : line.replace(/^\s/, '');
-        }
-        if (line.trim() === '' || line.trimStart().startsWith('#')) return line;
-        return INDENT + line;
-      })
-      .join('\n');
-
-    if (next === block) return;
-    const updated = value.slice(0, lineStart) + next + value.slice(lineEnd);
-    setText(updated);
-    // Put the caret back where the same text now lives, adjusted by how much
-    // the first line's indent grew or shrank.
-    const delta = next.length - block.length;
-    requestAnimationFrame(() => {
-      el.setSelectionRange(selectionStart + delta, selectionEnd + delta);
-    });
-    scheduleParse();
+    shiftSelection(e.shiftKey);
   };
 
   return (
@@ -647,16 +670,42 @@ export const MarkdownOutline: React.FC<MarkdownOutlineProps> = ({
         </div>
         {/* Two keys, and only the two a textarea cannot show for itself. Tab is
             CAPTURED here to indent, which is invisible until it surprises
-            someone, and Esc is the only way out. Everything else is either
-            guessable or behind the help button — a footer that explained
-            everything taught the things nobody needed and buried the two that
-            mattered. */}
+            someone, and Esc is the only way out. The two buttons beside them
+            are the same gesture for a pointer: soft keyboards on phones have
+            no Tab key, so mobile gets Recuar/Avançar instead of a key to hunt
+            for. Everything else is either guessable or behind the help button —
+            a footer that explained everything taught the things nobody needed
+            and buried the ones that mattered. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-[11px] font-mono text-content-muted">
           <strong className="font-bold text-content">Tab</strong>
           <span>{t(lang, 'outline.tabHint.indent')}</span>
           <span aria-hidden="true">·</span>
           <span>
             <strong className="font-bold text-content">Esc</strong> {t(lang, 'outline.tabHint.release')}
+          </span>
+          <span className="ml-auto flex items-center gap-1" role="group" aria-label={t(lang, 'outline.level.group')}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => shiftSelection(true)}
+              title={t(lang, 'outline.level.outdentTitle')}
+              aria-label={t(lang, 'outline.level.outdentTitle')}
+              className="ctl min-h-touch min-w-touch !px-2 !font-sans !text-xs !font-bold"
+            >
+              <IndentDecrease className="w-4 h-4" aria-hidden="true" />
+              {t(lang, 'outline.level.outdent')}
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => shiftSelection(false)}
+              title={t(lang, 'outline.level.indentTitle')}
+              aria-label={t(lang, 'outline.level.indentTitle')}
+              className="ctl min-h-touch min-w-touch !px-2 !font-sans !text-xs !font-bold"
+            >
+              <IndentIncrease className="w-4 h-4" aria-hidden="true" />
+              {t(lang, 'outline.level.indent')}
+            </button>
           </span>
         </div>
       </div>

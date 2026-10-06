@@ -209,6 +209,34 @@ describe('the markdown buffer', () => {
     expect(textarea().value).toContain('\n- cansaço');
   });
 
+  test('the outdent button lifts the current line like Shift+Tab', () => {
+    // Soft keyboards have no Tab key, so the Recuar button is the same
+    // gesture for a pointer — and it runs the same rewrite.
+    setup();
+    caretOnLine('- cansaço');
+    const btn = container!.querySelector(
+      'button[aria-label*="(como Shift+Tab)"]'
+    ) as HTMLElement;
+    expect(btn).not.toBeNull();
+    act(() => {
+      fireEvent.click(btn);
+    });
+    expect(textarea().value).toContain('\n- cansaço');
+  });
+
+  test('the indent button nests the current line like Tab', () => {
+    setup();
+    caretOnLine('- cansaço');
+    const btn = container!.querySelector(
+      'button[aria-label*="(como Tab)"]'
+    ) as HTMLElement;
+    expect(btn).not.toBeNull();
+    act(() => {
+      fireEvent.click(btn);
+    });
+    expect(textarea().value).toContain('  - cansaço');
+  });
+
   test('a deeper topic needs more Shift+Tabs to reach the top', () => {
     setup();
     const at = textarea().value.indexOf('- prazos curtos');

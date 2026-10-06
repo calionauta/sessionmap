@@ -31,7 +31,7 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 - **A real CommonMark parser** (marked): accepts `*`, `+`, numbered lists,
   headings and paragraphs, and normalizes everything to the canonical form.
 - **Enter** opens the next topic at the same level; **Enter on an empty bullet** ends it.
-- **Tab / Shift+Tab** indent the block; **Esc** releases focus (Tab is captured).
+- **Tab / Shift+Tab** indent the block — on mobile, **Outdent/Indent** buttons beside the text (mobile keyboards have no Tab); **Esc** releases focus (Tab is captured).
 - **Cut/copy/paste across levels** for free, courtesy of the browser itself.
 - **No placeholder:** an empty session opens with one editable line, no "Starting Point".
 - **No piling blank lines:** empty leaves are pruned when switching sessions.
@@ -110,6 +110,6 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 | Where | Keys |
 |---|---|
 | Global | `Ctrl+E` export · `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo (outside text) |
-| Outline | `Enter` new topic · `Shift+Enter` soft break · `Tab`/`Shift+Tab` level · `Esc` release |
+| Outline | `Enter` new topic · `Shift+Enter` soft break · `Tab`/`Shift+Tab` level (Outdent/Indent buttons on mobile) · `Esc` release |
 | Map | `+`/`-` zoom · arrows pan/navigate · `Ctrl+0` fit · `Enter`/`Space` select |
 | Panel | `Home` minimum width · `Esc` close dialogs |
