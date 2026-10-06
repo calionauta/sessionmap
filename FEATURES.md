@@ -79,7 +79,8 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - **Cifragem no navegador (AES-256-GCM + PBKDF2-600k)** antes de subir; a nuvem só
   vê `{salt, iv, ct}`. **Senha só em memória** — recarregar pausa o automático.
 - Status na top bar e no rodapé (`nuvem há 2h`, `aguardando senha`, `erro`, `nunca`).
-- **Automático conservador:** ~1 min após salvar, só desbloqueado e online; nunca
+- **Automático conservador:** ~1 min após você parar, teto de 5 min digitando sem
+  parar, tentativa ao ocultar a aba; só desbloqueado e online; nunca
   abre login sozinho; restore nunca é automático.
 - Transparência: conta, lista de arquivos (nome/tamanho/data) e cota (100 MiB grátis).
 - **Apagar tudo exige digitar APAGAR**; recomeço após senha esquecida sem perder o local.

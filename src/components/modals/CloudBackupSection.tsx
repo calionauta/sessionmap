@@ -589,7 +589,7 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
               <span className="text-xs font-bold text-content">
                 Backup automático
                 <span className="block text-[11px] font-medium text-content-muted">
-                  Envia sozinho ~1 min após salvar, só desbloqueado e online. Nunca abre login sozinho.
+                  Envia ~1 min após você parar (teto de 5 min), só desbloqueado e online. Nunca abre login sozinho.
                 </span>
               </span>
               <input

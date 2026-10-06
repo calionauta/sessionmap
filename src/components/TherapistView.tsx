@@ -43,6 +43,7 @@ import {
 import { syncService } from '../services/sync';
 import {
   AUTO_BACKUP_IDLE_MS,
+  AUTO_BACKUP_MAX_WAIT_MS,
   cloudBadgeLabel,
   describeCloudStatus,
   runAutoBackup,
@@ -225,31 +226,74 @@ export const TherapistView: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'salvo' | 'salvando'>('salvo');
   const autosaveTimerRef = useRef<number | null>(null);
 
-  // Cloud auto-backup: fires once the session has been quiet for a while.
-  // The timer resets on every committed change, so a typing session uploads
-  // once after stopping — not once per keystroke. The tick itself is
-  // conservative (see runAutoBackup): locked, offline, signed out, or
-  // disabled all skip silently.
+  // Cloud auto-backup: trailing idle (60s quiet) + hard ceiling (5min).
+  // Pure trailing debounce never fires in a long typing session; a blind
+  // fixed interval uploads even with zero changes. This hybrid is the
+  // standard recipe: quiet uploads fast, continuous work still caps loss.
+  // The tick itself stays conservative (see runAutoBackup): locked, offline,
+  // signed out, or disabled all skip silently.
   const cloudAutoTimerRef = useRef<number | null>(null);
+  const cloudMaxTimerRef = useRef<number | null>(null);
+  const cloudBackupBusyRef = useRef<boolean>(false);
+  const clearCloudMaxTimer = useCallback(() => {
+    if (cloudMaxTimerRef.current) {
+      window.clearTimeout(cloudMaxTimerRef.current);
+      cloudMaxTimerRef.current = null;
+    }
+  }, []);
+  const doCloudAutoBackup = useCallback(() => {
+    if (cloudBackupBusyRef.current) return;
+    cloudBackupBusyRef.current = true;
+    void runAutoBackup()
+      .then((did) => {
+        if (did) {
+          clearCloudMaxTimer();
+          setSettings(getSettings());
+        }
+      })
+      .finally(() => {
+        cloudBackupBusyRef.current = false;
+      });
+  }, [clearCloudMaxTimer]);
   useEffect(() => {
+    if (!settings.cloudBackup.enabled || !settings.cloudBackup.auto) {
+      if (cloudAutoTimerRef.current) {
+        window.clearTimeout(cloudAutoTimerRef.current);
+        cloudAutoTimerRef.current = null;
+      }
+      clearCloudMaxTimer();
+      return;
+    }
     if (cloudAutoTimerRef.current) {
       window.clearTimeout(cloudAutoTimerRef.current);
       cloudAutoTimerRef.current = null;
     }
-    if (!settings.cloudBackup.enabled || !settings.cloudBackup.auto) return;
     cloudAutoTimerRef.current = window.setTimeout(() => {
       cloudAutoTimerRef.current = null;
-      void runAutoBackup().then((did) => {
-        if (did) setSettings(getSettings());
-      });
+      doCloudAutoBackup();
     }, AUTO_BACKUP_IDLE_MS);
+    // The ceiling arms once and survives keystrokes: it is cleared only on a
+    // successful upload, on disable, or on unmount — never by the per-change
+    // cleanup below, or it would never fire.
+    if (!cloudMaxTimerRef.current) {
+      cloudMaxTimerRef.current = window.setTimeout(() => {
+        cloudMaxTimerRef.current = null;
+        doCloudAutoBackup();
+      }, AUTO_BACKUP_MAX_WAIT_MS);
+    }
     return () => {
       if (cloudAutoTimerRef.current) {
         window.clearTimeout(cloudAutoTimerRef.current);
         cloudAutoTimerRef.current = null;
       }
     };
-  }, [activeMap?.updatedAt, settings.cloudBackup.enabled, settings.cloudBackup.auto]);
+  }, [
+    activeMap?.updatedAt,
+    settings.cloudBackup.enabled,
+    settings.cloudBackup.auto,
+    doCloudAutoBackup,
+    clearCloudMaxTimer,
+  ]);
 
   /**
    * Commits the outline buffer synchronously and returns the parsed root.
@@ -327,8 +371,51 @@ export const TherapistView: React.FC = () => {
       unsub();
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
+      if (cloudAutoTimerRef.current) clearTimeout(cloudAutoTimerRef.current);
+      clearCloudMaxTimer();
     };
-  }, [refreshAllData]);
+  }, [refreshAllData, clearCloudMaxTimer]);
+
+  // Best-effort cloud flush when the tab goes away. The 60s idle timer may
+  // never have fired; the local data is already safe (see beforeunload
+  // below), but the cloud copy would lag a full cycle. Flush the outline
+  // buffer into storage first so the upload sees the last keystrokes, then
+  // run the same conservative tick — it self-skips when not ready.
+  useEffect(() => {
+    const flushCloud = () => {
+      try {
+        const st = getSettings();
+        if (!st.cloudBackup.enabled || !st.cloudBackup.auto) return;
+        const current = activeMapRef.current;
+        if (!current) {
+          doCloudAutoBackup();
+          return;
+        }
+        let root = current.root;
+        try {
+          const flushed = outlineFlushRef.current?.();
+          if (flushed) root = flushed;
+        } catch {
+          // parse hiccup: fall back to the last committed tree
+        }
+        const updated = { ...current, root, updatedAt: new Date().toISOString() };
+        void saveMap(updated)
+          .catch(() => undefined)
+          .then(() => doCloudAutoBackup());
+      } catch {
+        // best effort only: never break tab hide/close
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushCloud();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', flushCloud);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', flushCloud);
+    };
+  }, [doCloudAutoBackup]);
 
   // Last line of defense for a refresh/close mid-keystroke. The debounced
   // autosave never fires inside beforeunload and async IndexedDB writes do

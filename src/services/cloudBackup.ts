@@ -41,6 +41,13 @@ import {
 } from './puterCloud';
 
 export const AUTO_BACKUP_IDLE_MS = 60_000;
+/**
+ * Hard ceiling: even while typing non-stop, the cloud copy is at most this
+ * old. Pure trailing debounce never fires in a long session; a fixed blind
+ * interval uploads even with zero changes. Idle + ceiling is the standard
+ * hybrid (debounce after quiet, force after max wait).
+ */
+export const AUTO_BACKUP_MAX_WAIT_MS = 5 * 60_000;
 
 /** Tab memory only. Reload the page and it is gone — by design. */
 let cachedPassphrase: string | null = null;
