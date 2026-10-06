@@ -5,6 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SessionMap — real-time mind map</title>
 <meta name="description" content="You type topics, participants follow the map. Free, open source, no install, offline by default.">
+<script>
+  /* Idioma da página pública na primeira visita.
+     PT-first como o app: navegador em pt-* fica aqui; qualquer outro
+     idioma vai para landing-en.html. A troca manual no topo grava
+     sessionmap_landing_lang e passa a prevalecer — inclusive sobre o
+     navegador. ?lang=pt|en força e grava. replace (sem entrada no
+     histórico) e antes da pintura, para não piscar o idioma errado. */
+  (function () {
+    try {
+      var KEY = 'sessionmap_landing_lang';
+      var path = location.pathname;
+      var onEN = /landing-en\.html$/.test(path);
+      if (!onEN && !/landing\.html$/.test(path)) return;
+      var q = (location.search || '').match(/[?&]lang=(pt|en)\b/);
+      var target = q ? q[1] : null;
+      if (target) {
+        try { localStorage.setItem(KEY, target); } catch (e) {}
+      } else {
+        try { target = localStorage.getItem(KEY); } catch (e) {}
+      }
+      if (!target) {
+        var nav = (navigator.language || navigator.userLanguage || 'pt').toLowerCase();
+        target = (nav === 'pt' || nav.indexOf('pt-') === 0) ? 'pt' : 'en';
+      }
+      if (target === 'en' && !onEN) location.replace(path.replace(/landing\.html$/, 'landing-en.html'));
+      else if (target === 'pt' && onEN) location.replace(path.replace(/landing-en\.html$/, 'landing.html'));
+    } catch (e) {}
+  })();
+</script>
 <style>
   :root{
     --bg:#faf7f1; --surface:#fffdf8; --ink:#2b2620; --muted:#7a7266;
@@ -28,8 +57,9 @@
   nav.nav a{font-size:13px;font-weight:700;color:var(--muted);text-decoration:none;
     padding:6px 10px;border-radius:8px}
   nav.nav a:hover{color:var(--ink);background:var(--accent-soft)}
-  .lang{margin-left:2px;font-size:12px;font-weight:800;color:var(--muted);text-decoration:none;
+  .lang{margin-left:2px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:var(--muted);text-decoration:none;
     border:1px solid var(--line);border-radius:8px;padding:6px 9px;background:var(--surface)}
+  .lang svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .lang:hover{color:var(--ink);border-color:var(--accent)}
   @media(max-width:640px){nav.nav{display:none}}
   .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 6px}
@@ -92,7 +122,7 @@
       <a href="#reunioes">Meetings</a>
       <a href="#detalhes">Details</a>
     </nav>
-    <a class="lang" href="./landing.html" hreflang="pt-BR" lang="pt-BR" aria-label="Ler esta página em português" title="Ler em português">PT</a>
+    <a class="lang" href="./landing.html" hreflang="pt-BR" lang="pt-BR" rel="alternate" onclick="try{localStorage.setItem('sessionmap_landing_lang','pt')}catch(e){}" aria-label="Ler esta página em português" title="Ler em português"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg><span>Português</span></a>
     <a class="gh" href="https://github.com/calionauta/sessionmap" aria-label="Source code on GitHub" title="Source code on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
   </header>
 
@@ -114,29 +144,29 @@
   <div class="demo" aria-label="Example: topics become balloons">
     <div class="pane">
       <h3>Your window (private)</h3>
-      <div class="topic"># Today\u2019s session<br>- How they arrive<br>&nbsp;&nbsp;- End-of-day tiredness<br>&nbsp;&nbsp;- What helps<br>- Next steps</div>
+      <div class="topic"># Today’s session<br>- How they arrive<br>&nbsp;&nbsp;- End-of-day tiredness<br>&nbsp;&nbsp;- What helps<br>- Next steps</div>
     </div>    <div class="pane">
       <h3>Participant window (projected)</h3>
-      <svg class="maptree" viewBox="0 0 360 300" role="img" aria-label="System-faithful map: Today\u2019s session at the center connects to How they arrive and Next steps; How they arrive connects to two topics">
-        <path d="M 180 62 C 180 88, 72 84, 72 110"/>
-        <path d="M 180 62 C 180 88, 292 84, 292 110"/>
+      <svg class="maptree" viewBox="0 0 360 300" role="img" aria-label="System-faithful map: Today’s session at the center connects to How they arrive and Next steps; How they arrive connects to two topics">
+        <path d="M 180 62 C 180 88, 90 84, 90 110"/>
+        <path d="M 180 62 C 180 88, 270 84, 270 110"/>
         <path d="M 20 130 C 8 130, 8 199, 20 199"/>
         <path d="M 20 130 C 4 130, 4 247, 20 247"/>
-        <rect x="120" y="20" width="120" height="42" rx="21"/>
-        <text x="180" y="46">Today\u2019s session</text>
-        <rect x="20" y="110" width="105" height="40" rx="20"/>
-        <text x="72" y="135">How they arrive</text>
-        <rect x="235" y="110" width="115" height="40" rx="20"/>
-        <text x="292" y="135">Next steps</text>
-        <rect x="20" y="180" width="150" height="38" rx="19"/>
-        <text x="95" y="204" style="font-size:11px">End-of-day tiredness</text>
-        <rect x="20" y="228" width="105" height="38" rx="19"/>
-        <text x="72" y="252" style="font-size:11px">What helps</text>
+        <rect x="105" y="20" width="150" height="42" rx="21"/>
+        <text x="180" y="46">Today’s session</text>
+        <rect x="20" y="110" width="140" height="40" rx="20"/>
+        <text x="90" y="135">How they arrive</text>
+        <rect x="195" y="110" width="150" height="40" rx="20"/>
+        <text x="270" y="135">Next steps</text>
+        <rect x="20" y="180" width="170" height="38" rx="19"/>
+        <text x="105" y="204" style="font-size:11px">End-of-day tiredness</text>
+        <rect x="20" y="228" width="130" height="38" rx="19"/>
+        <text x="85" y="252" style="font-size:11px">What helps</text>
       </svg>
     </div>
   </div>
 
-  <p style="text-align:center;color:var(--muted);font-size:13px;margin:-24px 0 8px">The first line (<code>#</code>) is the map\u2019s center; each bullet becomes a branch attached to it.</p>
+  <p style="text-align:center;color:var(--muted);font-size:13px;margin:-24px 0 8px">The first line (<code>#</code>) is the map’s center; each bullet becomes a branch attached to it.</p>
 
   <section id="como-funciona">
     <h2>How it works</h2>
@@ -144,7 +174,7 @@
     <div class="steps">
       <div class="step"><b>1</b><p>Add the participant, pick the type (consulting, mentoring, meeting…) and a starter script.</p></div>
       <div class="step"><b>2</b><p>Click <strong>Present</strong> and project only the participant window — no menus, no names in the tab.</p></div>
-      <div class="step"><b>3</b><p>Type the topics. Each line becomes a live balloon on the participant\u2019s screen.</p></div>
+      <div class="step"><b>3</b><p>Type the topics. Each line becomes a live balloon on the participant’s screen.</p></div>
       <div class="step"><b>4</b><p>At the end, export the minutes as Markdown, OPML or FreeMind — or the full backup as ZIP.</p></div>
     </div>
   </section>
@@ -170,7 +200,7 @@
 
   <section id="reunioes">
     <h2>For any meeting — remote or in person</h2>
-    <p class="sub">At heart, it\u2019s simple: one person takes quick notes while everyone else follows the reasoning — on the call, in the room with the TV, or on an event stage, with nothing to install.</p>
+    <p class="sub">At heart, it’s simple: one person takes quick notes while everyone else follows the reasoning — on the call, in the room with the TV, or on an event stage, with nothing to install.</p>
     <div class="grid">
       <div class="card">
         <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="M15 10.5l7-3.5v10l-7-3.5"/></svg></div>

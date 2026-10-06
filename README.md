@@ -40,7 +40,8 @@ participante na aba — só o mapa.
   senha, enviar manual ou automático (~1 min após parar, teto de 5 min). Apagar tudo exige
   digitar `APAGAR`. Perdeu a senha? O local está intacto — recomece com uma
   nova que o próximo envio substitui o arquivo ilegível.
-- **Idioma:** Configurações → Idioma, PT ou EN para toda a interface
+- **Idioma:** Configurações → Idioma, PT ou EN para toda a interface;
+  a página pública detecta o idioma do navegador na primeira visita
   (detalhes em [FEATURES.md](./FEATURES.md)).
 
 ## Desenvolvimento

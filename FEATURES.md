@@ -99,6 +99,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - Temas **papel/noite** aplicados antes da primeira pintura (sem flash claro).
 - **Idioma PT/EN** em Configurações (PT padrão); vale para toda a interface e
   sincroniza `document.lang`. Sementes e roteiros ficam no idioma em que foram escritos.
+  A página pública detecta o idioma do navegador na primeira visita e lembra a troca manual.
 - Escala de fonte dos tópicos e dos balões separadas; modos ao-vivo/só-ao-Enter;
   barra fina sempre visível ou temporária.
 
