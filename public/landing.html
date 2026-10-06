@@ -50,6 +50,10 @@
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
   .card h3{margin:0 0 8px;font-size:16px}
   .card p{margin:0;font-size:14px;color:var(--muted);line-height:1.6}
+  .icon{width:46px;height:46px;border-radius:13px;background:var(--accent-soft);
+    display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .icon svg{width:24px;height:24px;stroke:var(--accent);fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
   .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;counter-reset:step}
   .step{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
   .step b{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;
@@ -116,9 +120,18 @@
     <h2>Para terapeutas, consultores e mentores</h2>
     <p class="sub">Cada sessão tem um tipo — e cada tipo tem seu roteiro inicial. Um cliente pode ser de mentoria e de terapia: o histórico acompanha.</p>
     <div class="grid">
-      <div class="card"><h3>Terapeutas</h3><p>Mapa ao vivo na segunda tela, pausa rápida com <kbd>Ctrl</kbd> + <kbd>.</kbd>, notas privadas que nunca vazam para o projetor.</p></div>
-      <div class="card"><h3>Consultores</h3><p>Diagnóstico visual construído com o cliente na hora — e ata pronta em Markdown, OPML ou FreeMind no fim.</p></div>
-      <div class="card"><h3>Mentores</h3><p>Roteiros por tipo de sessão, histórico por mentorado e exportação em ZIP para revisitar a jornada.</p></div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg></div>
+        <h3>Terapeutas</h3><p>Mapa ao vivo na segunda tela, pausa rápida com <kbd>Ctrl</kbd> + <kbd>.</kbd>, notas privadas que nunca vazam para o projetor.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 13h20"/></svg></div>
+        <h3>Consultores</h3><p>Diagnóstico visual construído com o cliente na hora — e ata pronta em Markdown, OPML ou FreeMind no fim.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5" fill="var(--accent)" stroke="none"/></svg></div>
+        <h3>Mentores</h3><p>Roteiros por tipo de sessão, histórico por mentorado e exportação em ZIP para revisitar a jornada.</p>
+      </div>
     </div>
   </section>
 
@@ -126,9 +139,18 @@
     <h2>Para qualquer reunião online</h2>
     <p class="sub">No fundo, é simples: uma pessoa anota rápido enquanto as outras acompanham o raciocínio — em qualquer call, sem instalar nada.</p>
     <div class="grid">
-      <div class="card"><h3>Reunião com cliente</h3><p>Compartilhe a janela B em vez da tela inteira: o cliente vê o mapa limpo, você mantém o resto privado.</p></div>
-      <div class="card"><h3>Aulas e mentorias</h3><p>Escreva a estrutura enquanto fala; quem assiste segue o fio sem precisar ver seu material.</p></div>
-      <div class="card"><h3>Brainstorms e dailies</h3><p>Um digita, todos veem as ideias se conectando — e a ata em tópicos já sai pronta.</p></div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="M15 10.5l7-3.5v10l-7-3.5"/></svg></div>
+        <h3>Reunião com cliente</h3><p>Compartilhe a janela B em vez da tela inteira: o cliente vê o mapa limpo, você mantém o resto privado.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <h3>Aulas e mentorias</h3><p>Escreva a estrutura enquanto fala; quem assiste segue o fio sem precisar ver seu material.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="4"/><circle cx="8.5" cy="12" r="1" fill="var(--accent)" stroke="none"/><circle cx="12" cy="12" r="1" fill="var(--accent)" stroke="none"/><circle cx="15.5" cy="12" r="1" fill="var(--accent)" stroke="none"/></svg></div>
+        <h3>Brainstorms e dailies</h3><p>Um digita, todos veem as ideias se conectando — e a ata em tópicos já sai pronta.</p>
+      </div>
     </div>
   </section>
 
@@ -136,16 +158,28 @@
     <h2>Detalhes que importam</h2>
     <p class="sub">Lista completa em <a href="https://github.com/calionauta/sessionmap/blob/main/FEATURES.md">FEATURES.md</a>.</p>
     <div class="grid">
-      <div class="card"><h3>Privacidade radical</h3><p>Nome do cliente nunca aparece na janela compartilhada. Nada sai do navegador sem você mandar.</p></div>
-      <div class="card"><h3>Exportação total</h3><p>Markdown, OPML, FreeMind, JSON, PNG, SVG e ZIPs — backup com restore incluído.</p></div>
-      <div class="card"><h3>Nuvem cifrada opcional</h3><p>Backup Puter opt-in, cifrado no navegador (AES-256-GCM), senha só na memória.</p></div>
-      <div class="card"><h3>Teclado e celular</h3><p><kbd>Enter</kbd> novo tópico, <kbd>Tab</kbd> indenta, undo/redo; no celular, tópicos e mapa alternam em tela cheia.</p></div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Privacidade radical</h3><p>Nome do cliente nunca aparece na janela compartilhada. Nada sai do navegador sem você mandar.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg></div>
+        <h3>Exportação total</h3><p>Markdown, OPML, FreeMind, JSON, PNG, SVG e ZIPs — backup com restore incluído.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></div>
+        <h3>Backup em nuvem, criptografado</h3><p>Backup Puter opt-in, criptografado no navegador (AES-256-GCM), senha só na memória.</p>
+      </div>
+      <div class="card">
+        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18.5h2"/></svg></div>
+        <h3>Teclado e celular</h3><p><kbd>Enter</kbd> novo tópico, <kbd>Tab</kbd> indenta, undo/redo; no celular, tópicos e mapa alternam em tela cheia.</p>
+      </div>
     </div>
   </section>
 
   <footer>
     SessionMap é open source — <a href="https://github.com/calionauta/sessionmap">github.com/calionauta/sessionmap</a>.
-    Seus dados ficam no seu navegador; a nuvem só entra se você ligar — e cifrada.
+    Seus dados ficam no seu navegador; a nuvem só entra se você ligar — e criptografada.
   </footer>
 </div>
 </body>

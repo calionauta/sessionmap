@@ -31,7 +31,7 @@ Teste de arquivo único: `bun test <path>`.
 - Um parse do buffer por texto (`liveTree`), um commit (`commitBuffer`).
 - Sessão tem `modalityId`; cliente nunca é classificado (badges = união derivada).
 - `saveMap` carimba `updatedAt` por padrão; escrita de manutenção usa `{stamp:false}`.
-- Nuvem Puter é opt-in e cifrada; `puterCloud.ts` é só transporte (dynamic import,
+- Nuvem Puter é opt-in e criptografada; `puterCloud.ts` é só transporte (dynamic import,
   fora do chunk inicial); segredo nunca persiste (há teste-canário que garante).
 
 ## REGRA DE SINCRONIA DE DOCS (obrigatória)

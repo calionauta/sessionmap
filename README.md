@@ -25,7 +25,7 @@ cliente na aba — só o mapa.
   janelas usa `BroadcastChannel` local. Sem conta, sem servidor, sem tracking.
 - Notas do terapeuta sobre o cliente nunca são transmitidas.
 - O único dado que sai do navegador é o **backup em nuvem opt-in** (Puter),
-  sempre cifrado no navegador (AES-256-GCM) com senha que só existe na sua
+  sempre criptografado no navegador (AES-256-GCM) com senha que só existe na sua
   memória. Desligado por padrão.
 
 ## Backup
