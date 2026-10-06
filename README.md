@@ -1,73 +1,75 @@
 # SessionMap
 
-Mapa mental em tempo real: você digita em tópicos e os
-participantes acompanham o mapa, numa segunda janela ou projeção — **100% offline
-e privado por padrão**.
+[Leia em português](README.pt-BR.md)
 
-Para consultores, mentores, equipes — e qualquer reunião online.
-Grátis, open source, sem instalar: abre no navegador e funciona.
+Real-time mind map: you type topics and participants follow the map, in a
+second window or projection — **100% offline and private by default**.
 
-- **Usar agora:** <https://calionauta.github.io/sessionmap/>
-- **Como funciona:** [página pública](https://calionauta.github.io/sessionmap/landing.html)
-- **Recursos completos:** [FEATURES.md](FEATURES.md)
+For consultants, mentors, teams — and any online meeting.
+Free, open source, no install: open it in the browser and it works.
 
-## Como funciona (30 segundos)
+- **Use it now:** <https://calionauta.github.io/sessionmap/>
+- **How it works:** [public page](https://calionauta.github.io/sessionmap/landing-en.html)
+- **Full features:** [FEATURES.md](FEATURES.md) (in Portuguese)
 
-1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
-   tipo e, se quiser, um roteiro inicial).
-2. Clique em **Apresentar** e projete/compartilhe só a janela do participante.
-3. Digite os tópicos: cada linha vira um balão no mapa do participante, ao vivo.
-4. **Encerrar apresentação** fecha a janela; apresentar de novo reabre de onde parou.
+## How it works (30 seconds)
 
-A janela do participante nunca mostra menus, outline, notas privadas nem o nome do
-participante na aba — só o mapa.
+1. Register the participant under **Participants & Sessions** and start a session (pick the
+   type and, optionally, a starter script).
+2. Click **Present** and project/share only the participant window.
+3. Type the topics: each line becomes a balloon on the participant's map, live.
+4. **End presentation** closes the window; presenting again reopens where you left off.
 
-## Privacidade
+The participant window never shows menus, outline, private notes, or the participant's
+name in the tab — only the map.
 
-- Tudo fica no navegador (IndexedDB + `localStorage`); a sincronia entre as
-  janelas usa `BroadcastChannel` local. Sem conta, sem servidor, sem tracking.
-- Suas notas sobre cada participante nunca são transmitidas.
-- O único dado que sai do navegador é o **backup em nuvem** ([Puter](https://puter.com)),
-  desligado por padrão — você liga quando quiser,
-  sempre criptografado no navegador (AES-256-GCM) com senha que só existe na sua
-  memória.
+## Privacy
+
+- Everything stays in the browser (IndexedDB + `localStorage`); window-to-window sync
+  uses a local `BroadcastChannel`. No account, no server, no tracking.
+- Your notes about each participant are never transmitted.
+- The only data that ever leaves the browser is the **cloud backup** ([Puter](https://puter.com)),
+  off by default — you turn it on when you want,
+  always encrypted in the browser (AES-256-GCM) with a password that lives only in your
+  memory.
 
 ## Backup
 
-- **Local:** backup JSON completo (sessões, participantes, tipos, roteiros) com
-  restore, além de Markdown/OPML/FreeMind/PNG/SVG e ZIPs por participante ou geral.
-- **Nuvem:** em Configurações → Backup em nuvem: conectar ao Puter, definir a
-  senha, enviar manual ou automático (~1 min após parar, teto de 5 min). Apagar tudo exige
-  digitar `APAGAR`. Perdeu a senha? O local está intacto — recomece com uma
-  nova que o próximo envio substitui o arquivo ilegível.
-- **Idioma:** Configurações → Idioma, PT ou EN para toda a interface;
-  a página pública detecta o idioma do navegador na primeira visita
-  (detalhes em [FEATURES.md](./FEATURES.md)).
+- **Local:** full JSON backup (sessions, participants, types, scripts) with
+  restore, plus Markdown/OPML/FreeMind/PNG/SVG and per-participant or full ZIPs.
+- **Cloud:** Settings → Cloud backup: connect to Puter, set the
+  password, send manually or automatically (~1 min after you stop, 5 min ceiling). Deleting
+  everything requires typing `DELETE`. Lost the password? Local data is intact — start over
+  with a new one and the next upload replaces the unreadable file.
+- **Language:** Settings → Language, PT or EN for the whole interface;
+  the public page detects the browser language on first visit
+  (details in [FEATURES.md](./FEATURES.md), in Portuguese).
 
-## Desenvolvimento
+## Development
 
 ```bash
 bun install
 bun run dev      # http://localhost:3000
-bun test         # 276 testes
+bun test         # 276 tests
 bun run lint     # tsc --noEmit
-bun run build    # dist/ (publicado no GitHub Pages pela main)
+bun run build    # dist/ (published to GitHub Pages from main)
 ```
 
 - Stack: React 19 + Vite 8 + Tailwind 4 + TypeScript; IndexedDB + `localStorage`.
-- Deploy: push na `main` publica `dist/` no GitHub Pages.
-- Convenções e sincronia de docs em [AGENTS.md](AGENTS.md).
+- Deploy: pushing to `main` publishes `dist/` to GitHub Pages.
+- Conventions and docs-sync rule in [AGENTS.md](AGENTS.md).
 
-## Estrutura
+## Layout
 
 ```
 src/
   components/   # HostView, ClientView, mindmap, outline, modals, admin, ui
   services/     # storage (IDB), sync, export, cloudCrypto, puterCloud, cloudBackup
-  utils/        # parser Markdown, árvore, layout, export
+  utils/        # Markdown parser, tree, layout, export
   types/        # MindMap, Client, Modality, SessionTemplate, Settings
 public/
-  landing.html  # página pública (vai para dist/ no build)
-FEATURES.md     # inventário completo de recursos
-AGENTS.md       # instruções para agentes (inclui regra de sincronia de docs)
+  landing.html     # public page in Portuguese (copied to dist/ on build)
+  landing-en.html  # public page in English (copied to dist/ on build)
+FEATURES.md        # full feature inventory (in Portuguese)
+AGENTS.md          # agent instructions (includes docs-sync rule)
 ```
