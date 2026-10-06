@@ -39,6 +39,10 @@
   .topic{font-family:ui-monospace,Menlo,monospace;font-size:14px;line-height:2}
   .balloon{display:inline-block;background:#fff;border:2px solid var(--ink);border-radius:20px;
     padding:8px 16px;margin:7px;font-size:15px;font-weight:600;box-shadow:3px 3px 0 var(--ink)}
+  .maptree{width:100%;height:auto;display:block}
+  .maptree rect{fill:#fff;stroke:var(--ink);stroke-width:2.5}
+  .maptree path{fill:none;stroke:var(--ink);stroke-width:2.5;stroke-linecap:round}
+  .maptree text{font-size:13px;font-weight:700;fill:var(--ink);text-anchor:middle}
   section{padding:36px 0}
   h2{font-size:26px;letter-spacing:-.5px;margin:0 0 6px}
   .sub{color:var(--muted);margin:0 0 22px;line-height:1.6}
@@ -80,7 +84,20 @@
     </div>
     <div class="pane">
       <h3>Janela do cliente (projetada)</h3>
-      <div><span class="balloon">Como chega</span><br><span class="balloon">Cansaço no fim do dia</span> <span class="balloon">O que ajuda</span><br><span class="balloon">Próximos passos</span></div>
+      <svg class="maptree" viewBox="0 0 360 280" role="img" aria-label="Mapa com balões ligados em hierarquia: Como chega liga-se a três tópicos">
+        <path d="M 120 140 C 160 140, 165 62, 205 62"/>
+        <path d="M 120 140 C 160 140, 165 140, 205 140"/>
+        <path d="M 120 140 C 160 140, 165 218, 205 218"/>
+        <rect x="10" y="118" width="110" height="44" rx="22"/>
+        <text x="65" y="145">Como chega</text>
+        <rect x="205" y="40" width="148" height="44" rx="22"/>
+        <text x="279" y="58">Cansaço no</text>
+        <text x="279" y="74">fim do dia</text>
+        <rect x="205" y="118" width="148" height="44" rx="22"/>
+        <text x="279" y="145">O que ajuda</text>
+        <rect x="205" y="196" width="148" height="44" rx="22"/>
+        <text x="279" y="223">Próximos passos</text>
+      </svg>
     </div>
   </div>
 
@@ -96,15 +113,33 @@
   </section>
 
   <section>
-    <h2>Feito para a clínica</h2>
+    <h2>Para terapeutas, consultores e mentores</h2>
+    <p class="sub">Cada sessão tem um tipo — e cada tipo tem seu roteiro inicial. Um cliente pode ser de mentoria e de terapia: o histórico acompanha.</p>
+    <div class="grid">
+      <div class="card"><h3>Terapeutas</h3><p>Mapa ao vivo na segunda tela, pausa rápida com <kbd>Ctrl</kbd> + <kbd>.</kbd>, notas privadas que nunca vazam para o projetor.</p></div>
+      <div class="card"><h3>Consultores</h3><p>Diagnóstico visual construído com o cliente na hora — e ata pronta em Markdown, OPML ou FreeMind no fim.</p></div>
+      <div class="card"><h3>Mentores</h3><p>Roteiros por tipo de sessão, histórico por mentorado e exportação em ZIP para revisitar a jornada.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Para qualquer reunião online</h2>
+    <p class="sub">No fundo, é simples: uma pessoa anota rápido enquanto as outras acompanham o raciocínio — em qualquer call, sem instalar nada.</p>
+    <div class="grid">
+      <div class="card"><h3>Reunião com cliente</h3><p>Compartilhe a janela B em vez da tela inteira: o cliente vê o mapa limpo, você mantém o resto privado.</p></div>
+      <div class="card"><h3>Aulas e mentorias</h3><p>Escreva a estrutura enquanto fala; quem assiste segue o fio sem precisar ver seu material.</p></div>
+      <div class="card"><h3>Brainstorms e dailies</h3><p>Um digita, todos veem as ideias se conectando — e a ata em tópicos já sai pronta.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Detalhes que importam</h2>
     <p class="sub">Lista completa em <a href="https://github.com/calionauta/sessionmap/blob/main/FEATURES.md">FEATURES.md</a>.</p>
     <div class="grid">
-      <div class="card"><h3>Privacidade radical</h3><p>Notas do terapeuta nunca chegam à tela compartilhada. Nome do cliente nunca aparece na janela do cliente.</p></div>
-      <div class="card"><h3>Tipos e roteiros</h3><p>Cada sessão tem um tipo; cada cliente pode ter vários. Roteiros iniciais por tipo aceleram a abertura.</p></div>
-      <div class="card"><h3>Exportação total</h3><p>Markdown, OPML, FreeMind, JSON, PNG, SVG e ZIPs por cliente — backup com restore incluído.</p></div>
-      <div class="card"><h3>Nuvem opcional e cifrada</h3><p>Backup Puter opt-in, cifrado no navegador (AES-256-GCM), senha só na memória, automático conservador.</p></div>
-      <div class="card"><h3>Teclado primeiro</h3><p><kbd>Enter</kbd> novo tópico, <kbd>Tab</kbd> indenta, undo/redo, zoom e navegação completos no mapa.</p></div>
-      <div class="card"><h3>Funciona no celular</h3><p>Em telas estreitas, tópicos e mapa alternam em tela cheia. Temas papel e noite.</p></div>
+      <div class="card"><h3>Privacidade radical</h3><p>Nome do cliente nunca aparece na janela compartilhada. Nada sai do navegador sem você mandar.</p></div>
+      <div class="card"><h3>Exportação total</h3><p>Markdown, OPML, FreeMind, JSON, PNG, SVG e ZIPs — backup com restore incluído.</p></div>
+      <div class="card"><h3>Nuvem cifrada opcional</h3><p>Backup Puter opt-in, cifrado no navegador (AES-256-GCM), senha só na memória.</p></div>
+      <div class="card"><h3>Teclado e celular</h3><p><kbd>Enter</kbd> novo tópico, <kbd>Tab</kbd> indenta, undo/redo; no celular, tópicos e mapa alternam em tela cheia.</p></div>
     </div>
   </section>
 
