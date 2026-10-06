@@ -59,10 +59,90 @@ export function isUnlocked(): boolean {
 
 export function unlock(passphrase: string): void {
   cachedPassphrase = passphrase;
+  // A fresh unlock restarts the idle countdown, when anyone is watching.
+  scheduleIdleLock();
 }
 
 export function lock(): void {
   cachedPassphrase = null;
+  // Locked needs no countdown: there is nothing left to protect.
+  clearIdleTimer();
+}
+
+/**
+ * Idle auto-lock: 15 quiet minutes anywhere in the window, and the key
+ * drops out of memory.
+ *
+ * Why a fixed value with no setting: the failure mode is benign — locking
+ * only pauses the automatic upload (the footer says "waiting for password")
+ * and never touches local work. A knob would add UI, translations and docs
+ * for a choice nobody needs to tune. Fifteen minutes matches the most
+ * common password-manager default and survives a long conversation phase
+ * without ambushing the host mid-session.
+ *
+ * Only real interaction renews the countdown (keydown/pointerdown). The
+ * auto-backup tick itself must NOT count as activity, or an unattended tab
+ * would stay unlocked forever on uploads alone.
+ */
+export const IDLE_LOCK_MS = 15 * 60_000;
+
+type IdleLockListener = () => void;
+
+const idleLockListeners = new Set<IdleLockListener>();
+let idleTimer: number | null = null;
+let idleMs = IDLE_LOCK_MS;
+let activityHooked = false;
+
+function clearIdleTimer(): void {
+  if (idleTimer === null) return;
+  if (typeof window !== 'undefined') window.clearTimeout(idleTimer);
+  idleTimer = null;
+}
+
+function scheduleIdleLock(): void {
+  clearIdleTimer();
+  if (idleLockListeners.size === 0) return;
+  idleTimer = window.setTimeout(() => {
+    idleTimer = null;
+    if (!isUnlocked()) return;
+    lock();
+    idleLockListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch {
+        // A listener hiccup must never break the lock itself.
+      }
+    });
+  }, idleMs);
+}
+
+function noteIdleActivity(): void {
+  if (idleLockListeners.size === 0 || !isUnlocked()) return;
+  scheduleIdleLock();
+}
+
+/**
+ * Arms the idle countdown; returns a disarm function for unmount/disable.
+ * The `ms` override exists for tests only — production always uses
+ * IDLE_LOCK_MS, which is the documented promise.
+ */
+export function armIdleLock(onLock: IdleLockListener, ms: number = IDLE_LOCK_MS): () => void {
+  idleMs = ms;
+  idleLockListeners.add(onLock);
+  if (
+    !activityHooked &&
+    typeof window !== 'undefined' &&
+    typeof window.addEventListener === 'function'
+  ) {
+    activityHooked = true;
+    window.addEventListener('keydown', noteIdleActivity);
+    window.addEventListener('pointerdown', noteIdleActivity);
+  }
+  scheduleIdleLock();
+  return () => {
+    idleLockListeners.delete(onLock);
+    if (idleLockListeners.size === 0) clearIdleTimer();
+  };
 }
 
 export function cloudState(): CloudBackupState {

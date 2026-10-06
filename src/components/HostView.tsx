@@ -47,6 +47,7 @@ import { t } from '../i18n/strings';
 import {
   AUTO_BACKUP_IDLE_MS,
   AUTO_BACKUP_MAX_WAIT_MS,
+  armIdleLock,
   cloudBadgeLabel,
   describeCloudStatus,
   runAutoBackup,
@@ -379,6 +380,17 @@ export const HostView: React.FC = () => {
       clearCloudMaxTimer();
     };
   }, [refreshAllData, clearCloudMaxTimer]);
+
+  // Idle auto-lock for the cloud passphrase. Armed only while the feature is
+  // on: 15 quiet minutes anywhere in the window drops the key, and the
+  // refresh below flips the pill/section to "waiting for password" — locking
+  // pauses uploads, never local work.
+  useEffect(() => {
+    if (!settings.cloudBackup.enabled) return;
+    return armIdleLock(() => {
+      setSettings(getSettings());
+    });
+  }, [settings.cloudBackup.enabled]);
 
   // Best-effort cloud flush when the tab goes away. The 60s idle timer may
   // never have fired; the local data is already safe (see beforeunload

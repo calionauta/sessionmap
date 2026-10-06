@@ -8,6 +8,7 @@ const React = await import('react');
 const { CloudBackupSection } = await import('./CloudBackupSection');
 const { getSettings } = await import('../../services/storage');
 const { isCryptoAvailable } = await import('../../services/cloudCrypto');
+const { lock } = await import('../../services/cloudBackup');
 
 afterEach(() => cleanup());
 
@@ -116,5 +117,35 @@ describe('CloudBackupSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /recomeçar com uma nova/i }));
     expect(screen.getByRole('button', { name: 'Bloquear' })).toBeTruthy();
     expect(screen.getByText(/próximo envio o substitui/)).toBeTruthy();
+  });
+
+  test('a successful reset leaves no password in the form', () => {
+    if (!isCryptoAvailable()) return;
+    // The reset path only renders while locked; a previous test may have
+    // left the module key behind, so lock explicitly.
+    lock();
+    const settings = {
+      ...getSettings(),
+      cloudBackup: {
+        enabled: true,
+        auto: false,
+        lastBackupAt: null,
+        lastError: null,
+        puterUsername: 'anfitriao',
+      },
+    };
+    render(
+      React.createElement(CloudBackupSection, {
+        settings,
+        onUpdateSettings: noop,
+        onCloudRestore: noop,
+      })
+    );
+    // The offline recovery path: typed, confirmed, and the form copy dropped.
+    const input = screen.getByLabelText('Senha do backup') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'nova frase secreta bem longa' } });
+    expect(input.value).toBe('nova frase secreta bem longa');
+    fireEvent.click(screen.getByRole('button', { name: /recomeçar com uma nova/i }));
+    expect(input.value).toBe('');
   });
 });

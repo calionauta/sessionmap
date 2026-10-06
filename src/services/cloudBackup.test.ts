@@ -151,3 +151,53 @@ describe('outcome recording', () => {
     expect(s.lastBackupAt).toBe(at);
   });
 });
+
+describe('idle auto-lock', () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  test('quiet locks and notifies', async () => {
+    unlock('frase secreta bem longa aqui');
+    let fired = 0;
+    const disarm = backup.armIdleLock(() => {
+      fired++;
+    }, 50);
+    try {
+      expect(isUnlocked()).toBe(true);
+      await wait(130);
+      expect(isUnlocked()).toBe(false);
+      expect(fired).toBe(1);
+    } finally {
+      disarm();
+    }
+  });
+
+  test('interaction renews the countdown', async () => {
+    unlock('frase secreta bem longa aqui');
+    let fired = 0;
+    const disarm = backup.armIdleLock(() => {
+      fired++;
+    }, 90);
+    try {
+      await wait(45);
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a' }));
+      // Renewed at ~45ms with a 90ms fuse: at ~105ms it must still hold.
+      await wait(60);
+      expect(isUnlocked()).toBe(true);
+      expect(fired).toBe(0);
+    } finally {
+      disarm();
+    }
+  });
+
+  test('a manual lock settles the countdown without firing', async () => {
+    unlock('frase secreta bem longa aqui');
+    let fired = 0;
+    const disarm = backup.armIdleLock(() => {
+      fired++;
+    }, 50);
+    lock();
+    await wait(110);
+    expect(fired).toBe(0);
+    disarm();
+  });
+});

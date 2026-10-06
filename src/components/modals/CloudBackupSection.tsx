@@ -110,6 +110,9 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
     () => () => {
       setPassword('');
       setPasswordConfirm('');
+      // A previewed-but-never-confirmed restore leaves the typed password in
+      // this ref: drop it with everything else.
+      (apiRef as { previewPw?: string }).previewPw = undefined;
     },
     []
   );
@@ -212,6 +215,9 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       const username = await getUsername(api);
       await backupNow(api, password, lang);
       unlock(password);
+      // The key is cached now: the form must not keep a second copy.
+      setPassword('');
+      setPasswordConfirm('');
       recordBackupSuccess(username);
       onUpdateSettings({
         ...getSettings(),
@@ -248,6 +254,8 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
         await previewRestore(api, pw, lang);
       }
       unlock(pw);
+      // Unlocked: the typed password served its purpose, drop the form copy.
+      setPassword('');
       clearBackupError();
       syncSettings();
       setNotice(
@@ -284,6 +292,9 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
       return;
     }
     unlock(password);
+    // Restarted with the new one: nothing typed may linger in the form.
+    setPassword('');
+    setPasswordConfirm('');
     clearBackupError();
     syncSettings();
     setNotice(
@@ -309,6 +320,8 @@ export const CloudBackupSection: React.FC<CloudBackupSectionProps> = ({
         ? await (async () => {
             const r = await backupNow(api, effective, lang);
             unlock(effective);
+            // Cached now: clear the typed copy from the form.
+            setPassword('');
             return r;
           })()
         : await backupWithCachedPassphrase(api);

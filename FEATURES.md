@@ -79,7 +79,7 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 
 - Opt-in em Configurações, em 3 passos: conectar → senha (≥12) → primeiro envio.
 - **Cifragem no navegador (AES-256-GCM + PBKDF2-600k)** antes de subir; a nuvem só
-  vê `{salt, iv, ct}`. **Senha só em memória** — recarregar pausa o automático.
+  vê `{salt, iv, ct}`. **Senha só em memória** — recarregar ou 15 min sem mexer travam e pausam o automático.
 - Status na top bar e no rodapé (`nuvem há 2h`, `aguardando senha`, `erro`, `nunca`).
 - **Automático conservador:** ~1 min após você parar, teto de 5 min digitando sem
   parar, tentativa ao ocultar a aba; só desbloqueado e online; nunca

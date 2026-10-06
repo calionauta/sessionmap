@@ -79,7 +79,7 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 
 - Opt-in in Settings, in 3 steps: connect → password (≥12) → first upload.
 - **In-browser encryption (AES-256-GCM + PBKDF2-600k)** before upload; the cloud only
-  sees `{salt, iv, ct}`. **Password in memory only** — reloading pauses the automatic mode.
+  sees `{salt, iv, ct}`. **Password in memory only** — reloading or 15 idle minutes lock it and pause automatic mode.
 - Status in the top bar and footer (`cloud 2h ago`, `waiting for password`, `error`, `never`).
 - **Conservative auto mode:** ~1 min after you stop, 5 min ceiling while typing
   non-stop, an attempt when the tab hides; only unlocked and online; never
