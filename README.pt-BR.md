@@ -15,6 +15,8 @@ Grátis, open source, sem instalar: abre no navegador e funciona.
 
 ## Como funciona (30 segundos)
 
+![Demo de 42 segundos: cadastrar, apresentar, digitar e exportar](demo/how-it-works.gif)
+
 1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
    tipo e, se quiser, um roteiro inicial).
 2. Clique em **Apresentar** e projete/compartilhe só a janela do participante.

@@ -14,6 +14,8 @@ Free, open source, no install: open it in the browser and it works.
 
 ## How it works (30 seconds)
 
+![42-second demo: register, present, type and export](demo/how-it-works.gif)
+
 1. Register the participant under **Participants & Sessions** and start a session (pick the
    type and, optionally, a starter script).
 2. Click **Present** and project/share only the participant window.
