@@ -942,34 +942,19 @@ export async function saveSnapshot(mapId: string, root: MindMapNode): Promise<vo
 const MODALITIES_KEY = 'sessionmap_modalities';
 const TEMPLATES_KEY = 'sessionmap_templates';
 
-const DEFAULT_MODALITIES: Array<Pick<Modality, 'id' | 'name' | 'color'>> = [
-  { id: 'mod_mentoria', name: 'Mentoria', color: '#2f9e6e' },
-  { id: 'mod_consultoria', name: 'Consultoria', color: '#c47b1e' },
-  { id: 'mod_reuniao', name: 'Reunião', color: '#7c6cf0' },
-];
-
-const DEFAULT_TEMPLATES: Array<{ modalityId: string; title: string; markdown: string }> = [
-  {
-    modalityId: 'mod_mentoria',
-    title: 'Sessão de mentoria',
-    markdown:
-      '- Objetivo da sessão\n- Onde está travando\n- Opções e decisão\n- Compromisso até a próxima',
-  },
-  {
-    modalityId: 'mod_consultoria',
-    title: 'Sessão de consultoria',
-    markdown:
-      '- Contexto e meta\n- Diagnóstico\n- Recomendações\n- Próximos passos e responsáveis',
-  },
-  {
-    modalityId: 'mod_reuniao',
-    title: 'Reunião',
-    markdown:
-      '- Objetivo da reunião\n- Pontos discutidos\n- Decisões\n- Próximos passos e responsáveis',
-  },
-];
-
-/** The catalog, seeded once with three generic kinds. */
+/**
+ * The catalog starts EMPTY on a fresh browser — no sample kinds, no sample
+ * skeletons. Seeding "Mentoria / Consultoria / Reunião" taught every new
+ * user that the catalog was fixed furniture instead of their own workspace:
+ * nobody wondered where types come from, because three were always there.
+ * An empty catalog with a guided empty state (see NewSessionDialog) turns
+ * the first session into the moment the user discovers the catalog, instead
+ * of never discovering it.
+ *
+ * Existing installs keep whatever they already have: this only changes the
+ * first read on a machine that stored nothing yet. Backup/restore stays
+ * additive, so an old file with seeds still merges them in.
+ */
 export function loadModalities(): Modality[] {
   try {
     const raw = localStorage.getItem(MODALITIES_KEY);
@@ -980,12 +965,8 @@ export function loadModalities(): Modality[] {
   } catch {
     return [];
   }
-  const seeded: Modality[] = DEFAULT_MODALITIES.map((m) => ({
-    ...m,
-    createdAt: new Date().toISOString(),
-  }));
-  persistModalities(seeded);
-  return seeded;
+  persistModalities([]);
+  return [];
 }
 
 /**
@@ -1061,17 +1042,8 @@ export function loadTemplates(): SessionTemplate[] {
   } catch {
     return [];
   }
-  const now = new Date().toISOString();
-  const seeded: SessionTemplate[] = DEFAULT_TEMPLATES.map((t, i) => ({
-    id: `tpl_seed_${i}`,
-    modalityId: t.modalityId,
-    title: t.title,
-    markdown: t.markdown,
-    createdAt: now,
-    updatedAt: now,
-  }));
-  persistTemplates(seeded);
-  return seeded;
+  persistTemplates([]);
+  return [];
 }
 
 export function persistTemplates(templates: SessionTemplate[]): void {

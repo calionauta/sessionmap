@@ -7,7 +7,7 @@ const testing = await import('@testing-library/react');
 const { render, fireEvent, screen, cleanup, waitFor } = testing;
 const React = await import('react');
 const { AdminClientManager } = await import('./AdminClientManager');
-const { createNewSession } = await import('../../services/storage');
+const { createNewSession, persistModalities, persistTemplates } = await import('../../services/storage');
 import type { Client, MindMap } from '../../types';
 
 afterEach(() => cleanup());
@@ -39,6 +39,14 @@ beforeEach(() => {
   localStorage.removeItem('sessionmap_clients');
   localStorage.removeItem('sessionmap_modalities');
   localStorage.removeItem('sessionmap_templates');
+  // The catalog starts empty by design, so tests plant the rows the wiring
+  // needs: badge union, reclassification options and the deletable kind.
+  const now = '2026-01-01T00:00:00.000Z';
+  persistModalities([
+    { id: 'mod_reuniao', name: 'Reunião', color: '#7c6cf0', createdAt: now },
+    { id: 'mod_mentoria', name: 'Mentoria', color: '#2f9e6e', createdAt: now },
+  ]);
+  persistTemplates([]);
 });
 
 function renderAdmin(props?: {
@@ -169,5 +177,49 @@ describe('AdminClientManager catalog tab', () => {
       (t: { title: string }) => t.title === 'Abertura'
     ) as { modalityId: string };
     expect(added.modalityId).toBe('mod_reuniao');
+  });
+});
+
+describe('AdminClientManager empty states', () => {
+  function renderEmpty() {
+    return render(
+      React.createElement(AdminClientManager, {
+        isOpen: true,
+        onClose: () => {},
+        clients: [],
+        maps: [],
+        activeMapId: '',
+        activeClientId: null,
+        onSelectSession: () => {},
+        onRefreshData: () => {},
+        theme: 'papel' as const,
+      })
+    );
+  }
+
+  test('no clients: the placeholder is not a button and links to creation', () => {
+    renderEmpty();
+    expect(screen.getByText('Nenhum participante cadastrado neste navegador.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Criar o primeiro participante' }));
+    // The link behaves like the "Novo" button: the creation form opens.
+    expect(screen.getByLabelText('Nome do novo participante')).toBeTruthy();
+  });
+
+  test('client without sessions links straight to the picker', () => {
+    render(
+      React.createElement(AdminClientManager, {
+        isOpen: true,
+        onClose: () => {},
+        clients: [{ id: 'c_ana', name: 'Ana M.', createdAt: '2026-09-28T09:00:00Z' }],
+        maps: [],
+        activeMapId: '',
+        activeClientId: 'c_ana',
+        onSelectSession: () => {},
+        onRefreshData: () => {},
+        theme: 'papel' as const,
+      })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar a primeira sessão' }));
+    expect(screen.getByText('Nova sessão · Ana M.')).toBeTruthy();
   });
 });

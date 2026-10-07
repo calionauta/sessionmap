@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { registerDom } from '../test/domEnv';
+
+registerDom();
+
 import {
   clientModalityIds,
   createNewSession,
+  loadModalities,
+  loadTemplates,
   modalityName,
   templatesFor,
 } from './storage';
@@ -130,5 +136,22 @@ describe('a deleted kind degrades to unclassified, never to corrupt', () => {
 
   test('known ids resolve', () => {
     expect(modalityName(mods, 'mod_reuniao')).toBe('Reunião');
+  });
+});
+
+describe('the catalog starts empty, never seeded', () => {
+  test('a fresh browser gets no kinds and no scripts', () => {
+    localStorage.removeItem('sessionmap_modalities');
+    localStorage.removeItem('sessionmap_templates');
+    expect(loadModalities()).toEqual([]);
+    expect(loadTemplates()).toEqual([]);
+  });
+
+  test('stored rows are still read untouched', () => {
+    localStorage.setItem(
+      'sessionmap_modalities',
+      JSON.stringify([{ id: 'mod_x', name: 'X', createdAt: '2026-01-01T00:00:00Z' }])
+    );
+    expect(loadModalities().map((m) => m.name)).toEqual(['X']);
   });
 });

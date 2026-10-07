@@ -42,6 +42,8 @@ import { t } from '../../i18n/strings';
 import { useLang } from '../../i18n/LanguageContext';
 import { Modal, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { UndoToast } from '../ui/UndoToast';
+import { EmptyState } from '../ui/EmptyState';
 import { NewSessionDialog } from '../modals/NewSessionDialog';
 import { CatalogPanel } from './CatalogPanel';
 
@@ -116,6 +118,8 @@ interface AdminClientManagerProps {
    * makes the dark theme stop being a parallel set of literals.
    */
   theme: 'papel' | 'noite';
+  /** Which room to open in. The new-session picker jumps here on demand. */
+  defaultTab?: 'participantes' | 'catalogo';
 }
 
 export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
@@ -127,6 +131,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   activeClientId,
   onSelectSession,
   onRefreshData,
+  defaultTab = 'participantes',
 }) => {
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
     return activeClientId || (clients[0]?.id ?? '');
@@ -155,26 +160,9 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   const [undoSessionDeleteState, setUndoSessionDeleteState] = useState<MindMap | null>(
     null
   );
-  const undoToastTimerRef = useRef<number | null>(null);
 
-  // The delete-undo toasts dismiss themselves after 10s, like the session
-  // toast in the main view. A toast that never leaves stops being a notice
-  // and becomes furniture the eye learns to skip.
-  useEffect(() => {
-    if (!undoClientDeleteState && !undoSessionDeleteState) return;
-    if (undoToastTimerRef.current) window.clearTimeout(undoToastTimerRef.current);
-    undoToastTimerRef.current = window.setTimeout(() => {
-      setUndoClientDeleteState(null);
-      setUndoSessionDeleteState(null);
-      undoToastTimerRef.current = null;
-    }, 10000);
-    return () => {
-      if (undoToastTimerRef.current) {
-        window.clearTimeout(undoToastTimerRef.current);
-        undoToastTimerRef.current = null;
-      }
-    };
-  }, [undoClientDeleteState, undoSessionDeleteState]);
+  // Dismissing is the toast's own job now (it carries its timer, pause and
+  // close button): the panel only holds the restorable records.
 
   // Kind + template picker for the next session. Resolved on CONFIRM, not on
   // open: the client row could change under the open dialog.
@@ -184,7 +172,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // Kinds and templates belong to no client — filing them under one client's
   // history is what made them undiscoverable — so they get a tab at the same
   // level as the client list rather than a section inside one of its rows.
-  const [panelTab, setPanelTab] = useState<'participantes' | 'catalogo'>('participantes');
+  const [panelTab, setPanelTab] = useState<'participantes' | 'catalogo'>(defaultTab);
+  // The new-session picker can send the user to the catalog mid-flow; the
+  // tab follows the request on open so the room matches the intent.
+  React.useEffect(() => {
+    if (isOpen) setPanelTab(defaultTab);
+  }, [isOpen, defaultTab]);
   const lang = useLang();
 
   // The catalog lives here (state) and in storage (persisted): the dialog and
@@ -687,9 +680,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
             {/* Clients Scrollable List */}
             <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
               {filteredClients.length === 0 ? (
-                <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel">
+                <EmptyState
+                  actionLabel={t(lang, 'admin.list.emptyAction')}
+                  onAction={() => setIsCreatingClient(true)}
+                >
                   {t(lang, 'admin.list.empty')}
-                </p>
+                </EmptyState>
               ) : (
                 filteredClients.map((client) => {
                   const isSelected = client.id === currentClient?.id;
@@ -959,9 +955,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                   </div>
 
                   {clientSessions.length === 0 ? (
-                    <div className="py-12 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
+                    <EmptyState
+                      actionLabel={t(lang, 'admin.detail.emptyAction')}
+                      onAction={() => currentClient && setPendingSessionFor(currentClient)}
+                    >
                       {t(lang, 'admin.detail.empty')}
-                    </div>
+                    </EmptyState>
                   ) : (
                     clientSessions.map((session) => {
                       const isActive = session.id === activeMapId;
@@ -1134,11 +1133,14 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                  deleting the last one) this pane said "select a client" while
                  the sessions it was hiding stayed on disk. */
               <div className="flex-1 min-h-0 p-4 sm:p-5 space-y-3 overflow-visible md:overflow-y-auto">
-                <div className="py-6 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel p-6">
+                <EmptyState
+                  actionLabel={clients.length === 0 ? t(lang, 'admin.detail.noClientsAction') : undefined}
+                  onAction={clients.length === 0 ? () => setIsCreatingClient(true) : undefined}
+                >
                   {clients.length === 0
                     ? t(lang, 'admin.detail.noClients')
                     : t(lang, 'admin.detail.selectClient')}
-                </div>
+                </EmptyState>
 
                 {orphanedMaps.length > 0 && (
                   <div className="pt-2 mt-2 border-t border-line">
@@ -1209,6 +1211,13 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           null
         }
         onConfirm={(modalityId, template) => void handleConfirmNewSession(modalityId, template)}
+        // The picker names the catalog's room instead of leaving the user
+        // to guess where types live: closing the picker and landing on the
+        // catalog tab keeps one modal on screen and the intent intact.
+        onOpenCatalog={() => {
+          setPendingSessionFor(null);
+          setPanelTab('catalogo');
+        }}
       />
       <ConfirmDialog
         isOpen={pendingModalityDelete !== null}
@@ -1368,55 +1377,48 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
       />
 
       {/* Undo window: the deleted record stays restorable while the toast is
-          up, then dismisses itself after 10s. */}
+          up. The toast dismisses itself (8s, pausing on hover/focus), closes
+          on X/Escape, and shows the countdown as a bar. */}
       {undoClientDeleteState && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
-        >
-          <span>
-            {t(lang, 'admin.toast.clientDeleted')} <strong>{undoClientDeleteState.client.name}</strong>{' '}
-            {t(lang, 'admin.toast.deleted')}
-            {undoClientDeleteState.sessionCount > 0
-              ? ` (${t(
-                  lang,
-                  undoClientDeleteState.sessionCount === 1
-                    ? 'admin.confirm.count.one'
-                    : 'admin.confirm.count.many'
-                ).replace('{n}', String(undoClientDeleteState.sessionCount))})`
-              : ''}
-            .
-          </span>
-          <button
-            type="button"
-            onClick={handleUndoClientDelete}
-            className="ctl ctl-primary px-4"
-          >
-            {t(lang, 'admin.toast.undo')}
-          </button>
-        </div>
+        <UndoToast
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]"
+          message={
+            <span>
+              {t(lang, 'admin.toast.clientDeleted')} <strong>{undoClientDeleteState.client.name}</strong>{' '}
+              {t(lang, 'admin.toast.deleted')}
+              {undoClientDeleteState.sessionCount > 0
+                ? ` (${t(
+                    lang,
+                    undoClientDeleteState.sessionCount === 1
+                      ? 'admin.confirm.count.one'
+                      : 'admin.confirm.count.many'
+                  ).replace('{n}', String(undoClientDeleteState.sessionCount))})`
+                : ''}
+              .
+            </span>
+          }
+          undoLabel={t(lang, 'admin.toast.undo')}
+          onUndo={() => void handleUndoClientDelete()}
+          dismissLabel={t(lang, 'admin.toast.dismiss')}
+          onDismiss={() => setUndoClientDeleteState(null)}
+        />
       )}
 
       {undoSessionDeleteState && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-3 px-4 py-3 rounded-panel bg-surface-raised text-content border border-line shadow-2xl text-xs max-w-[92vw]"
-        >
-          <span>
-            {t(lang, 'admin.toast.sessionDeleted')}{' '}
-            <strong>{undoSessionDeleteState.sessionDate || undoSessionDeleteState.title}</strong>{' '}
-            {t(lang, 'admin.toast.deletedF')}
-          </span>
-          <button
-            type="button"
-            onClick={handleUndoSessionDelete}
-            className="ctl ctl-primary px-4"
-          >
-            {t(lang, 'admin.toast.undo')}
-          </button>
-        </div>
+        <UndoToast
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]"
+          message={
+            <span>
+              {t(lang, 'admin.toast.sessionDeleted')}{' '}
+              <strong>{undoSessionDeleteState.sessionDate || undoSessionDeleteState.title}</strong>{' '}
+              {t(lang, 'admin.toast.deletedF')}
+            </span>
+          }
+          undoLabel={t(lang, 'admin.toast.undo')}
+          onUndo={() => void handleUndoSessionDelete()}
+          dismissLabel={t(lang, 'admin.toast.dismiss')}
+          onDismiss={() => setUndoSessionDeleteState(null)}
+        />
       )}
     </>
   );

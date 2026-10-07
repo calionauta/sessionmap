@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Edit2, Layers, Plus, Trash2 } from 'lucide-react';
+import { Check, Edit2, Plus, Trash2 } from 'lucide-react';
 import { Modality, SessionTemplate } from '../../types';
 import { ModalityBadge } from '../ui/ModalityBadge';
 import { t } from '../../i18n/strings';
@@ -136,6 +136,11 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
           {t(lang, 'catalog.types.desc')}
         </p>
         <div className="mt-3 space-y-2">
+          {modalities.length === 0 && (
+            <p className="p-4 text-center text-xs font-medium text-content-muted bg-surface-sunken border border-line-muted rounded-panel">
+              {t(lang, 'catalog.types.empty')}
+            </p>
+          )}
           {modalities.map((m) => {
             const inUse = maps.filter((s) => s.modalityId === m.id).length;
             return (
@@ -301,10 +306,16 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
             </div>
           )}
           {templates.length === 0 && editingTemplateId === null && (
-            <p className="p-4 text-center text-xs font-medium text-content-muted border-2 border-dashed border-line-muted rounded-panel flex items-center justify-center gap-1.5">
-              <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-              {t(lang, 'catalog.scripts.empty')}
-            </p>
+            <div className="p-4 text-center text-xs font-medium text-content-muted bg-surface-sunken border border-line-muted rounded-panel">
+              <span>{t(lang, 'catalog.scripts.empty')}</span>{' '}
+              <button
+                type="button"
+                onClick={() => startTemplateDraft(null)}
+                className="font-bold text-accent-text underline underline-offset-2 hover:no-underline"
+              >
+                {t(lang, 'catalog.scripts.emptyAction')}
+              </button>
+            </div>
           )}
         </div>
       </section>

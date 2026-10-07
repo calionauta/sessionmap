@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play } from 'lucide-react';
+import { ArrowRight, Play } from 'lucide-react';
 import { Modality, SessionTemplate } from '../../types';
 import {
   loadModalities,
@@ -16,6 +16,13 @@ interface NewSessionDialogProps {
   clientName: string;
   defaultModalityId?: string | null;
   onConfirm: (modalityId: string | null, template: SessionTemplate | null) => void;
+  /**
+   * Where "Gerenciar tipos e roteiros" leads. Without it the dialog can only
+   * NAME the catalog ("crie um em…"), which is how users concluded the
+   * picker was fixed furniture. Both hosts wire it: the admin panel jumps
+   * to its catalog tab, the main view opens the panel there.
+   */
+  onOpenCatalog?: () => void;
 }
 
 /**
@@ -33,6 +40,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   clientName,
   defaultModalityId = null,
   onConfirm,
+  onOpenCatalog,
 }) => {
   const [modalities, setModalities] = useState<Modality[]>([]);
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
@@ -58,6 +66,13 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
 
   const modalityName =
     modalities.find((m) => m.id === modalityId)?.name ?? t(lang, 'common.noType');
+  const catalogEmpty = modalities.length === 0;
+
+  const openCatalog = () => {
+    if (onOpenCatalog) {
+      onOpenCatalog();
+    }
+  };
 
   return (
     <Modal
@@ -97,6 +112,25 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
               .replace('{client}', clientName)
               .replace('{modality}', modalityName)}
           </p>
+          {/* First run: the catalog is empty on purpose, so the picker says
+              so and points at the room where types and scripts are born —
+              instead of two bare selects that read as broken or fixed. */}
+          {catalogEmpty && (
+            <div className="mt-2 p-3 rounded-control border border-line-muted bg-surface-sunken text-[11px] text-content-muted font-medium">
+              <p>{t(lang, 'newsession.noKinds')}</p>
+              <p className="mt-1">{t(lang, 'newsession.blankHint')}</p>
+              {onOpenCatalog && (
+                <button
+                  type="button"
+                  onClick={openCatalog}
+                  className="mt-1.5 inline-flex items-center gap-1 font-bold text-accent-text underline underline-offset-2 hover:no-underline"
+                >
+                  <span>{t(lang, 'newsession.manageCatalog')}</span>
+                  <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div>
@@ -124,9 +158,23 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap p-3 rounded-control border border-line bg-surface-sunken text-[11px] font-mono text-content-muted">
               {chosen.markdown}
             </pre>
+          ) : offered.length === 0 && !catalogEmpty ? (
+            <div className="mt-2 p-3 rounded-control border border-line-muted bg-surface-sunken text-[11px] text-content-muted font-medium">
+              <p>{t(lang, 'newsession.noScripts')}</p>
+              {onOpenCatalog && (
+                <button
+                  type="button"
+                  onClick={openCatalog}
+                  className="mt-1.5 inline-flex items-center gap-1 font-bold text-accent-text underline underline-offset-2 hover:no-underline"
+                >
+                  <span>{t(lang, 'newsession.manageCatalog')}</span>
+                  <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
           ) : (
             <p className="mt-1 text-[11px] text-content-muted font-medium">
-              {offered.length === 0
+              {offered.length === 0 && !catalogEmpty
                 ? t(lang, 'newsession.noScripts')
                 : t(lang, 'newsession.dateOnly')}
             </p>

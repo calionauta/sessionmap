@@ -55,14 +55,22 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - **Notas privadas por participante:** sobrevivem a trocas de sessão e **nunca** são
   transmitidas à janela do participante.
 - **Arquivar/restaurar** participantes (leva as sessões junto) e sessões avulsas.
-- **Excluir com desfazer** (participante volta com as sessões; sessão volta sozinha; o aviso some em 10s).
+- **Excluir com desfazer** (participante volta com as sessões; sessão volta sozinha;
+  o aviso some em 8s, com barra de progresso, pausa ao passar o mouse/foco e
+  botão de fechar — `Esc` também dispensa).
+- **Estados vazios com ação direta:** sem participantes, o placeholder não parece botão —
+  é um aviso quieto com link ("Criar o primeiro participante"); sem sessões,
+  "Iniciar a primeira sessão" abre o picker ali mesmo.
 - **Sessões órfãs visíveis:** nada some em silêncio se o participante sair da lista.
 - **Importar `.md`** como sessão nova; numeração `Sessão N` por participante.
 - Painel em abas: **Participantes** (fluxo diário) e **Tipos e roteiros** (catálogo global).
 
 ## Tipos de atendimento e roteiros
 
-- **Uma modalidade por sessão** (Mentoria, Consultoria, Reunião + as que você criar).
+- **Começa vazio:** nenhum tipo nem roteiro de exemplo — você cria os seus
+  (ex.: Mentoria, Consultoria, Reunião). A primeira sessão já nasce em branco
+  e o picker aponta para o catálogo ("Gerenciar tipos e roteiros").
+- **Uma modalidade por sessão** (a que você criar).
 - **Badges derivados no participante:** a união das sessões — ninguém é "de um tipo só".
 - Filtro por tipo no histórico e no drawer; reclassificação posterior sem recriar.
 - **Catálogo global editável** (criar/renomear/excluir; excluir vira "sem tipo", nunca apaga sessão).

@@ -18,6 +18,7 @@ import { AdminClientManager } from './admin/AdminClientManager';
 import { MarkdownOutline } from './outline/MarkdownOutline';
 import { ClientNotesPanel } from './ui/ClientNotesPanel';
 import { TypingBar } from './ui/TypingBar';
+import { UndoToast } from './ui/UndoToast';
 import { TopBar } from './TopBar';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import {
@@ -220,6 +221,8 @@ export const HostView: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMapListOpen, setIsMapListOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  /** Which room the admin panel opens in — the picker can ask for the catalog. */
+  const [adminTab, setAdminTab] = useState<'participantes' | 'catalogo'>('participantes');
   /** The client a new session is being started for (kind + template picker). */
   const [pendingNewSessionClient, setPendingNewSessionClient] =
     useState<Client | null>(null);
@@ -314,9 +317,9 @@ export const HostView: React.FC = () => {
   const activeMapRef = useRef<MindMap | null>(null);
   activeMapRef.current = activeMap;
 
-  // 10s Delete Undo Toast
+  // Delete-undo record. Dismissing is the toast's own job (timer, pause,
+  // close button): the view only holds what "Desfazer" would restore.
   const [deletedMapUndo, setDeletedMapUndo] = useState<MindMap | null>(null);
-  const undoToastTimerRef = useRef<number | null>(null);
 
   const svgCanvasRef = useRef<SVGSVGElement | null>(null);
   const clientWindowRef = useRef<Window | null>(null);
@@ -376,7 +379,6 @@ export const HostView: React.FC = () => {
       syncService.stopHostHeartbeat();
       unsub();
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
       if (cloudAutoTimerRef.current) clearTimeout(cloudAutoTimerRef.current);
       clearCloudMaxTimer();
     };
@@ -900,10 +902,6 @@ export const HostView: React.FC = () => {
     }
 
     setDeletedMapUndo(target);
-    if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
-    undoToastTimerRef.current = window.setTimeout(() => {
-      setDeletedMapUndo(null);
-    }, 10000);
   };
 
   // Archive toggles a flag; it never removes data. refreshAllData() handles
@@ -1030,7 +1028,10 @@ export const HostView: React.FC = () => {
         canRestoreSplit={isMaximizedMap && Boolean(activeMap)}
         narrowPane={isNarrow ? narrowPane : null}
         onSwapPane={() => setNarrowPane((p) => (p === 'outline' ? 'map' : 'outline'))}
-        onOpenClients={() => setIsAdminOpen(true)}
+        onOpenClients={() => {
+          setAdminTab('participantes');
+          setIsAdminOpen(true);
+        }}
         onOpenClientWindow={openClientWindow}
         /* Focusing the existing window when there is one, and opening when
            there is not. The ref is null after a reload even if the client
@@ -1357,6 +1358,7 @@ export const HostView: React.FC = () => {
         }}
         onRefreshData={refreshAllData}
         theme={settings.theme}
+        defaultTab={adminTab}
       />
 
       <ShareGuideModal
@@ -1408,6 +1410,11 @@ export const HostView: React.FC = () => {
           null
         }
         onConfirm={handleConfirmNewSession}
+        onOpenCatalog={() => {
+          setPendingNewSessionClient(null);
+          setAdminTab('catalogo');
+          setIsAdminOpen(true);
+        }}
       />
 
       <MapListDrawer
@@ -1425,24 +1432,20 @@ export const HostView: React.FC = () => {
         theme={settings.theme}
       />
 
-      {/* 10-Second Undo Delete Toast. It follows the app theme rather than
+      {/* Delete-undo toast. It follows the app theme rather than
           being permanently dark, so the "Desfazer" affordance is a token
           pair (5.0:1 / 11.1:1) instead of an unmeasured hard-coded amber. */}
       {deletedMapUndo && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-10 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-raised border border-line text-content shadow-2xl text-xs"
-        >
-          <span>{t(settings.language, 'admin.toast.sessionDeleted')} &quot;{deletedMapUndo.sessionDate || deletedMapUndo.title}&quot; {t(settings.language, 'admin.toast.deletedF')}</span>
-          <button
-            type="button"
-            onClick={handleRestoreDeletedMap}
-            className="font-bold text-accent-text hover:underline"
-          >
-            {t(settings.language, 'admin.toast.undo')}
-          </button>
-        </div>
+        <UndoToast
+          className="fixed bottom-10 right-6 z-50"
+          message={
+            <span>{t(settings.language, 'admin.toast.sessionDeleted')} &quot;{deletedMapUndo.sessionDate || deletedMapUndo.title}&quot; {t(settings.language, 'admin.toast.deletedF')}</span>
+          }
+          undoLabel={t(settings.language, 'admin.toast.undo')}
+          onUndo={() => void handleRestoreDeletedMap()}
+          dismissLabel={t(settings.language, 'admin.toast.dismiss')}
+          onDismiss={() => setDeletedMapUndo(null)}
+        />
       )}
     </div>
     </LanguageContext.Provider>

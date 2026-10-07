@@ -100,9 +100,10 @@ describe('full backup envelope', () => {
     expect(Array.isArray(env.maps)).toBe(true);
     expect(Array.isArray(env.modalities)).toBe(true);
     expect(Array.isArray(env.templates)).toBe(true);
-    // Seeded on first read, so a fresh machine backs up its own catalog.
-    expect(env.modalities.length).toBeGreaterThan(0);
-    expect(env.templates.length).toBeGreaterThan(0);
+    // Empty on a fresh machine by design: the catalog is the user's own
+    // workspace, not sample data. A backup still carries the (empty) lists.
+    expect(env.modalities.length).toBe(0);
+    expect(env.templates.length).toBe(0);
   });
 
   test('restores a legacy bare-array file and implies its clients', async () => {
@@ -117,6 +118,12 @@ describe('full backup envelope', () => {
   });
 
   test('catalog restore is additive: renames are kept, new ids land', async () => {
+    // The catalog starts empty, so this test plants its own rows first.
+    const now = new Date().toISOString();
+    storage.persistModalities([
+      { id: 'mod_a', name: 'Tipo A', color: null, createdAt: now },
+      { id: 'mod_b', name: 'Tipo B', color: null, createdAt: now },
+    ]);
     const env = await buildFullBackup();
     // Rename locally AFTER the backup was taken.
     const local = JSON.parse(localStorage.getItem('sessionmap_modalities') as string);

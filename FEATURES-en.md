@@ -55,14 +55,22 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 - **Private notes per participant:** survive session switches and are **never**
   transmitted to the participant window.
 - **Archive/restore** participants (sessions come along) and single sessions.
-- **Delete with undo** (participant comes back with their sessions; a session comes back alone; the notice fades in 10s).
+- **Delete with undo** (participant comes back with their sessions; a session comes back alone;
+  the notice fades in 8s, with a progress bar, pause on hover/focus and a close
+  button — `Esc` dismisses too).
+- **Empty states with direct action:** with no participants, the placeholder is no button —
+  a quiet notice with a link ("Create the first participant"); with no sessions,
+  "Start the first session" opens the picker right there.
 - **Visible orphan sessions:** nothing disappears silently if the participant leaves the list.
 - **Import `.md`** as a new session; `Session N` numbering per participant.
 - Tabbed panel: **Participants** (daily flow) and **Types and scripts** (global catalog).
 
 ## Session types and scripts
 
-- **One modality per session** (Mentoring, Consulting, Meeting + any you create).
+- **Starts empty:** no sample types or scripts — you create your own
+  (e.g. Mentoring, Consulting, Meeting). The first session starts blank and
+  the picker points at the catalog ("Manage types and scripts").
+- **One modality per session** (whichever you create).
 - **Derived badges on the participant:** the union of their sessions — nobody is "of a single type".
 - Filter by type in the history and in the drawer; later reclassification without recreating.
 - **Editable global catalog** (create/rename/delete; deleting yields "no type", never deletes a session).

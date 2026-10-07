@@ -2,6 +2,7 @@
   "viewport": { "width": 1280, "height": 720 },
   "steps": [
     { "do": "goto", "url": "/" },
+    { "do": "evaluate", "js": "(() => { const now = new Date().toISOString(); localStorage.setItem('sessionmap_modalities', JSON.stringify([{id:'mod_mentoria',name:'Mentoria',color:'#2f9e6e',createdAt:now},{id:'mod_consultoria',name:'Consultoria',color:'#c47b1e',createdAt:now},{id:'mod_reuniao',name:'Reunião',color:'#7c6cf0',createdAt:now}])); localStorage.setItem('sessionmap_templates', JSON.stringify([{id:'tpl_seed_0',modalityId:'mod_mentoria',title:'Sessão de mentoria',markdown:'- Objetivo da sessão\\n- Onde está travando\\n- Opções e decisão\\n- Compromisso até a próxima',createdAt:now,updatedAt:now},{id:'tpl_seed_1',modalityId:'mod_consultoria',title:'Sessão de consultoria',markdown:'- Contexto e meta\\n- Diagnóstico\\n- Recomendações\\n- Próximos passos e responsáveis',createdAt:now,updatedAt:now},{id:'tpl_seed_2',modalityId:'mod_reuniao',title:'Reunião',markdown:'- Objetivo da reunião\\n- Pontos discutidos\\n- Decisões\\n- Próximos passos e responsáveis',createdAt:now,updatedAt:now}])); return 'seeded'; })()" },
     { "do": "subtitle", "text": "Passo 1 — Cadastre e escolha o tipo" },
     { "do": "click", "name": "Gerenciar participantes" },
     { "do": "click", "name": "Novo" },
