@@ -68,12 +68,6 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
     modalities.find((m) => m.id === modalityId)?.name ?? t(lang, 'common.noType');
   const catalogEmpty = modalities.length === 0;
 
-  const openCatalog = () => {
-    if (onOpenCatalog) {
-      onOpenCatalog();
-    }
-  };
-
   return (
     <Modal
       isOpen={isOpen}
@@ -122,7 +116,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
               {onOpenCatalog && (
                 <button
                   type="button"
-                  onClick={openCatalog}
+                  onClick={onOpenCatalog}
                   className="mt-1.5 inline-flex items-center gap-1 font-bold text-accent-text underline underline-offset-2 hover:no-underline"
                 >
                   <span>{t(lang, 'newsession.manageCatalog')}</span>
@@ -164,7 +158,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
               {onOpenCatalog && (
                 <button
                   type="button"
-                  onClick={openCatalog}
+                  onClick={onOpenCatalog}
                   className="mt-1.5 inline-flex items-center gap-1 font-bold text-accent-text underline underline-offset-2 hover:no-underline"
                 >
                   <span>{t(lang, 'newsession.manageCatalog')}</span>
