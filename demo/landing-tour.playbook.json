@@ -1,0 +1,27 @@
+{
+  "viewport": { "width": 1280, "height": 720 },
+  "steps": [
+    { "do": "goto", "url": "http://localhost:8138/sessionmap/landing" },
+    { "do": "subtitle", "text": "SessionMap — você digita tópicos, eles veem o mapa" },
+    { "do": "sleep", "ms": 4000 },
+    { "do": "subtitle", "text": "Dois lados: sua janela privada, a tela do participante" },
+    { "do": "scroll", "selector": ".demo" },
+    { "do": "sleep", "ms": 3500 },
+    { "do": "subtitle", "text": "Como funciona em quatro passos — com demo em vídeo" },
+    { "do": "scroll", "selector": "#como-funciona" },
+    { "do": "sleep", "ms": 4000 },
+    { "do": "subtitle", "text": "Para consultores, terapeutas e equipes" },
+    { "do": "scroll", "selector": "#para-quem" },
+    { "do": "sleep", "ms": 3500 },
+    { "do": "subtitle", "text": "Qualquer reunião: online ou presencial" },
+    { "do": "scroll", "selector": "#reunioes" },
+    { "do": "sleep", "ms": 3500 },
+    { "do": "subtitle", "text": "Privacidade radical, exportação total, nuvem cifrada" },
+    { "do": "scroll", "selector": "#detalhes" },
+    { "do": "sleep", "ms": 4000 },
+    { "do": "subtitle", "text": "Grátis, open source, sem instalar" },
+    { "do": "scroll", "selector": "footer" },
+    { "do": "sleep", "ms": 3000 },
+    { "do": "subtitle", "text": "" }
+  ]
+}
