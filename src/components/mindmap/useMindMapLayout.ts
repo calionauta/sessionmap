@@ -419,7 +419,16 @@ export function useMindMapLayout(
         const ghostDims = approximateTextDimensions(draft.text || 'novo balão…', false, fontScale);
         
         // Find existing children of this parent in layout to position ghost right after them
-        const siblingNodes = nodes.filter((n) => n.parentId === parentLayout.id);
+        // Siblings on the ghost's OWN side only. The root fans its children
+        // across left and right while `nodes` lists right first then left, so
+        // the array-last sibling may live on the opposite side — anchoring to
+        // it dropped "novo ponto…" on top of this side's stack on every empty
+        // top-level bullet, until typed text replaced the ghost with a real
+        // node. Same-side siblings arrive in visual order; the last is lowest.
+        const ghostSide = isRight ? 'right' : 'left';
+        const siblingNodes = nodes.filter(
+          (n) => n.parentId === parentLayout.id && n.side === ghostSide
+        );
         let ghostY = parentLayout.y;
         if (siblingNodes.length > 0) {
           const lastSibling = siblingNodes[siblingNodes.length - 1];
