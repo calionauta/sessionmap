@@ -16,6 +16,9 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
   ~1s parado — sem flicker.
 - **Tela do participante segue o cursor:** o mapa do participante centraliza o tópico sob
   o seu cursor, sem precisar pausar para "alcançar".
+- **Espelho total da câmera:** zoom e posição do mapa do participante replicam
+  os seus em tempo real, em qualquer tamanho de tela; a janela do participante
+  não tem controles de navegação — só mostra.
 - **Apresentar na top bar:** `Apresentar` abre a tela do participante em nova janela; ao vivo, o indicador `Ao vivo` mostra o estado e `Encerrar apresentação` fecha. Sem pausa: encerrar e apresentar de novo cobre tudo.
 - **Título e URL neutros na janela B:** aba diz só "Mapa"; nome do participante nunca
   aparece na tela compartilhada.

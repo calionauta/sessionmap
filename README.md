@@ -23,7 +23,8 @@ Free, open source, no install: open it in the browser and it works.
 4. **End presentation** closes the window; presenting again reopens where you left off.
 
 The participant window never shows menus, outline, private notes, or the participant's
-name in the tab — only the map.
+name in the tab — only the map. It has no navigation controls: its zoom and position
+mirror the host's in real time.
 
 ## Privacy
 

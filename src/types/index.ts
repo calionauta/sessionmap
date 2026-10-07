@@ -6,10 +6,18 @@ export interface MindMapNode {
   children: MindMapNode[];
 }
 
+/**
+ * Where the host's camera is looking, in resolution-independent terms.
+ *
+ * `zoom` is the scale factor; (`cx`, `cy`) is the viewport centre in world
+ * (layout) coordinates. The participant window rebuilds its own screen
+ * offset from its own size (`x = w/2 - cx*zoom`), so a projector and a
+ * laptop frame the same point instead of sharing raw pixels.
+ */
 export interface MindMapView {
   zoom: number;
-  x: number;
-  y: number;
+  cx: number;
+  cy: number;
 }
 
 export interface Client {

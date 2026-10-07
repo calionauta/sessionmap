@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MindMap, SyncMessage } from '../types';
+import { MindMap, MindMapView, SyncMessage } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { syncService } from '../services/sync';
 import { applyDocumentLanguage, t } from '../i18n/strings';
@@ -70,6 +70,9 @@ export const ClientView: React.FC = () => {
   const [theme, setTheme] = useState<'papel' | 'noite'>('papel');
   const [liveTextMode, setLiveTextMode] = useState<'live' | 'confirm_only'>('live');
   const [focusZoomMode, setFocusZoomMode] = useState<boolean>(false);
+  // Espelho da câmera do anfitrião (centro-do-mundo + zoom). O canvas aplica
+  // no próprio tamanho e não tem controles locais — ver MindMapCanvas.
+  const [syncedView, setSyncedView] = useState<MindMapView | null>(null);
   const [thinBarAlwaysVisible, setThinBarAlwaysVisible] = useState<boolean>(false);
 
   // Auto-hide bottom bar after 4s idle
@@ -135,6 +138,8 @@ export const ClientView: React.FC = () => {
         }
       } else if (msg.type === 'select') {
         setSelectedNodeId(msg.selection.nodeId);
+      } else if (msg.type === 'view_sync') {
+        setSyncedView(msg.view);
       } else if (msg.type === 'client_font_scale') {
         setFontScale(msg.scale);
       } else if (msg.type === 'focus_zoom_mode') {
@@ -264,6 +269,7 @@ export const ClientView: React.FC = () => {
             fontScale={fontScale}
             liveTextMode={liveTextMode}
             readOnly={true}
+            syncedView={syncedView}
             clientName={map.clientName}
             sessionDate={map.sessionDate || map.title}
             focusZoomMode={focusZoomMode}

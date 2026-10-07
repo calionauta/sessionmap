@@ -24,7 +24,8 @@ Grátis, open source, sem instalar: abre no navegador e funciona.
 4. **Encerrar apresentação** fecha a janela; apresentar de novo reabre de onde parou.
 
 A janela do participante nunca mostra menus, outline, notas privadas nem o nome do
-participante na aba — só o mapa.
+participante na aba — só o mapa. Ela não tem controles de navegação: zoom e posição
+espelham os do anfitrião em tempo real.
 
 ## Privacidade
 

@@ -6,7 +6,7 @@ import React, {
   useMemo,
 } from "react";
 import { Maximize2, Minus, Plus, RotateCcw, Target } from "lucide-react";
-import { MindMapNode } from "../../types";
+import { MindMapNode, MindMapView } from "../../types";
 import { t } from "../../i18n/strings";
 import { useLang } from "../../i18n/LanguageContext";
 import { useMindMapLayout } from "./useMindMapLayout";
@@ -41,6 +41,17 @@ interface MindMapCanvasProps {
   onNodeClick?: (nodeId: string) => void;
   onToggleCollapse?: (nodeId: string) => void;
   /**
+   * Camera driven by someone else. When set, this canvas stops owning the
+   * view: local gestures are disabled (see readOnly) and every change here
+   * is applied as-is. The host is the only sender.
+   */
+  syncedView?: MindMapView | null;
+  /**
+   * Fired (throttled ~120ms with a trailing send) whenever the local camera
+   * moves — pan, zoom, fit or follow. The host forwards it as `view_sync`.
+   */
+  onViewChange?: (view: MindMapView) => void;
+  /**
    * Reports whether the node currently being edited is inside the visible
    * canvas. The floating "what am I editing" mirror uses it to stay out of the
    * way: the canvas already shows the target by highlighting and (with focus
@@ -66,6 +77,8 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   onNodeClick,
   onToggleCollapse,
   svgRef: externalSvgRef,
+  syncedView = null,
+  onViewChange,
 }) => {
   const lang = useLang();
   const localSvgRef = useRef<SVGSVGElement | null>(null);
@@ -82,6 +95,100 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     y: 0,
     k: 1,
   });
+
+  /**
+   * Espelho da câmera: o participante não tem câmera própria.
+   *
+   * Saída (anfitrião): cada movimento vira centro-do-mundo + zoom, com
+   * throttle de ~120ms e envio final (trailing), para um arrasto contínuo
+   * não inundar o BroadcastChannel mas pousar no lugar certo.
+   * Entrada (participante): o `syncedView` é convertido para o offset de
+   * tela deste recipiente — telas de tamanhos diferentes enquadram o mesmo
+   * ponto em vez de copiar pixels.
+   */
+  const VIEW_SYNC_THROTTLE_MS = 120;
+  const onViewChangeRef = useRef(onViewChange);
+  useEffect(() => {
+    onViewChangeRef.current = onViewChange;
+  }, [onViewChange]);
+  const lastViewSentAtRef = useRef(0);
+  const lastSentViewRef = useRef<MindMapView | null>(null);
+  const pendingViewRef = useRef<MindMapView | null>(null);
+  const trailingTimerRef = useRef<number | null>(null);
+  // Última câmera do anfitrião, para o resize reaplicar o espelho em vez de
+  // recentrar por conta própria (ver o ResizeObserver abaixo).
+  const syncedViewRef = useRef<MindMapView | null>(syncedView);
+  useEffect(() => {
+    syncedViewRef.current = syncedView;
+  }, [syncedView]);
+
+  const isSameView = (a: MindMapView | null, b: MindMapView) =>
+    !!a && a.zoom === b.zoom && a.cx === b.cx && a.cy === b.cy;
+
+  useEffect(() => {
+    const cb = onViewChangeRef.current;
+    if (!cb) return;
+    const el = containerRef.current;
+    const w = el?.clientWidth ?? 0;
+    const h = el?.clientHeight ?? 0;
+    const k = transform.k;
+    if (k === 0) return;
+    const view: MindMapView = {
+      zoom: k,
+      cx: (w / 2 - transform.x) / k,
+      cy: (h / 2 - transform.y) / k,
+    };
+    // setTransform com números iguais ainda troca o objeto e reacende este
+    // efeito: sem o guarda, cada seleção reenviava a mesma câmera.
+    if (isSameView(lastSentViewRef.current, view) && !trailingTimerRef.current)
+      return;
+    if (isSameView(pendingViewRef.current, view)) return;
+    const flush = () => {
+      trailingTimerRef.current = null;
+      const pending = pendingViewRef.current ?? view;
+      pendingViewRef.current = null;
+      lastViewSentAtRef.current = Date.now();
+      lastSentViewRef.current = pending;
+      onViewChangeRef.current?.(pending);
+    };
+    const wait =
+      VIEW_SYNC_THROTTLE_MS - (Date.now() - lastViewSentAtRef.current);
+    if (wait <= 0) {
+      if (trailingTimerRef.current) {
+        window.clearTimeout(trailingTimerRef.current);
+        trailingTimerRef.current = null;
+      }
+      pendingViewRef.current = null;
+      lastViewSentAtRef.current = Date.now();
+      lastSentViewRef.current = view;
+      cb(view);
+    } else {
+      pendingViewRef.current = view;
+      if (!trailingTimerRef.current) {
+        trailingTimerRef.current = window.setTimeout(flush, wait);
+      }
+    }
+  }, [transform]);
+
+  useEffect(
+    () => () => {
+      if (trailingTimerRef.current) window.clearTimeout(trailingTimerRef.current);
+    },
+    []
+  );
+
+  // Aplica a câmera do anfitrião neste recipiente (só participante).
+  useEffect(() => {
+    if (!syncedView) return;
+    const el = containerRef.current;
+    if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, syncedView.zoom));
+    setTransform({
+      x: el.clientWidth / 2 - syncedView.cx * k,
+      y: el.clientHeight / 2 - syncedView.cy * k,
+      k,
+    });
+  }, [syncedView]);
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{
@@ -221,6 +328,21 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       if (last && Math.abs(w - last.w) < 24 && Math.abs(h - last.h) < 24)
         return;
       lastFitSizeRef.current = { w, h };
+      /* Espelho (participante): reaplica a câmera do anfitrião no tamanho
+         novo em vez de recentrar por conta própria. Um centreOn/fit local
+         aqui divergia até o próximo rebroadcast — e redimensionar a janela
+         projetada é justamente quando ninguém está mexendo no mapa para
+         provocar esse rebroadcast. */
+      const synced = syncedViewRef.current;
+      if (synced) {
+        const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, synced.zoom));
+        setTransform({
+          x: w / 2 - synced.cx * k,
+          y: h / 2 - synced.cy * k,
+          k,
+        });
+        return;
+      }
       /* Re-frame around what the host is on, not around the whole map.
 
          Fitting everything is right when there is no selection, but with one it
@@ -340,9 +462,15 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   }, [centreOn]);
 
   // Focus Zoom Mode: Zoom in on node + parents + children!
+  //
+  // Só no anfitrião. No espelho, a câmera vem do `syncedView` — e um centreOn
+  // local correria contra ele: `select` e `view_sync` chegam juntos, e se o
+  // centreOn rodar por último depois de um pan manual do anfitrião, a tela do
+  // participante diverge até o próximo rebroadcast.
   useEffect(() => {
+    if (readOnly) return;
     if (selectedNodeId) centreOn(selectedNodeId);
-  }, [selectedNodeId, focusZoomMode, nodes, root, centreOn]);
+  }, [selectedNodeId, focusZoomMode, nodes, root, centreOn, readOnly]);
 
   // Mouse Wheel Zoom.
   //
@@ -352,7 +480,11 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   // inside onWheel only logged "Unable to preventDefault inside passive
   // event listener invocation" and the page scrolled under the zoom.
   // A native listener on the container itself can opt out of that.
+  // A janela do participante é espelho: sem zoom pela roda — a câmera vem
+  // do anfitrião via `syncedView`. Sem este guarda, o nativo abaixo
+  // preventDefault + zoom local e a tela diverge na primeira rolagem.
   useEffect(() => {
+    if (readOnly) return;
     const el = containerRef.current;
     if (!el) return;
     const onWheelNative = (e: WheelEvent) => {
@@ -376,11 +508,13 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => el.removeEventListener('wheel', onWheelNative);
-  }, []);
+  }, [readOnly]);
 
   // Keyboard equivalent of the wheel/drag: zoom on +/-, pan on the arrows
   // while the container itself holds focus (a focused node owns the arrows).
+  // Espelho não tem câmera própria: no participante, o teclado não move nada.
   const handleContainerKeyDown = (e: React.KeyboardEvent) => {
+    if (readOnly) return;
     if (e.ctrlKey || e.metaKey) {
       if (e.key === "0") {
         e.preventDefault();
@@ -497,8 +631,10 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     [nodes, navOrder, focusNode, onNodeClick, onToggleCollapse],
   );
 
-  // Pointer Down (Pan drag)
+  // Pointer Down (Pan drag). Espelho não arrasta: qualquer pan local
+  // diverge do anfitrião e nunca volta sozinho.
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (readOnly) return;
     if (e.button !== 0) return;
     setIsDragging(true);
     dragStartRef.current = {
@@ -511,6 +647,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (readOnly) return;
     if (!isDragging) return;
     const dx = e.clientX - dragStartRef.current.startX;
     const dy = e.clientY - dragStartRef.current.startY;
@@ -568,7 +705,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
          `@container` + the `@min-*` variants, so nothing is hand-written and
          index.css stays untouched. */
       className={`@container relative w-full h-full select-none overflow-hidden bg-surface ${
-        isDragging ? "cursor-grabbing" : "cursor-grab"
+        readOnly ? "cursor-default" : isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
     >
       {/* Describes only the keys that actually work in this instance. The
@@ -766,7 +903,11 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           width instead of overflowing, and the one text label is dropped on a
           narrow canvas — decided by the canvas width, not the viewport, so the
           same 5 buttons read as a label + 4 icons on a wide pane and as 5
-          icons on a 233px one without a horizontal scrollbar either way. */}
+          icons on a 233px one without a horizontal scrollbar either way.
+
+          O espelho (readOnly) não tem nenhum: a câmera vem do anfitrião, e
+          qualquer controle local seria uma divergência com um botão. */}
+      {!readOnly && (
       <div className="absolute bottom-4 right-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-0.5 rounded-panel border border-line bg-surface-raised p-1 text-content shadow-md">
         {/* Toggle Focus Zoom Mode Button */}
         {onToggleFocusZoomMode && !readOnly && (
@@ -842,6 +983,7 @@ export const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       </div>
+      )}
     </div>
   );
 };

@@ -7,7 +7,7 @@ import {
   Plus,
   Cloud,
 } from 'lucide-react';
-import { Client, MindMap, MindMapNode, SelectReason, SessionTemplate, Settings, CloudBackupState } from '../types';
+import { Client, MindMap, MindMapNode, MindMapView, SelectReason, SessionTemplate, Settings, CloudBackupState } from '../types';
 import { MindMapCanvas } from './mindmap/MindMapCanvas';
 import { ShareGuideModal } from './modals/ShareGuideModal';
 import { ExportModal } from './modals/ExportModal';
@@ -532,6 +532,46 @@ export const HostView: React.FC = () => {
     []
   );
 
+  // Espelho da câmera: cada movimento do mapa do anfitrião viaja como
+  // centro-do-mundo + zoom. A tela do participante reconstrói o enquadramento
+  // no próprio tamanho, então projetor e laptop mostram o mesmo ponto.
+  // O último enquadramento fica no ref para reenviar a quem abrir a janela
+  // depois (com throttle do canvas, o anfitrião parado não reenvia nada).
+  const lastViewRef = useRef<MindMapView | null>(null);
+  const handleViewChange = useCallback((view: MindMapView) => {
+    lastViewRef.current = view;
+    syncService.send({ type: 'view_sync', view });
+  }, []);
+
+  // Convergência de quem chegou depois: a cada ~2.5s o último enquadramento
+  // é reenviado, então uma janela aberta com o anfitrião parado alcança a
+  // mesma câmera em segundos sem precisar de handshake.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (lastViewRef.current) {
+        syncService.send({ type: 'view_sync', view: lastViewRef.current });
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Cliente lento: o burst do openClientWindow (500ms) perde a janela que
+  // demora mais para carregar, e o snapshot só viaja de novo quando o mapa
+  // muda — a tela ficava no "aguardando" para sempre. Quando o heartbeat
+  // marca o cliente como conectado, ele já está ouvindo: reenvia mapa +
+  // câmera na hora, sem spam perpétuo de snapshot.
+  useEffect(() => {
+    if (!isClientConnected) return;
+    const map = activeMapRef.current;
+    if (!map) return;
+    const view = lastViewRef.current;
+    const timer = window.setTimeout(() => {
+      syncService.send({ type: 'snapshot', map });
+      if (view) syncService.send({ type: 'view_sync', view });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [isClientConnected]);
+
   // Open Client Window (Window B)
   const openClientWindow = () => {
     const clientUrl = `${window.location.origin}${window.location.pathname}?view=client`;
@@ -544,8 +584,11 @@ export const HostView: React.FC = () => {
       clientWindowRef.current = newWin;
       setIsClientConnected(true);
       if (activeMap) {
+        const map = activeMap;
+        const view = lastViewRef.current;
         setTimeout(() => {
-          syncService.send({ type: 'snapshot', map: activeMap });
+          syncService.send({ type: 'snapshot', map });
+          if (view) syncService.send({ type: 'view_sync', view });
         }, 500);
       }
     }
@@ -1221,6 +1264,7 @@ export const HostView: React.FC = () => {
               clientName={activeMap.clientName}
               sessionDate={activeMap.sessionDate || activeMap.title}
               focusZoomMode={settings.focusZoomMode}
+              onViewChange={handleViewChange}
               onToggleFocusZoomMode={() =>
                 handleUpdateSettings({
                   ...settings,

@@ -641,7 +641,7 @@ export function createNewSession(
           // empty session now opens with exactly one editable line.
           children: [],
         },
-    view: { zoom: 1, x: 0, y: 0 },
+    view: { zoom: 1, cx: 0, cy: 0 },
   };
 }
 

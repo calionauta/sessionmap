@@ -306,7 +306,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           root: rootNode,
-          view: { zoom: 1, x: 0, y: 0 },
+          view: { zoom: 1, cx: 0, cy: 0 },
         };
         await saveMap(newSession);
         await onRefreshData();

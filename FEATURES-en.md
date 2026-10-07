@@ -16,6 +16,9 @@ every added or removed capability updates all three together (see `AGENTS.md`).
   ~1s idle — no flicker.
 - **Participant screen follows the cursor:** the participant's map centers the topic under
   your cursor, no need to pause to "catch up".
+- **Full camera mirror:** the participant's map zoom and position replicate
+  yours in real time, on any screen size; the participant window has no
+  navigation controls — it only shows.
 - **Present in the top bar:** `Present` opens the participant screen in a new window; while live, the `Live` indicator shows the state and `End presentation` closes it. No pause: ending and presenting again covers everything.
 - **Neutral title and URL on window B:** the tab says only "Map"; the participant's name never
   appears on the shared screen.
