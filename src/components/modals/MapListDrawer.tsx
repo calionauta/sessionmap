@@ -25,6 +25,7 @@ import {
 import { downloadFile } from '../../utils/export';
 import { useDialogA11y, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { Select } from '../ui/Select';
 import { t } from '../../i18n/strings';
 import { useLang } from '../../i18n/LanguageContext';
 
@@ -266,11 +267,12 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
               <label htmlFor="map-modality-filter" className="sr-only">
                 {t(lang, 'maplist.filter.label')}
               </label>
-              <select
+              <Select
                 id="map-modality-filter"
                 value={modalityFilter}
                 onChange={(e) => setModalityFilter(e.target.value)}
-                className="w-full h-9 px-2 text-xs rounded-control border border-line bg-surface font-bold text-content"
+                aria-label={t(lang, 'maplist.filter.label')}
+                className="h-9 pl-2 text-xs font-bold bg-surface"
               >
                 <option value="all">{t(lang, 'maplist.filter.all')}</option>
                 {modalities.map((m) => (
@@ -279,7 +281,7 @@ export const MapListDrawer: React.FC<MapListDrawerProps> = ({
                   </option>
                 ))}
                 <option value="none">{t(lang, 'common.noType')}</option>
-              </select>
+              </Select>
             </div>
           )}
         </div>

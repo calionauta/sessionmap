@@ -1,7 +1,7 @@
 {
   "viewport": { "width": 1280, "height": 720 },
   "steps": [
-    { "do": "goto", "url": "http://localhost:8138/sessionmap/landing" },
+    { "do": "goto", "url": "http://localhost:8138/sessionmap/" },
     { "do": "subtitle", "text": "SessionMap — você digita tópicos, eles veem o mapa" },
     { "do": "sleep", "ms": 4000 },
     { "do": "subtitle", "text": "Dois lados: sua janela privada, a tela do participante" },

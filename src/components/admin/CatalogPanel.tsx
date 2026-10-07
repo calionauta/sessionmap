@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, Edit2, Plus, Trash2 } from 'lucide-react';
 import { Modality, SessionTemplate } from '../../types';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { Select } from '../ui/Select';
 import { t } from '../../i18n/strings';
 import { useLang } from '../../i18n/LanguageContext';
 
@@ -14,6 +15,14 @@ interface CatalogPanelProps {
   onTemplatesChange: (next: SessionTemplate[]) => void;
   /** Deleting a kind unclassifies sessions, so the parent confirms first. */
   onDeleteModalityRequest: (m: Modality) => void;
+  /**
+   * A template id the picker asked to edit. The panel opens that card's
+   * editor (list context stays visible around it) and reports back so the
+   * parent clears the request — a level, not a pulse, would reopen it on
+   * every render.
+   */
+  editRequestId?: string | null;
+  onEditRequestHandled?: () => void;
 }
 
 interface TemplateDraft {
@@ -38,6 +47,8 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
   onModalitiesChange,
   onTemplatesChange,
   onDeleteModalityRequest,
+  editRequestId = null,
+  onEditRequestHandled,
 }) => {
   const [newModalityName, setNewModalityName] = useState('');
   const [editingModalityId, setEditingModalityId] = useState<string | null>(null);
@@ -85,6 +96,29 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
         : { title: '', modalityId: '', markdown: '' }
     );
   };
+
+  // An edit requested from the new-session picker: open that card's editor
+  // and bring it into view, then clear the request through the parent.
+  const handledEditRequestRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!editRequestId || handledEditRequestRef.current === editRequestId) return;
+    handledEditRequestRef.current = editRequestId;
+    const tpl = templates.find((t) => t.id === editRequestId);
+    if (tpl) {
+      startTemplateDraft(tpl);
+      document
+        .getElementById(`catalog-tpl-${tpl.id}`)
+        // Instant, not smooth: the app's reduced-motion policy kills CSS
+        // motion globally, and a JS glide would be the one thing still moving.
+        ?.scrollIntoView({ block: 'nearest' });
+    }
+    // Reported back even when the template is gone (deleted between picker
+    // and catalog): the parent clears the request either way, so nothing
+    // stale replays on the next render.
+    onEditRequestHandled?.();
+    // startTemplateDraft is stable by construction (setState wrappers).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequestId, templates]);
 
   const handleSaveTemplate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,7 +284,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
         </p>
         <div className="mt-3 space-y-2">
           {templates.map((tpl) => (
-            <div key={tpl.id} className="p-2.5 rounded-panel border border-line bg-surface">
+            <div key={tpl.id} id={`catalog-tpl-${tpl.id}`} className="p-2.5 rounded-panel border border-line bg-surface">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-content truncate">{tpl.title}</div>
@@ -361,10 +395,11 @@ function TemplateForm({
       </label>
       <label className="block">
         <span className="sr-only">{t(lang, 'catalog.form.kind')}</span>
-        <select
+        <Select
           value={draft.modalityId}
           onChange={(e) => onDraftChange({ ...draft, modalityId: e.target.value })}
-          className="w-full h-10 px-2.5 text-xs rounded-control border border-line bg-surface-raised text-content font-bold"
+          aria-label={t(lang, 'catalog.form.kind')}
+          className="h-10 pl-2.5 text-xs font-bold"
         >
           <option value="">{t(lang, 'catalog.form.generalAll')}</option>
           {modalities.map((m) => (
@@ -372,7 +407,7 @@ function TemplateForm({
               {m.name}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <label className="block">
         <span className="sr-only">{t(lang, 'catalog.form.text')}</span>

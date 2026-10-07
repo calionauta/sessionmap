@@ -66,7 +66,8 @@ beforeEach(() => {
 
 function renderDialog(
   onConfirm: (m: string | null, t: SessionTemplate | null) => void,
-  onOpenCatalog?: () => void
+  onOpenCatalog?: () => void,
+  onEditTemplate?: (t: SessionTemplate) => void
 ) {
   return render(
     React.createElement(NewSessionDialog, {
@@ -76,6 +77,7 @@ function renderDialog(
       defaultModalityId: null,
       onConfirm,
       onOpenCatalog,
+      onEditTemplate,
     })
   );
 }
@@ -163,6 +165,43 @@ describe('NewSessionDialog', () => {
     expect(screen.getByText(/Nenhum tipo cadastrado ainda/)).toBeTruthy();
     expect(screen.getByText(/Vai começar em branco mesmo assim/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Gerenciar tipos e roteiros' }));
+    expect(opened).toBe(1);
+  });
+
+  test('the preview is read-only looking, with an edit path', () => {
+    seedCatalog();
+    let edited: SessionTemplate | null = null;
+    renderDialog(
+      () => {},
+      undefined,
+      (tpl) => {
+        edited = tpl;
+      }
+    );
+    fireEvent.change(screen.getByLabelText('Tipo de atendimento'), {
+      target: { value: 'mod_mentoria' },
+    });
+    fireEvent.change(screen.getByLabelText('Roteiro inicial'), {
+      target: { value: 'tpl_seed_0' },
+    });
+    // Formatted bullets, not a mono block: nothing editable-looking.
+    expect(screen.getByText('Prévia do roteiro')).toBeTruthy();
+    expect(screen.getByText('só leitura')).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Editar roteiro' }));
+    expect((edited as unknown as SessionTemplate)?.id).toBe('tpl_seed_0');
+  });
+
+  test('the kind label carries its catalog path', () => {
+    seedCatalog();
+    let opened = 0;
+    renderDialog(
+      () => {},
+      () => {
+        opened += 1;
+      }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Gerenciar tipos' }));
     expect(opened).toBe(1);
   });
 

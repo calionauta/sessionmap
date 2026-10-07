@@ -75,6 +75,9 @@ every added or removed capability updates all three together (see `AGENTS.md`).
 - Filter by type in the history and in the drawer; later reclassification without recreating.
 - **Editable global catalog** (create/rename/delete; deleting yields "no type", never deletes a session).
 - **Per-type + general scripts**, in Markdown, with preview; picker when starting a session.
+- **Picker with no dead end:** the script preview is formatted and tagged "read-only"
+  (never looks like a field), with an "Edit script" button that opens the catalog
+  at its editor; the type label carries "Manage types" beside it.
 
 ## Local export and backup
 

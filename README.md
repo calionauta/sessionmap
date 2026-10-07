@@ -8,15 +8,15 @@ second window or projection — **100% offline and private by default**.
 For consultants, mentors, teams — and any online meeting.
 Free, open source, no install: open it in the browser and it works.
 
-- **Use it now:** <https://calionauta.github.io/sessionmap/>
-- **How it works:** [public page](https://calionauta.github.io/sessionmap/landing-en.html)
+- **Use it now:** <https://calionauta.github.io/sessionmap/app/>
+- **How it works:** [public page](https://calionauta.github.io/sessionmap/en/)
 - **Full features:** [FEATURES-en.md](FEATURES-en.md)
 
 ## How it works (30 seconds)
 
 ![42-second demo: register, present, type and export](demo/how-it-works.gif)
 
-1. Register the participant under **Participants & Sessions** and start a session (pick the
+1. Register the participant under **Participants & Sessions** and start a session (create the
    type and, optionally, a starter script).
 2. Click **Present** and project/share only the participant window.
 3. Type the topics: each line becomes a balloon on the participant's map, live.
@@ -70,8 +70,10 @@ src/
   utils/        # Markdown parser, tree, layout, export
   types/        # MindMap, Client, Modality, SessionTemplate, Settings
 public/
-  landing.html     # public page in Portuguese (copied to dist/ on build)
-  landing-en.html  # public page in English (copied to dist/ on build)
+  landing.html     # public page in Portuguese (becomes / in dist via scripts/layout-dist.mjs)
+  landing-en.html  # public page in English (becomes /en/ in dist)
+scripts/
+  layout-dist.mjs  # post-build: / (pt) · /en/ · /app/ · legacy redirects
 FEATURES-en.md     # full feature inventory (in English)
 AGENTS.md          # agent instructions (includes docs-sync rule)
 ```

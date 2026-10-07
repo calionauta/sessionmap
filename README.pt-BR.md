@@ -9,15 +9,15 @@ e privado por padrão**.
 Para consultores, mentores, equipes — e qualquer reunião online.
 Grátis, open source, sem instalar: abre no navegador e funciona.
 
-- **Usar agora:** <https://calionauta.github.io/sessionmap/>
-- **Como funciona:** [página pública](https://calionauta.github.io/sessionmap/landing.html)
+- **Usar agora:** <https://calionauta.github.io/sessionmap/app/>
+- **Como funciona:** [página pública](https://calionauta.github.io/sessionmap/)
 - **Recursos completos:** [FEATURES.md](FEATURES.md)
 
 ## Como funciona (30 segundos)
 
 ![Demo de 42 segundos: cadastrar, apresentar, digitar e exportar](demo/how-it-works.gif)
 
-1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (escolha o
+1. Cadastre o participante em **Participantes & Sessões** e inicie uma sessão (crie o
    tipo e, se quiser, um roteiro inicial).
 2. Clique em **Apresentar** e projete/compartilhe só a janela do participante.
 3. Digite os tópicos: cada linha vira um balão no mapa do participante, ao vivo.
@@ -71,8 +71,10 @@ src/
   utils/        # parser Markdown, árvore, layout, export
   types/        # MindMap, Client, Modality, SessionTemplate, Settings
 public/
-  landing.html     # página pública em português (vai para dist/ no build)
-  landing-en.html  # página pública em inglês (vai para dist/ no build)
+  landing.html     # página pública em português (vira / no dist via scripts/layout-dist.mjs)
+  landing-en.html  # página pública em inglês (vira /en/ no dist)
+scripts/
+  layout-dist.mjs  # pós-build: / (pt) · /en/ · /app/ · redirecionamentos legados
 FEATURES.md     # inventário completo de recursos
 AGENTS.md       # instruções para agentes (inclui regra de sincronia de docs)
 ```

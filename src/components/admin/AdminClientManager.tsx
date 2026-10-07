@@ -42,6 +42,7 @@ import { t } from '../../i18n/strings';
 import { useLang } from '../../i18n/LanguageContext';
 import { Modal, ConfirmDialog } from '../ui/Modal';
 import { ModalityBadge } from '../ui/ModalityBadge';
+import { Select } from '../ui/Select';
 import { UndoToast } from '../ui/UndoToast';
 import { EmptyState } from '../ui/EmptyState';
 import { NewSessionDialog } from '../modals/NewSessionDialog';
@@ -120,6 +121,13 @@ interface AdminClientManagerProps {
   theme: 'papel' | 'noite';
   /** Which room to open in. The new-session picker jumps here on demand. */
   defaultTab?: 'participantes' | 'catalogo';
+  /**
+   * A script the main view's picker asked to edit. Applied on open (the
+   * catalog tab opens with that card's editor up), then reported back so
+   * the request never replays.
+   */
+  catalogEditRequestId?: string | null;
+  onCatalogEditHandled?: () => void;
 }
 
 export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
@@ -132,6 +140,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   onSelectSession,
   onRefreshData,
   defaultTab = 'participantes',
+  catalogEditRequestId = null,
+  onCatalogEditHandled,
 }) => {
   const [selectedClientId, setSelectedClientId] = useState<string>(() => {
     return activeClientId || (clients[0]?.id ?? '');
@@ -167,6 +177,9 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   // Kind + template picker for the next session. Resolved on CONFIRM, not on
   // open: the client row could change under the open dialog.
   const [pendingSessionFor, setPendingSessionFor] = useState<Client | null>(null);
+  // A script the picker asked to edit: the catalog tab opens with that
+  // card's editor already up (see CatalogPanel editRequestId).
+  const [catalogEditTemplateId, setCatalogEditTemplateId] = useState<string | null>(null);
 
   // The panel has two rooms: the client workflow, and the global catalog.
   // Kinds and templates belong to no client — filing them under one client's
@@ -178,6 +191,17 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
   React.useEffect(() => {
     if (isOpen) setPanelTab(defaultTab);
   }, [isOpen, defaultTab]);
+  // An edit requested from the MAIN view's picker (which lives outside this
+  // panel): land on the catalog with that card's editor up, then tell the
+  // parent the request was consumed so it never replays.
+  React.useEffect(() => {
+    if (!isOpen || !catalogEditRequestId) return;
+    setCatalogEditTemplateId(catalogEditRequestId);
+    setPanelTab('catalogo');
+    onCatalogEditHandled?.();
+    // Consumed once per request; the null guard above stops replays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, catalogEditRequestId]);
   const lang = useLang();
 
   // The catalog lives here (state) and in storage (persisted): the dialog and
@@ -936,11 +960,12 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                     {modalities.length > 0 && (
                       <label className="flex items-center gap-1.5 text-[11px] font-bold text-content-muted">
                         <span className="sr-only">{t(lang, 'admin.detail.filterType')}</span>
-                        <select
+                        <Select
                           value={modalityFilter}
                           onChange={(e) => setModalityFilter(e.target.value)}
                           aria-label={t(lang, 'admin.detail.filterSessions')}
-                          className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
+                          wrapperClassName="w-auto"
+                          className="h-9 pl-2 text-[11px] font-bold bg-surface"
                         >
                           <option value="all">{t(lang, 'maplist.filter.all')}</option>
                           {modalities.map((m) => (
@@ -949,7 +974,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                             </option>
                           ))}
                           <option value="none">{t(lang, 'common.noType')}</option>
-                        </select>
+                        </Select>
                       </label>
                     )}
                   </div>
@@ -1013,12 +1038,14 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                 <span className="sr-only">
                                   {t(lang, 'admin.detail.sessionTypeOf').replace('{label}', sessionLabel)}
                                 </span>
-                                <select
+                                <Select
                                   value={session.modalityId ?? ''}
                                   onChange={(e) =>
                                     void handleSessionModality(session, e.target.value || null)
                                   }
-                                  className="h-9 px-2 text-[11px] rounded-control border border-line bg-surface text-content font-bold"
+                                  aria-label={t(lang, 'admin.detail.sessionTypeOf').replace('{label}', sessionLabel)}
+                                  wrapperClassName="w-auto"
+                                  className="h-9 pl-2 text-[11px] font-bold bg-surface"
                                 >
                                   <option value="">{t(lang, 'common.noType')}</option>
                                   {modalities.map((m) => (
@@ -1026,7 +1053,7 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                                       {m.name}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </label>
                             </div>
                           </div>
@@ -1190,6 +1217,8 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
                 persistTemplates(next);
               }}
               onDeleteModalityRequest={setPendingModalityDelete}
+              editRequestId={catalogEditTemplateId}
+              onEditRequestHandled={() => setCatalogEditTemplateId(null)}
             />
           </div>
         )}
@@ -1216,6 +1245,11 @@ export const AdminClientManager: React.FC<AdminClientManagerProps> = ({
         // catalog tab keeps one modal on screen and the intent intact.
         onOpenCatalog={() => {
           setPendingSessionFor(null);
+          setPanelTab('catalogo');
+        }}
+        onEditTemplate={(tpl) => {
+          setPendingSessionFor(null);
+          setCatalogEditTemplateId(tpl.id);
           setPanelTab('catalogo');
         }}
       />

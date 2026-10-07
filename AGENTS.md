@@ -43,8 +43,9 @@ no mesmo commit**:
 1. `FEATURES.md` — inventário completo (o que / onde / atalhos).
 2. `README.md` — resumo + links (não duplicar o inventário, apontar para ele).
 3. `public/landing.html` — página pública autocontida (CSS inline, sem build):
-   hero, demo, passos, grade de recursos, footer. Vai para `dist/` no build —
-   confira com `bun run build && ls dist/landing.html`.
+   hero, demo, passos, grade de recursos, footer. Vira `/` no `dist/` via
+   `scripts/layout-dist.mjs` (PT em `/`, EN em `/en/`, app em `/app/`) —
+   confira com `bun run build && ls dist/index.html dist/en/index.html dist/app/index.html`.
 
 Mudança só interna (refactor, fix invisível, teste): docs não precisam mudar.
 Na dúvida, atualize o FEATURES.md — barato errar para esse lado.
@@ -64,7 +65,8 @@ o EN (`README.md`) é o padrão exibido no GitHub.
 
 ## Verificação de docs
 
-- Links da landing são relativos (`./`) para funcionar no Pages e local.
-- Após editar a landing: `bun run build` e abrir `dist/landing.html`.
+- Links da landing são relativos (`./`, `../`) para funcionar no Pages e local;
+  `layout-dist.mjs` falha alto se um href esperado sumir.
+- Após editar a landing: `bun run build` e abrir `dist/index.html` e `dist/en/index.html`.
 - Nunca inventar URLs: repo é `github.com/calionauta/sessionmap`,
   Pages em `https://calionauta.github.io/sessionmap/`.

@@ -75,6 +75,9 @@ toda capacidade nova ou removida atualiza os três juntos (ver `AGENTS.md`).
 - Filtro por tipo no histórico e no drawer; reclassificação posterior sem recriar.
 - **Catálogo global editável** (criar/renomear/excluir; excluir vira "sem tipo", nunca apaga sessão).
 - **Roteiros por tipo + gerais**, em Markdown, com preview; picker ao iniciar sessão.
+- **Picker sem beco:** a prévia do roteiro é formatada e marcada "só leitura" (não parece
+  campo), com botão "Editar roteiro" que abre o catálogo já no editor; o rótulo
+  do tipo tem "Gerenciar tipos" ao lado.
 
 ## Exportação e backup local
 

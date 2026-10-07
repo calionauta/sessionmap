@@ -246,6 +246,10 @@ const pt = {
   'newsession.noKinds': 'Nenhum tipo cadastrado ainda — a sessão começa em branco.',
   'newsession.blankHint': 'Vai começar em branco mesmo assim. Nas próximas, estruture melhor criando tipos e roteiros.',
   'newsession.manageCatalog': 'Gerenciar tipos e roteiros',
+  'newsession.editKinds': 'Gerenciar tipos',
+  'newsession.previewTitle': 'Prévia do roteiro',
+  'newsession.previewReadonly': 'só leitura',
+  'newsession.editScript': 'Editar roteiro',
   'newsession.dateOnly': 'Começa só com a data, como sempre.',
   'newsession.start': 'Iniciar sessão',
 
@@ -814,6 +818,10 @@ const en: Record<StringKey, string> = {
   'newsession.noKinds': 'No types yet — the session will start blank.',
   'newsession.blankHint': 'It will still start blank. Next time, structure it better by creating types and scripts.',
   'newsession.manageCatalog': 'Manage types and scripts',
+  'newsession.editKinds': 'Manage types',
+  'newsession.previewTitle': 'Script preview',
+  'newsession.previewReadonly': 'read-only',
+  'newsession.editScript': 'Edit script',
   'newsession.dateOnly': 'Starts with just the date, as always.',
   'newsession.start': 'Start session',
 

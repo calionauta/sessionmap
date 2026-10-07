@@ -223,6 +223,8 @@ export const HostView: React.FC = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   /** Which room the admin panel opens in — the picker can ask for the catalog. */
   const [adminTab, setAdminTab] = useState<'participantes' | 'catalogo'>('participantes');
+  /** A script the picker asked to edit, delivered to the catalog on open. */
+  const [adminEditTemplateId, setAdminEditTemplateId] = useState<string | null>(null);
   /** The client a new session is being started for (kind + template picker). */
   const [pendingNewSessionClient, setPendingNewSessionClient] =
     useState<Client | null>(null);
@@ -1359,6 +1361,8 @@ export const HostView: React.FC = () => {
         onRefreshData={refreshAllData}
         theme={settings.theme}
         defaultTab={adminTab}
+        catalogEditRequestId={adminEditTemplateId}
+        onCatalogEditHandled={() => setAdminEditTemplateId(null)}
       />
 
       <ShareGuideModal
@@ -1413,6 +1417,12 @@ export const HostView: React.FC = () => {
         onOpenCatalog={() => {
           setPendingNewSessionClient(null);
           setAdminTab('catalogo');
+          setIsAdminOpen(true);
+        }}
+        onEditTemplate={(tpl) => {
+          setPendingNewSessionClient(null);
+          setAdminTab('catalogo');
+          setAdminEditTemplateId(tpl.id);
           setIsAdminOpen(true);
         }}
       />
